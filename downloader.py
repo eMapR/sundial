@@ -97,7 +97,7 @@ class EarthEngineSRCollection:
         return diff.reduce('sum').addBands(image)
 
 
-class DownloaderWatcher:
+class Downloader:
     def __init__(
             self,
             out_path: str,
@@ -108,6 +108,7 @@ class DownloaderWatcher:
             end_date: datetime,
             retries: int,
             chunk: bool,
+            download_limit: int,
             verbose: bool
     ) -> None:
         self.out_path = out_path
@@ -117,74 +118,89 @@ class DownloaderWatcher:
         self.end_date = end_date
         self.retries = retries
         self.chunk = chunk
+        self.download_limit = download_limit
         self.verbose = verbose
-        self.meta_data = None
+
         self._load_meta_data(meta_data_path)
 
     def start(self) -> None:
         mp.set_start_method('fork')
-        with mp.Pool(self.num_workers) as pool:
-            if self.verbose:
-                print(
-                    f"Starting download of {self.meta_data.size} points of interest...")
-            result_queue = mp.Manager().Queue()
-            watcher_process = mp.Process(target=self._watcher, args=(
-                result_queue, self.meta_data.size))
-            watcher_process.start()
-            results = pool.imap_unordered(
-                self._download, range(self.meta_data.size))
-            for result in results:
-                result_queue.put(result)
-            watcher_process.join()
-
-    def _watcher(self, result_queue: mp.Queue, total_tasks: int) -> None:
-        completed_tasks = 0
         if self.verbose:
-            self.progress = tqdm(
+            print(
+                f"Starting download of {meta_data.size} points of interest...")
+        self._watcher()
+
+    def _watcher(self) -> None:
+        manager = mp.Manager()
+        task_queue = manager.Queue()
+        result_queue = manager.Queue()
+        download_limiter = manager.Semaphore(self.download_limit)
+        total_tasks = meta_data.size
+
+        for i in range(total_tasks):
+            task_queue.put(i)
+
+        if self.verbose:
+            progress = tqdm(
                 total=total_tasks, desc="POI Download", leave=False)
+
+        workers = set()
+        for i in range(self.num_workers):
+            worker = mp.Process(target=self._worker, args=(
+                task_queue,
+                result_queue,
+                download_limiter))
+            worker.start()
+            workers.add(worker)
+
+        completed_tasks = 0
         while completed_tasks < total_tasks:
             result = result_queue.get()
-            self.progress.update()
+            if self.verbose:
+                progress.update()
             completed_tasks += 1
             # TODO: gracefully handle failed downloads via result rather than skip POI
         if self.verbose:
-            self.progress.close()
+            progress.close()
+        [w.close() for w in workers]
 
-    def _download(self, index: int) -> None:
-        point_of_interest = self.meta_data[index]["point_of_interest"].toList().join(
-            "_")
-        if self.verbose:
-            self.progress.write(f"Downloading {point_of_interest}...")
+    def _worker(self, task_queue: mp.Queue, result_queue: mp.Queue, download_limiter: mp.Semaphore) -> None:
+        while not task_queue.empty():
+            index = task_queue.get()
+            success = self._download(index, download_limiter)
+            result_queue.put(success)
+
+    def _download(self, index, download_limiter: mp.Semaphore) -> None:
+        data = meta_data[index]
         if self.chunk:
-            asyncio.run(self._async_download_handler(
-                point_of_interest, self.meta_data[index]))
+            return asyncio.run(self._async_download_handler(index, download_limiter))
         else:
-            area_of_interest = self.meta_data[index]["bounding_box"].toList()
-            out_path = os.join(self.out_path, point_of_interest.toList().join(
-                "_") + "." + self.file_type)
-            return self._downloader(area_of_interest, out_path)
+            point_of_interest = data["point_of_interest"]\
+                .toList()\
+                .join("_")
+            area_of_interest = data["bounding_box"].toList()
+            out_path = os.join(self.out_path,
+                               point_of_interest.toList().join("_") + "." + self.file_type)
+            with download_limiter:
+                download = self._downloader(area_of_interest, out_path)
+            return download
 
-    async def _async_download_handler(self, point_of_interest: str, area_of_interest: np.array) -> bool:
-        total_tasks = area_of_interest["area_centroids"].size
-        if self.verbose:
-            area_prog = tqdm(
-                total=total_tasks, desc=f"{point_of_interest}", leave=False)
-
+    async def _async_download_handler(self, index: int, download_limiter: mp.Semaphore) -> bool:
+        data = meta_data[index]
+        total_tasks = data["area_centroids"].size
         tasks = set()
         async with asyncio.TaskGroup() as tg:
             for i in range(total_tasks):
-                out_path = area_of_interest["area_centroids"][i] + \
-                    "." + self.file_type
-                area_of_interest = area_of_interest["area_vertices"][i]\
-                    .toList()
-                task = tg.create_task(self._async_downloader(
-                    area_of_interest["area_vertices"][i].toList(),
-                    out_path),
-                    name=area_of_interest,
-                    callback=lambda _: area_prog.update() if self.verbose else None)
+                out_path = os.join(self.out_path,
+                                   data["point_of_interest"].toList().join("_"),
+                                   data["area_centroids"][i].join("_") + "." + self.file_type)
+                area_of_interest = data["area_vertices"][i].toList()
+                with download_limiter:
+                    task = tg.create_task(self._async_downloader(
+                        area_of_interest,
+                        out_path),
+                        name=area_of_interest.join("_"))
                 tasks.add(task)
-
-        # TODO: Record failed downloads and progress
         return all([task.result() for task in tasks])
 
     async def _async_downloader(self, *args: dict) -> bool:
@@ -198,23 +214,19 @@ class DownloaderWatcher:
                 geometry = ee.Geometry.Polygon(area_of_interest)
                 collection = EarthEngineSRCollection(
                     geometry, self.start_date, self.end_date)
+                # TODO: account for overwrites
                 collection.save_to_file(self.file_type, out_path)
                 break
             except Exception as e:
-                if self.verbose:
-                    self.progress.write(
-                        f"Error downloading. Attempt: {attempts} AOI: {area_of_interest} : {e}")
                 if attempts == self.retries:
-                    if self.verbose:
-                        self.progress.write(f"Max retries reached. Exiting.")
+                    # TODO: return more meaningful result to aid in process management
                     return False
-                else:
-                    if self.verbose:
-                        self.progress.write(f"Retrying...")
         return True
 
     def _load_meta_data(self, meta_data_path: str) -> None:
-        self.meta_data = np.load(meta_data_path)
+        # must be run on a posix compliant system to avoid copy. On windows, forked process do not inheret globals
+        global meta_data
+        meta_data = np.load(meta_data_path)
 
 
 def parse_args():
@@ -224,7 +236,9 @@ def parse_args():
     parser.add_argument('--file_type', type=str,
                         default='zarr', help='File type to save to')
     parser.add_argument('--meta_data_path', type=str,
-                        default=os.join("meta_data.npy"), help='Path to meta data')
+                        default="meta_data.npy", help='Path to meta data')
+    parser.add_argument('--dtype_path', type=str, default="dtype.pkl",
+                        default="dtype.pkl", help='Path to dtype')
     parser.add_argument('--num_workers', type=int,
                         default=mp.cpu_count(), help='Number of workers')
     parser.add_argument('--start_date', type=str,
@@ -235,6 +249,8 @@ def parse_args():
                         help='Number of retries for failed downloads')
     parser.add_argument('--chunk', action='store_true',
                         help='Download area chunks instead of entire bounding box.')
+    parser.add_argument('--download_limit', type=int,
+                        default=5, help='Number of concurrent downloads')
     parser.add_argument('--verbose', action='store_true',
                         help='Print verbose output')
     return parser.parse_args()
@@ -245,9 +261,9 @@ def main(**kwargs):
     # TODO: add additional kwargs checks
     kwargs["start_date"] = datetime.strptime(kwargs["start_date"], "%Y-%m-%d")
     kwargs["end_date"] = datetime.strptime(kwargs["end_date"], "%Y-%m-%d")
-    watcher = DownloaderWatcher(**kwargs)
+    watcher = Downloader(**kwargs)
     watcher.start()
 
 
 if __name__ == "__main__":
-    main(parse_args())
+    main(**parse_args())
