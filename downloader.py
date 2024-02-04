@@ -28,10 +28,9 @@ class EEESRCollection:
     ) -> None:
         self.centroid = centroid
         self.area_of_interest = area_of_interest
-        self.geometry = ee.Geometry.Polygon(area_of_interest)
         self.start_date = start_date
         self.end_date = end_date
-        self.collection = self._build_sr_collection().serialize()
+        self.expression = self._build_sr_collection().serialize()
 
     def _build_sr_collection(self) -> ee.ImageCollection:
         dummy_collection = ee.ImageCollection(
@@ -73,7 +72,7 @@ class EEESRCollection:
             end_date = ee.Date.fromYMD(
                 year, self.end_date.month, self.end_date.day)
         return ee.ImageCollection('LANDSAT/' + sensor + '/C02/T1_L2')\
-            .filterBounds(self.geometry)\
+            .filterBounds(ee.Geometry.Polygon(self.area_of_interest))\
             .filterDate(start_date, end_date)\
             .map(lambda image: self._preprocess_image(image, sensor))\
             .set("system:time_start", self.start_date.millis())
@@ -247,7 +246,7 @@ class Downloader:
                     with request_limiter:
                         # TODO: parse response errors
                         payload = {
-                            "expression": collection.collection
+                            "expression": collection.expression
                         }
                         response = SESSION.send_request(
                             COLLECTION_URL, payload)
@@ -262,7 +261,7 @@ class Downloader:
                         for image in json.loads(response.body)["images"]]
                     [t.join() for t in threads]
 
-                    results = [q.get() for _ in threads]
+                    results = [thread_queue.get() for _ in threads]
                     if all([not isinstance(r, Exception) for r in results]):
                         result_queue.put(collection.centroid)
                     else:
