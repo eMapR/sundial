@@ -1,29 +1,37 @@
 import ee
 import os
 import argparse
-import asyncio
+import json
 import numpy as np
 import multiprocessing as mp
 
+from queue import Queue
 from tqdm import tqdm
+from pathlib import Path
+from threading import Thread
+from datetime import datetime
+from google.auth.transport.requests import AuthorizedSession
+from google.oauth2 import service_account
 from datetime import datetime
 
+COLLECTION_URL = f"https://earthengine-highvolume.googleapis.com/v1/{os.getenv('GEE_PROJECT')}/imageCollection:computeImages"
+IMAGE_PIXEL_URL = f"https://earthengine-highvolume.googleapis.com/v1/{os.getenv('GEE_PROJECT')}:getPixels"
 
-class EarthEngineSRCollection:
+
+class EEESRCollection:
     def __init__(
             self,
-            area_of_interest: ee.Geometry,
+            centroid: str,
+            area_of_interest: list,
             start_date: datetime,
             end_date: datetime
     ) -> None:
+        self.centroid = centroid
         self.area_of_interest = area_of_interest
+        self.geometry = ee.Geometry.Polygon(area_of_interest)
         self.start_date = start_date
         self.end_date = end_date
-        self.collection = self._build_sr_collection()
-
-    def save_to_file(self, file_type, out_path: str) -> None:
-        # TODO: do some image size checking and warn if it's too large
-        pass
+        self.collection = self._build_sr_collection().serialize()
 
     def _build_sr_collection(self) -> ee.ImageCollection:
         dummy_collection = ee.ImageCollection(
@@ -31,7 +39,7 @@ class EarthEngineSRCollection:
         return ee.ImageCollection(
             [self._build_medoid_mosaic(year, dummy_collection) for year in range(self.start_date.year, self.end_date.year + 1)])
 
-    # shamelessly stolen from lt-gee-py with minor tweaks
+    # shamelessly stolen from lt-gee-py with minor tweaks to avoid any client side operations
     def _build_medoid_mosaic(self, year: int, dummy_collection: ee.ImageCollection) -> ee.ImageCollection:
         collection = self._get_combined_sr_collection(year)
         image_count = collection.size()
@@ -65,7 +73,7 @@ class EarthEngineSRCollection:
             end_date = ee.Date.fromYMD(
                 year, self.end_date.month, self.end_date.day)
         return ee.ImageCollection('LANDSAT/' + sensor + '/C02/T1_L2')\
-            .filterBounds(self.area_of_interest)\
+            .filterBounds(self.geometry)\
             .filterDate(start_date, end_date)\
             .map(lambda image: self._preprocess_image(image, sensor))\
             .set("system:time_start", self.start_date.millis())
@@ -107,8 +115,8 @@ class Downloader:
             start_date: datetime,
             end_date: datetime,
             retries: int,
-            chunk: bool,
-            download_limit: int,
+            bounding_box: bool,
+            request_limit: int,
             verbose: bool
     ) -> None:
         self.out_path = out_path
@@ -117,116 +125,206 @@ class Downloader:
         self.start_date = start_date
         self.end_date = end_date
         self.retries = retries
-        self.chunk = chunk
-        self.download_limit = download_limit
+        self.bounding_box = bounding_box
+        self.request_limit = request_limit
         self.verbose = verbose
 
-        self._load_meta_data(meta_data_path)
+        self._init_meta_data_gcloud(meta_data_path)
 
     def start(self) -> None:
         mp.set_start_method('fork')
         if self.verbose:
             print(
-                f"Starting download of {meta_data.size} points of interest...")
+                f"Starting download of {META_DATA.size} points of interest...")
         self._watcher()
 
     def _watcher(self) -> None:
         manager = mp.Manager()
-        task_queue = manager.Queue()
+        collection_queue = manager.Queue()
+        report_queue = manager.Queue()
         result_queue = manager.Queue()
-        download_limiter = manager.Semaphore(self.download_limit)
-        total_tasks = meta_data.size
-
-        for i in range(total_tasks):
-            task_queue.put(i)
+        request_limiter = manager.Semaphore(self.request_limit)
 
         if self.verbose:
-            progress = tqdm(
-                total=total_tasks, desc="POI Download", leave=False)
+            if self.bounding_box:
+                size = META_DATA.size
+            else:
+                size = META_DATA[0]["area_centroids"].size
+            progress = tqdm(total=size, desc="DATA")
 
         workers = set()
-        for i in range(self.num_workers):
-            worker = mp.Process(target=self._worker, args=(
-                task_queue,
-                result_queue,
-                download_limiter))
-            worker.start()
-            workers.add(worker)
+        # Spawning additional processes to start download before coordinates are fully parsed
+        collection_generator = mp.Process(
+            target=self._collection_generator, args=(
+                collection_queue,
+                report_queue))
+        workers.add(collection_generator)
 
-        completed_tasks = 0
-        while completed_tasks < total_tasks:
-            result = result_queue.get()
+        for _ in range(self.num_workers):
+            collection_consumer = mp.Process(
+                target=self._collection_consumer, args=(
+                    collection_queue,
+                    report_queue,
+                    result_queue,
+                    request_limiter))
+            workers.add(collection_consumer)
+
+        [w.start() for w in workers]
+        while (result := result_queue.get()) is not None:
             if self.verbose:
+                while (report := report_queue.get()) is not None:
+                    progress.write(report)
+                if isinstance(result, str):
+                    progress.write(
+                        f"Download succeeded: {result}")
+                else:
+                    progress.write(
+                        f"Download Failed: {result}")
                 progress.update()
-            completed_tasks += 1
             # TODO: gracefully handle failed downloads via result rather than skip POI
-        if self.verbose:
-            progress.close()
-        [w.close() for w in workers]
+            # TODO: record completed downloads in case of failure for resuming
+        [w.join() for w in workers]
 
-    def _worker(self, task_queue: mp.Queue, result_queue: mp.Queue, download_limiter: mp.Semaphore) -> None:
-        while not task_queue.empty():
-            index = task_queue.get()
-            success = self._download(index, download_limiter)
-            result_queue.put(success)
-
-    def _download(self, index, download_limiter: mp.Semaphore) -> None:
-        data = meta_data[index]
-        if self.chunk:
-            return asyncio.run(self._async_download_handler(index, download_limiter))
-        else:
-            point_of_interest = data["point_of_interest"]\
+    def _collection_generator(self,
+                              collection_queue: mp.Queue,
+                              report_queue: mp.Queue) -> None:
+        for i in range(META_DATA.size):
+            point_of_interest = META_DATA[i]["point_of_interest"]\
                 .toList()\
                 .join("_")
-            area_of_interest = data["bounding_box"].toList()
-            out_path = os.join(self.out_path,
-                               point_of_interest.toList().join("_") + "." + self.file_type)
-            with download_limiter:
-                download = self._downloader(area_of_interest, out_path)
-            return download
+            if self.bounding_box:
+                area_of_interest = META_DATA[i]["bounding_box"]\
+                    .toList()
+                out_path = os.join(self.out_path, point_of_interest)
+                if self.verbose:
+                    report_queue.put(
+                        f"Creating Collection {point_of_interest}...")
+                collection = EEESRCollection(
+                    point_of_interest,
+                    area_of_interest,
+                    self.start_date,
+                    self.end_date)
 
-    async def _async_download_handler(self, index: int, download_limiter: mp.Semaphore) -> bool:
-        data = meta_data[index]
-        total_tasks = data["area_centroids"].size
-        tasks = set()
-        async with asyncio.TaskGroup() as tg:
-            for i in range(total_tasks):
-                out_path = os.join(self.out_path,
-                                   data["point_of_interest"].toList().join("_"),
-                                   data["area_centroids"][i].join("_") + "." + self.file_type)
-                area_of_interest = data["area_vertices"][i].toList()
-                with download_limiter:
-                    task = tg.create_task(self._async_downloader(
+                collection_queue.put((collection, out_path))
+            else:
+                for j in range(META_DATA[i]["area_centroids"].size):
+                    centroid = META_DATA[i]["area_centroids"][j]\
+                        .toList()\
+                        .join("_")
+                    area_of_interest = META_DATA[i]["area_vertices"][j]\
+                        .toList()
+                    out_path = os.join(self.out_path,
+                                       point_of_interest,
+                                       centroid + "." + self.file_type)
+
+                    if self.verbose:
+                        report_queue.put(f"Creating Collection {centroid}...")
+                    collection = EEESRCollection(
+                        centroid,
                         area_of_interest,
-                        out_path),
-                        name=area_of_interest.join("_"))
-                tasks.add(task)
-        return all([task.result() for task in tasks])
+                        self.start_date,
+                        self.end_date)
 
-    async def _async_downloader(self, *args: dict) -> bool:
-        return self._downloader(*args)
+                    collection_queue.put((collection, out_path))
 
-    def _downloader(self, area_of_interest: list[int], out_path: str) -> bool:
+        collection_queue.put(None)
+
+    def _collection_consumer(self,
+                             collection_queue: mp.Queue,
+                             report_queue: mp.Queue,
+                             result_queue: mp.Queue,
+                             request_limiter: mp.Semaphore) -> None:
+        while (collection_task := collection_queue.get()) is not None:
+            attempts = 0
+            collection, out_path = collection_task
+            while attempts < self.retries:
+                attempts += 1
+                try:
+                    if self.verbose:
+                        report_queue.put(
+                            f"Getting Images for Collection {collection.centroid}...")
+
+                    with request_limiter:
+                        # TODO: parse response errors
+                        payload = {
+                            "expression": collection.collection
+                        }
+                        response = SESSION.send_request(
+                            COLLECTION_URL, payload)
+
+                    if self.verbose:
+                        report_queue.put(
+                            f"Downloading Images for Collection {collection.centroid}...")
+                    thread_queue = Queue()
+                    threads = [Thread(
+                        target=self._downloader,
+                        args=(image, out_path, thread_queue, request_limiter))
+                        for image in json.loads(response.body)["images"]]
+                    [t.join() for t in threads]
+
+                    results = [q.get() for _ in threads]
+                    if all([not isinstance(r, Exception) for r in results]):
+                        result_queue.put(collection.centroid)
+                    else:
+                        result_queue.put(results)
+                    break
+                except Exception as e:
+                    if attempts == self.retries:
+                        # TODO: parse exceptions
+                        result_queue.put(e)
+                        break
+
+        result_queue.put(None)
+
+    def _downloader(self,
+                    image: dict,
+                    out_path: str,
+                    result_queue: Queue,
+                    request_limiter: mp.Semaphore) -> None:
         attempts = 0
         while attempts < self.retries:
             attempts += 1
             try:
-                geometry = ee.Geometry.Polygon(area_of_interest)
-                collection = EarthEngineSRCollection(
-                    geometry, self.start_date, self.end_date)
-                # TODO: account for overwrites
-                collection.save_to_file(self.file_type, out_path)
+                # Someday, google will increase the concurrent request limit
+                # TODO: Perform image size check before download
+                with request_limiter:
+                    # TODO: parse response error
+                    payload = {
+                        "name": image["name"],
+                        "fileFormat": self.file_type
+                    }
+                    response = SESSION.send_request(
+                        IMAGE_PIXEL_URL, payload)
+
+                year = self.get_year_from_rfc3339(image["startTime"])
+                out_path = os.join(
+                    out_path,
+                    year + image["id"] + "." + self.file_type
+                )
+                outfile = Path(outfile)
+                outfile.write_bytes(response.body)
+                result_queue.put(None)
                 break
             except Exception as e:
+                # TODO: parse exceptions
                 if attempts == self.retries:
-                    # TODO: return more meaningful result to aid in process management
-                    return False
-        return True
+                    result_queue.put(e)
+                    break
 
-    def _load_meta_data(self, meta_data_path: str) -> None:
-        # must be run on a posix compliant system to avoid copy. On windows, forked process do not inheret globals
-        global meta_data
-        meta_data = np.load(meta_data_path)
+    def get_year_from_rfc3339(date_str: str) -> str:
+        date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+        year = str(date.year)
+        return year
+
+    def _init_meta_data_gcloud(self, meta_data_path: str) -> None:
+        # must be run on a posix compliant system to avoid copy. On windows, forked process do not inheret globals in the same way
+        global META_DATA
+        global CREDENTIALS
+        global SESSION
+        META_DATA = np.load(meta_data_path)
+        CREDENTIALS = service_account.Credentials.from_service_account_file(
+            os.getenv("GEE_SERVICE_KEY_PATH"))
+        SESSION = AuthorizedSession(CREDENTIALS)
 
 
 def parse_args():
@@ -245,12 +343,12 @@ def parse_args():
                         default="2017-09-01", help='Start date')
     parser.add_argument('--end_date', type=str,
                         default="1985-06-01", help='End date')
-    parser.add_argument('--retries', type=int, default=3,
+    parser.add_argument('--retries', type=int, default=5,
                         help='Number of retries for failed downloads')
-    parser.add_argument('--chunk', action='store_true',
-                        help='Download area chunks instead of entire bounding box.')
-    parser.add_argument('--download_limit', type=int,
-                        default=5, help='Number of concurrent downloads')
+    parser.add_argument('--bounding_box', action='store_true',
+                        help='Download area bounding_box instead of subareas.')
+    parser.add_argument('--request_limit', type=int,
+                        default=40, help='Number of requests')
     parser.add_argument('--verbose', action='store_true',
                         help='Print verbose output')
     return parser.parse_args()

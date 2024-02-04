@@ -3,7 +3,7 @@ import argparse
 import pickle
 
 
-def generate_gaussian_squares(center_coords: np.array, edge_size: int, std_dev: int, num_points: int) -> np.array:
+def generate_gaussian_squares(center_coords: np.array, edge_size: int, std_dev: int, num_points: int) -> tuple[np.array, np.dtype]:
     dist_from_centroid = edge_size / 2
     x_coords = np.random.normal(center_coords[0], std_dev, num_points)
     y_coords = np.random.normal(center_coords[1], std_dev, num_points)
