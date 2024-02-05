@@ -32,6 +32,9 @@ class EEESRCollection:
         self.end_date = end_date
         self.expression = self._build_sr_collection().serialize()
 
+    def _flatten_collection(self, collection: ee.ImageCollection) -> ee.Image:
+        pass
+
     def _build_sr_collection(self) -> ee.ImageCollection:
         dummy_collection = ee.ImageCollection(
             [ee.Image([0, 0, 0, 0, 0, 0]).mask(ee.Image(0))])
@@ -114,7 +117,7 @@ class Downloader:
             start_date: datetime,
             end_date: datetime,
             retries: int,
-            bounding_box: bool,
+            bounding_polygon: bool,
             request_limit: int,
             verbose: bool
     ) -> None:
@@ -124,7 +127,7 @@ class Downloader:
         self.start_date = start_date
         self.end_date = end_date
         self.retries = retries
-        self.bounding_box = bounding_box
+        self.bounding_polygon = bounding_polygon
         self.request_limit = request_limit
         self.verbose = verbose
 
@@ -145,10 +148,10 @@ class Downloader:
         request_limiter = manager.Semaphore(self.request_limit)
 
         if self.verbose:
-            if self.bounding_box:
+            if self.bounding_polygon:
                 size = META_DATA.size
             else:
-                size = META_DATA[0]["area_centroids"].size
+                size = META_DATA[0]["polygons"].size
             progress = tqdm(total=size, desc="DATA")
 
         workers = set()
@@ -188,43 +191,40 @@ class Downloader:
                               collection_queue: mp.Queue,
                               report_queue: mp.Queue) -> None:
         for i in range(META_DATA.size):
-            point_of_interest = META_DATA[i]["point_of_interest"]\
+            centroid = META_DATA[i]["centroid"]\
                 .toList()\
                 .join("_")
-            if self.bounding_box:
-                area_of_interest = META_DATA[i]["bounding_box"]\
+            if self.bounding_polygon:
+                area_of_interest = META_DATA[i]["bounding_polygon"]\
                     .toList()
-                out_path = os.join(self.out_path, point_of_interest)
+                out_path = os.join(self.out_path, centroid)
                 if self.verbose:
                     report_queue.put(
-                        f"Creating Collection {point_of_interest}...")
+                        f"Creating Collection {centroid}...")
                 collection = EEESRCollection(
-                    point_of_interest,
                     area_of_interest,
                     self.start_date,
                     self.end_date)
 
-                collection_queue.put((collection, out_path))
+                collection_queue.put((collection, centroid, out_path))
             else:
-                for j in range(META_DATA[i]["area_centroids"].size):
-                    centroid = META_DATA[i]["area_centroids"][j]\
-                        .toList()\
-                        .join("_")
-                    area_of_interest = META_DATA[i]["area_vertices"][j]\
+                for j in range(META_DATA[i]["polygons"].size):
+                    centroid_idx = centroid + "_" + str(j)
+                    area_of_interest = META_DATA[i]["polygons"][j]\
                         .toList()
                     out_path = os.join(self.out_path,
-                                       point_of_interest,
-                                       centroid + "." + self.file_type)
+                                       centroid,
+                                       centroid_idx)
 
                     if self.verbose:
-                        report_queue.put(f"Creating Collection {centroid}...")
+                        report_queue.put(
+                            f"Creating Collection {centroid_idx}...")
                     collection = EEESRCollection(
-                        centroid,
                         area_of_interest,
                         self.start_date,
                         self.end_date)
 
-                    collection_queue.put((collection, out_path))
+                    collection_queue.put((collection, centroid_idx, out_path))
 
         collection_queue.put(None)
 
@@ -235,13 +235,13 @@ class Downloader:
                              request_limiter: mp.Semaphore) -> None:
         while (collection_task := collection_queue.get()) is not None:
             attempts = 0
-            collection, out_path = collection_task
+            collection, name, out_path = collection_task
             while attempts < self.retries:
                 attempts += 1
                 try:
                     if self.verbose:
                         report_queue.put(
-                            f"Getting Images for Collection {collection.centroid}...")
+                            f"Requesting Image references for Collection {name}...")
 
                     with request_limiter:
                         # TODO: parse response errors
@@ -253,7 +253,7 @@ class Downloader:
 
                     if self.verbose:
                         report_queue.put(
-                            f"Downloading Images for Collection {collection.centroid}...")
+                            f"Downloading Image files for Collection {name}...")
                     thread_queue = Queue()
                     threads = [Thread(
                         target=self._downloader,
@@ -263,7 +263,7 @@ class Downloader:
 
                     results = [thread_queue.get() for _ in threads]
                     if all([not isinstance(r, Exception) for r in results]):
-                        result_queue.put(collection.centroid)
+                        result_queue.put(name)
                     else:
                         result_queue.put(results)
                     break
@@ -334,8 +334,6 @@ def parse_args():
                         default='zarr', help='File type to save to')
     parser.add_argument('--meta_data_path', type=str,
                         default="meta_data.npy", help='Path to meta data')
-    parser.add_argument('--dtype_path', type=str, default="dtype.pkl",
-                        default="dtype.pkl", help='Path to dtype')
     parser.add_argument('--num_workers', type=int,
                         default=mp.cpu_count(), help='Number of workers')
     parser.add_argument('--start_date', type=str,
@@ -344,8 +342,8 @@ def parse_args():
                         default="1985-06-01", help='End date')
     parser.add_argument('--retries', type=int, default=5,
                         help='Number of retries for failed downloads')
-    parser.add_argument('--bounding_box', action='store_true',
-                        help='Download area bounding_box instead of subareas.')
+    parser.add_argument('--bounding_polygon', action='store_true',
+                        help='Download area bounding_polygon instead of subareas.')
     parser.add_argument('--request_limit', type=int,
                         default=40, help='Number of requests')
     parser.add_argument('--verbose', action='store_true',
