@@ -61,7 +61,7 @@ def lt_image_generator(start_date: datetime, end_date: datetime, area_of_interes
 
 class Downloader:
     """
-    A class for downloading images from a remote server.
+    A class for downloading images from Google Earth Engine via polygons passed in by geojson.
 
     Args:
         start_date (datetime): The start date to filter image data.
