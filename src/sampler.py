@@ -1,146 +1,163 @@
-import numpy as np
+import ee
 import argparse
-import geojson
-from shapely.geometry import Polygon
+import numpy as np
+import pandas as pd
+import geopandas as gpd
 
-
-def calculate_centroids(vertices: np.array) -> np.array:
-    # Remove the last vertex as it is a duplicate of the first
-    vertices = vertices[:, :-1, :]
-    return np.mean(vertices, axis=1)
+from shapely.geometry import Point, Polygon, MultiPolygon
 
 
 def load_geojson(geojson_path: str) -> np.array:
     with open(geojson_path) as f:
-        data = geojson.load(f)
-    coordinates = np.array(
-        data['features'][0]['geometry']['coordinates'][0][0])
-    object_ids = data['features'][0]['properties']['OBJECTID']
-    return coordinates, object_ids
+        data = gpd.read_file(f)
+    return data
+
+
+def get_elevation_image(area_of_interest: Polygon) -> ee.Image:
+    area_of_interest = ee.Geometry.Polygon(
+        list(area_of_interest.exterior.coords))
+    return ee.Image('USGS/SRTMGL1_003').clip(area_of_interest)
+
+
+def get_climate_image(area_of_interest: Polygon) -> ee.Image:
+    area_of_interest = ee.Geometry.Polygon(
+        list(area_of_interest.exterior.coords))
+    return ee.Image("WORLDCLIM/V1/BIO").clip(area_of_interest)
+
+
+def get_nlcd_image(area_of_interest: Polygon) -> ee.Image:
+    area_of_interest = ee.Geometry.Polygon(
+        list(area_of_interest.exterior.coords))
+    return ee.ImageCollection("USGS/NLCD_RELEASES/2021_REL/NLCD").first().clip(area_of_interest)
+
+
+def get_prism_image(area_of_interest: Polygon) -> ee.Image:
+    area_of_interest = ee.Geometry.Polygon(
+        list(area_of_interest.exterior.coords))
+    collection = ee.ImageCollection(
+        "OREGONSTATE/PRISM/AN81m").clip(area_of_interest)
+    return collection.reduce(ee.Reducer.mean())
+
+
+def stratified_sampling(image_source: str, class_band: str) -> gpd.GeoDataFrame:
+    # TODO
+    pass
 
 
 def generate_overlapping_squares(
-        polygon: np.array,
-        object_id: int,
-        edge_size: float) -> np.array:
+        polygon: Point | Polygon | MultiPolygon,
+        edge_size: float) -> tuple(MultiPolygon, int):
 
-    x_min, y_min = np.min(polygon, axis=0)
-    x_max, y_max = np.max(polygon, axis=0)
+    x_min, y_min, x_max, y_max = polygon.bounds
+    x_buff = (((x_max - x_min) % edge_size) / 2)
+    y_buff = (((y_max - y_min) % edge_size) / 2)
 
-    x_buff = (((x_max - x_min) % edge_size) // 2)
-    y_buff = (((y_max - y_min) % edge_size) // 2)
+    if edge_size > (y_max - y_min):
+        y_buff = 0
+    if edge_size > (x_max - x_min):
+        x_buff = 0
 
     x_start = x_min - x_buff
     y_start = y_min - y_buff
     x_end = x_max + x_buff
     y_end = y_max + y_buff
 
-    squares = np.array([])
+    squares = []
     x = x_start
     while x < x_end:
         y = y_start
         while y < y_end:
-            square = np.array([[x, y],
-                               [x + edge_size, y],
-                               [x + edge_size, y + edge_size],
-                               [x, y + edge_size],
-                               [x, y]])
-            if Polygon(square).intersects(Polygon(polygon)):
+            square = Polygon([(x, y),
+                              (x + edge_size, y),
+                              (x + edge_size, y + edge_size),
+                              (x, y + edge_size),
+                              (x, y)])
+            if square.intersects(Polygon(polygon)):
                 squares.append(square)
             y += edge_size
         x += edge_size
 
-    dtype = np.dtype[
-        ('object_id', 'int', (1)),
-        ('centroid', 'float', (2)),
-        ('bounding_box', 'float', (5, 2))
-        ('area_vertices', 'float', (squares.size, 5, 2)),
-    ]
-
-    data = np.zeros((1, 1, squares.size, 1), dtype=dtype)
-    data['object_id'] = object_id
-    data['centroid'] = calculate_centroids(polygon)[0].view()
-    data['bounding_polygon'] = polygon
-    data['polygons'] = squares
-
-    return data
+    return MultiPolygon(squares), len(squares)
 
 
 def generate_gaussian_squares(
-        polygon: np.array,
-        object_id: int,
+        polygon: Point | Polygon | MultiPolygon,
         edge_size: float,
         std_dev: float,
-        num_points: int,
-        dtype: np.dtype) -> np.array:
+        num_squares: int) -> tuple(MultiPolygon, int):
 
-    centroid = calculate_centroids(polygon)[0]
+    centroid_x, centroid_y = polygon.centroid
     dist_from_centroid = edge_size / 2
-    x_coords = np.random.normal(centroid[0], std_dev, num_points)
-    y_coords = np.random.normal(centroid[1], std_dev, num_points)
+    x_coords = np.random.normal(centroid_x, std_dev, num_squares)
+    y_coords = np.random.normal(centroid_y, std_dev, num_squares)
     square_centroids = np.column_stack((x_coords, y_coords))
-    squares = np.zeros((num_points, 5, 2))
+    squares = [Polygon([
+        (square_centroids[i][0] - dist_from_centroid,
+            square_centroids[i][1] + dist_from_centroid)
+        (square_centroids[i][0] + dist_from_centroid,
+            square_centroids[i][1] + dist_from_centroid)
+        (square_centroids[i][0] + dist_from_centroid,
+            square_centroids[i][1] - dist_from_centroid)
+        (square_centroids[i][0] - dist_from_centroid,
+            square_centroids[i][1] - dist_from_centroid)
+        (square_centroids[i][0] - dist_from_centroid,
+            square_centroids[i][1] + dist_from_centroid)
+    ]) for i in range(num_squares)]
 
-    for i in range(num_points):
-        squares[i][0] = square_centroids[i][0] - \
-            dist_from_centroid, square_centroids[i][1] + dist_from_centroid
-        squares[i][1] = square_centroids[i][0] + \
-            dist_from_centroid, square_centroids[i][1] + dist_from_centroid
-        squares[i][2] = square_centroids[i][0] + \
-            dist_from_centroid, square_centroids[i][1] - dist_from_centroid
-        squares[i][3] = square_centroids[i][0] - \
-            dist_from_centroid, square_centroids[i][1] - dist_from_centroid
-        squares[i][4] = squares[i][0]
-
-    data = np.zeros((1, 1, 1, num_points), dtype=dtype)
-    data['object_id'] = object_id
-    data['centroid'] = centroid
-    data['bounding_polygon'] = polygon
-    data['polygons'] = squares
-    return data
-
-
-def save_meta_data(meta_data: np.array, out_path: str) -> None:
-    np.save(out_path, meta_data)
+    return MultiPolygon(squares), len(squares)
 
 
 def main(**kwargs):
-    coords_path = kwargs.get("coords_path")
     edge_size = kwargs.get("edge_size")
     meta_data_path = kwargs.get("meta_data_path")
-    polygons, object_ids = load_geojson(coords_path)
+
+    if (geojson_path := kwargs.get("geojson_path")) is not None:
+        gdf = load_geojson(geojson_path)
+    else:
+        if (num_points := kwargs.get("num_points")) is None:
+            raise ValueError("num_points is required for generating polygons")
+        gdf = stratified_sampling(num_points)
 
     match kwargs.get("method"):
+        # TODO: Implement mp for iterating over the gdf
         case "overlap":
-            data = np.array([generate_overlapping_squares(p, i, edge_size)
-                             for p, i in zip(polygons, object_ids)])
-            save_meta_data(data, meta_data_path)
+            squares_df = pd.DataFrame([
+                generate_overlapping_squares(p, edge_size)
+                for p in gdf["geometry"]],
+                columns=["squares", "square_count"]
+            )
+
         case "gaussian":
-            std_dev = kwargs.get("std_dev")
-            num_points = kwargs.get("num_points")
-            dtype = np.dtype[('object_id', 'int', (1)),
-                             ('centroid', 'float', (2)),
-                             ('bounding_box', 'float', (5, 2))
-                             ('polygons', 'float', (num_points, 5, 2)),]
-            data = np.array([generate_gaussian_squares(
-                p, i, edge_size, std_dev, num_points, dtype) for p, i in zip(polygons, object_ids)])
-            save_meta_data(data, meta_data_path)
+            if (num_squares := kwargs.get("num_squares")) is None:
+                raise ValueError(
+                    "num_squares is required for gaussian sampling")
+            if (std_dev := kwargs.get("std_dev")) is None:
+                raise ValueError("std_dev is required for gaussian sampling")
+            squares_df = pd.DataFrame([
+                generate_gaussian_squares(p, edge_size, std_dev, num_squares)
+                for p in gdf["geometry"]],
+                columns=["squares", "square_count"]
+            )
+
+    for column in squares_df.columns:
+        gdf[column] = gdf[column]
+    gdf.to_file(meta_data_path, driver='GeoJSON')
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Generate Gaussian Squares')
-    parser.add_argument('--geojson_path', type=str,
-                        help='Path to geojson file containing the polygons')
-    parser.add_argument('--edge_size', type=int,
+    parser.add_argument('--edge_size', type=int, required=True,
                         help='Edge size of the squares')
+    parser.add_argument('--num_points', type=int,
+                        help='Number of points to generate per coordinate')
+    parser.add_argument('--num_squares', type=int,
+                        help='Number of squares to generate per polygon')
     parser.add_argument('--std_dev', type=int,
                         help='Standard deviation for generating coordinates')
-    parser.add_argument('--num_points', type=int,
-                        help='Number of points to generate')
-    parser.add_argument('--meta_data_path', type=str, default="meta_data.npy",
-                        help='Path to save the generated data')
-    parser.add_argument('--year_range', type=int, default="1985-2022",
-                        help='Years to sample from in the format "YYYY-YYYY"')
+    parser.add_argument('--geojson_path', type=str,
+                        help='Path to geojson file containing the polygons')
+    parser.add_argument('--meta_data_path', type=str,
+                        default="meta_data.geojson", help='Path to save the generated data')
     parser.add_argument('--method', type=str, default="overlap",
                         help='Method to sample from. Either "overlap" or "gaussian"')
 

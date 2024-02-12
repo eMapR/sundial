@@ -1,181 +1,184 @@
 import ee
 import os
 import argparse
-import json
-import numpy as np
+import time
 import multiprocessing as mp
 
-from queue import Queue
+from logger import get_logger
+from ltgee import LandTrendr
 from tqdm import tqdm
 from pathlib import Path
-from threading import Thread
 from datetime import datetime
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import service_account
 from datetime import datetime
+from sampler import load_geojson
 
-COLLECTION_URL = f"https://earthengine-highvolume.googleapis.com/v1/{os.getenv('GEE_PROJECT')}/imageCollection:computeImages"
-IMAGE_PIXEL_URL = f"https://earthengine-highvolume.googleapis.com/v1/{os.getenv('GEE_PROJECT')}:getPixels"
+IMAGE_PIXEL_URL = f"https://earthengine-highvolume.googleapis.com/v1/{
+    os.getenv('GEE_PROJECT')}:computePixels"
 
 
-class EEESRCollection:
-    def __init__(
-            self,
-            centroid: str,
-            area_of_interest: list,
-            start_date: datetime,
-            end_date: datetime
-    ) -> None:
-        self.centroid = centroid
-        self.area_of_interest = area_of_interest
-        self.start_date = start_date
-        self.end_date = end_date
-        self.expression = self._build_sr_collection().serialize()
+def estimate_download_size(image: ee.Image, geometry: ee.Geometry, scale: int) -> float:
+    """
+    Estimates the download size of an image based on its pixel count and band dtype.
+    The function currently only supports array images.
 
-    def _flatten_collection(self, collection: ee.ImageCollection) -> ee.Image:
-        pass
+    Args:
+        image (ee.Image): The image to estimate the download size for.
+        geometry (ee.Geometry): The geometry to reduce the image over.
+        scale (int): The scale to use for the reduction.
 
-    def _build_sr_collection(self) -> ee.ImageCollection:
-        dummy_collection = ee.ImageCollection(
-            [ee.Image([0, 0, 0, 0, 0, 0]).mask(ee.Image(0))])
-        return ee.ImageCollection(
-            [self._build_medoid_mosaic(year, dummy_collection) for year in range(self.start_date.year, self.end_date.year + 1)])
+    Returns:
+        int: The estimated download size in megabytes.
+    """
 
-    # shamelessly stolen from lt-gee-py with minor tweaks to avoid any client side operations
-    def _build_medoid_mosaic(self, year: int, dummy_collection: ee.ImageCollection) -> ee.ImageCollection:
-        collection = self._get_combined_sr_collection(year)
-        image_count = collection.size()
-        final_collection = ee.ImageCollection(ee.Algorithms.If(
-            image_count.gt(0), collection, dummy_collection))
-        median = final_collection.median()
-        med_diff_collection = final_collection.map(
-            lambda image: self.calculate_median_diff(image, median))
-        return med_diff_collection\
-            .reduce(ee.Reducer.min(7))\
-            .select([1, 2, 3, 4, 5, 6], ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'])\
-            .set('system:time_start', self.start_date.millis())\
-            .toUint16()
+    # TODO: add support for other image shapes
+    pixel_count = image\
+        .arrayLength(0)\
+        .reduceRegion(ee.Reducer.sum(), geometry, scale=scale, maxPixels=1e13)\
+        .values()\
+        .getInfo()\
+        / 1e6
+    match image.bandTypes().values().getInfo()[0]["precision"]:
+        case "int16":
+            return round(pixel_count * 2, 2)
+        case "int32" | "int":
+            return round(pixel_count * 4, 2)
+        case "int64" | "double":
+            return round(pixel_count * 8, 2)
 
-    def _get_combined_sr_collection(self, year: int) -> ee.ImageCollection:
-        lt5 = self._get_sr_collection(year, 'LT05')
-        le7 = self._get_sr_collection(year, 'LE07')
-        lc8 = self._get_sr_collection(year, 'LC08')
-        lc9 = self._get_sr_collection(year, 'LC09')
-        return lt5.merge(le7).merge(lc8).merge(lc9)
 
-    def _get_sr_collection(self, year, sensor: str) -> ee.ImageCollection:
-        if self.start_date.month > self.end_date.month:
-            start_date = ee.Date.fromYMD(
-                year - 1, self.start_date.month, self.start_date.day)
-            end_date = ee.Date.fromYMD(
-                year, self.end_date.month, self.end_date.day)
-        else:
-            start_date = ee.Date.fromYMD(
-                year, self.start_date.month, self.start_date.day)
-            end_date = ee.Date.fromYMD(
-                year, self.end_date.month, self.end_date.day)
-        return ee.ImageCollection('LANDSAT/' + sensor + '/C02/T1_L2')\
-            .filterBounds(ee.Geometry.Polygon(self.area_of_interest))\
-            .filterDate(start_date, end_date)\
-            .map(lambda image: self._preprocess_image(image, sensor))\
-            .set("system:time_start", self.start_date.millis())
-
-    def _preprocess_image(self, image: ee.Image, sensor: ee.Image) -> ee.Image:
-        if sensor == 'LC08' or sensor == 'LC09':
-            dat = image.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'], [
-                'B1', 'B2', 'B3', 'B4', 'B5', 'B7'])
-        else:
-            dat = image.select(['SR_B1', 'SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B7'], [
-                'B1', 'B2', 'B3', 'B4', 'B5', 'B7'])
-        dat = dat.multiply(
-            0.0000275).add(-0.2).multiply(10000).toUint16().unmask()
-        return self._apply_masks(image.select('QA_PIXEL'), dat)
-
-    def _apply_masks(self, qa: ee.image, image: ee.image) -> ee.image:
-        self.collection.toList()
-        image = self._mask_clouds(qa, image)
-        return image
-
-    @staticmethod
-    def _mask_clouds(qa: ee.image, image: ee.image) -> ee.image:
-        mask = qa.bitwiseAnd(1 << 3).eq(0)
-        return image.updateMask(mask)
-
-    @staticmethod
-    def calculate_median_diff(image: ee.Image, median: ee.Image) -> ee.Image:
-        diff = image.subtract(median).pow(ee.Image.constant(2))
-        return diff.reduce('sum').addBands(image)
+def lt_image_generator(start_date: datetime, end_date: datetime, area_of_interest: ee.Geometry, mask_labels: list[str] = ["cloud"]) -> ee.Image:
+    lt = LandTrendr(
+        start_date=start_date,
+        end_date=end_date,
+        area_of_interest=area_of_interest,
+        mask_labels=mask_labels,
+        run=False
+    )
+    return lt.build_sr_collection().toArrayBands().clip(area_of_interest)
 
 
 class Downloader:
+    """
+    A class for downloading images from a remote server.
+
+    Args:
+        start_date (datetime): The start date to filter image data.
+        end_date (datetime): The end date to filter image data.
+        out_path (str, optional): The output path for downloaded images. Defaults to "data" folder in the user's home directory.
+        log_path (str, optional): The path for log files. Defaults to "logs" folder in the user's home directory.
+        file_type (str, optional): The file type of the downloaded images. Defaults to "geo_tiff".
+        meta_data_path (str, optional): The path to the meta data file. Defaults to "meta_data.json".
+        meta_index_key (str, optional): The key for the index in the meta data. Defaults to "id".
+        meta_shape_key (str, optional): The key for the polygon to download in the meta data. Defaults to "squares".
+        meta_count_key (str, optional): The key for the polygon count in the meta data. Defaults to "square_count".
+        num_workers (int, optional): The number of worker processes for downloading. Defaults to 64.
+        image_generator (callable, optional): The image generator function. Defaults to lt_image_generator.
+        retries (int, optional): The number of retries for failed downloads. Defaults to 5.
+        request_limit (int, optional): The maximum number of concurrent requests. Defaults to 40.
+        size_limit (int, optional): The maximum size limit for downloaded images in MB. Defaults to 48MB.
+        overwrite (bool, optional): Whether to overwrite existing files. Defaults to False.
+        verbose (bool, optional): Whether to print verbose output. Defaults to False.
+
+    Methods:
+        start(): Starts the download process.
+    """
+
     def __init__(
             self,
-            out_path: str,
-            file_type: str,
-            meta_data_path: str,
-            num_workers: int,
             start_date: datetime,
             end_date: datetime,
-            retries: int,
-            bounding_polygon: bool,
-            request_limit: int,
-            verbose: bool
+            out_path: str = os.join(Path.home(), "data"),
+            log_path: str = os.join(Path.home(), "logs"),
+            file_type: str = "geo_tiff",
+            meta_data_path: str = "meta_data.json",
+            meta_index_key: str = "id",
+            meta_shape_key: str = "squares",
+            meta_count_key: str = "square_count",
+            num_workers: int = 64,
+            image_generator: callable = lt_image_generator,
+            retries: int = 5,
+            request_limit: int = 40,
+            size_limit: int = 48,
+            overwrite: bool = False,
+            verbose: bool = False
     ) -> None:
-        self.out_path = out_path
-        self.file_type = file_type
-        self.num_workers = num_workers
-        self.start_date = start_date
-        self.end_date = end_date
-        self.retries = retries
-        self.bounding_polygon = bounding_polygon
-        self.request_limit = request_limit
-        self.verbose = verbose
+        self._start_date = start_date
+        self._end_date = end_date
+        self._out_path = out_path
+        self._log_path = log_path
+        self._file_type = file_type
+        self._meta_index_key = meta_index_key
+        self._meta_shape_key = meta_shape_key
+        self._meta_count_key = meta_count_key
+        self._num_workers = num_workers
+        self._image_generator = image_generator
+        self._retries = retries
+        self._request_limit = request_limit
+        self._size_limit = size_limit
+        self._overwrite = overwrite
+        self._verbose = verbose
 
         self._init_meta_data_gcloud(meta_data_path)
 
     def start(self) -> None:
+        """
+        Starts the download process and performs the necessary checks.
+        """
         mp.set_start_method('fork')
-        if self.verbose:
+        if self._verbose:
             print(
                 f"Starting download of {META_DATA.size} points of interest...")
+
+        # this assumes all polygons are the same size
+        test_area = ee.Geometry.Polygon(
+            list(META_DATA[self._meta_shape_key][0].exterior.coords))
+        test_image = self._image_generator(
+            self._start_date, self._end_date, test_area)
+        test_size = estimate_download_size(test_image, test_area, 30)
+        if test_size > self._size_limit:
+            raise ValueError(
+                f"Image size of {test_size}MB exceeds size limit of {self._size_limit}MB. Please reduce the size of the image.")
+
         self._watcher()
 
     def _watcher(self) -> None:
         manager = mp.Manager()
-        collection_queue = manager.Queue()
+        image_queue = manager.Queue()
         report_queue = manager.Queue()
         result_queue = manager.Queue()
-        request_limiter = manager.Semaphore(self.request_limit)
+        request_limiter = manager.Semaphore(self._request_limit)
 
-        if self.verbose:
-            if self.bounding_polygon:
-                size = META_DATA.size
-            else:
-                size = META_DATA[0]["polygons"].size
+        if self._verbose:
+            size = META_DATA[self._meta_count_key].sum()
             progress = tqdm(total=size, desc="DATA")
 
         workers = set()
-        # Spawning additional processes to start download before coordinates are fully parsed
-        collection_generator = mp.Process(
-            target=self._collection_generator, args=(
-                collection_queue,
-                report_queue))
-        workers.add(collection_generator)
+        reporter = mp.Process(
+            target=self._reporter, args=(
+                report_queue,))
+        workers.add(reporter)
 
-        for _ in range(self.num_workers):
-            collection_consumer = mp.Process(
-                target=self._collection_consumer, args=(
-                    collection_queue,
+        image_generator = mp.Process(
+            target=self._image_generator, args=(
+                image_queue,
+                report_queue,
+                result_queue))
+        workers.add(image_generator)
+
+        for _ in range(self._num_workers):
+            image_consumer = mp.Process(
+                target=self._image_consumer, args=(
+                    image_queue,
                     report_queue,
                     result_queue,
                     request_limiter))
-            workers.add(collection_consumer)
+            workers.add(image_consumer)
 
         [w.start() for w in workers]
         while (result := result_queue.get()) is not None:
-            if self.verbose:
-                while (report := report_queue.get()) is not None:
-                    progress.write(report)
+            if self._verbose:
                 if isinstance(result, str):
                     progress.write(
                         f"Download succeeded: {result}")
@@ -183,144 +186,130 @@ class Downloader:
                     progress.write(
                         f"Download Failed: {result}")
                 progress.update()
-            # TODO: gracefully handle failed downloads via result rather than skip POI
-            # TODO: record completed downloads in case of failure for resuming
+        report_queue.put(None)
         [w.join() for w in workers]
 
-    def _collection_generator(self,
-                              collection_queue: mp.Queue,
-                              report_queue: mp.Queue) -> None:
+    def _reporter(self, report_queue: mp.Queue) -> None:
+        logger = get_logger(self._out_path, "dft.downloader")
+        while (report := report_queue.get()) is not None:
+            level, message = report
+            match level:
+                case "DEBUG":
+                    logger.debug(message)
+                case "INFO":
+                    logger.info(message)
+                case "WARNING":
+                    logger.warning(message)
+                case "ERROR":
+                    logger.error(message)
+                case "CRITICAL":
+                    logger.critical(message)
+                case "EXIT":
+                    return
+
+    def _image_generator(self,
+                         image_queue: mp.Queue,
+                         report_queue: mp.Queue,
+                         result_queue: mp.Queue
+                         ) -> None:
         for i in range(META_DATA.size):
-            centroid = META_DATA[i]["centroid"]\
-                .toList()\
-                .join("_")
-            if self.bounding_polygon:
-                area_of_interest = META_DATA[i]["bounding_polygon"]\
-                    .toList()
-                out_path = os.join(self.out_path, centroid)
-                if self.verbose:
-                    report_queue.put(
-                        f"Creating Collection {centroid}...")
-                collection = EEESRCollection(
-                    area_of_interest,
-                    self.start_date,
-                    self.end_date)
+            try:
+                index = META_DATA[self._meta_index_key][i]
+                idx = 0
+                for square in META_DATA[self._meta_shape_key][i].geoms:
+                    centroid = list(square.centroid).join("_")
+                    name = str(idx) + "_" + centroid
+                    out_path = os.join(self._out_path,
+                                       index,
+                                       name + "." + self._file_type)
 
-                collection_queue.put((collection, centroid, out_path))
-            else:
-                for j in range(META_DATA[i]["polygons"].size):
-                    centroid_idx = centroid + "_" + str(j)
-                    area_of_interest = META_DATA[i]["polygons"][j]\
-                        .toList()
-                    out_path = os.join(self.out_path,
-                                       centroid,
-                                       centroid_idx)
+                    idx += 1
+                    if not self._overwrite and Path(out_path).exists():
+                        report_queue.put("INFO",
+                                         f"File {out_path} already exists. Skipping...")
+                        result_queue.put(name + " (skipped)")
+                        continue
 
-                    if self.verbose:
-                        report_queue.put(
-                            f"Creating Collection {centroid_idx}...")
-                    collection = EEESRCollection(
-                        area_of_interest,
-                        self.start_date,
-                        self.end_date)
+                    report_queue.put("INFO",
+                                     f"Creating image {name}...")
 
-                    collection_queue.put((collection, centroid_idx, out_path))
+                    area_of_interest = ee.Geometry.Polygon(
+                        list(square.exterior.coords))
+                    image = self._image_generator(
+                        self._start_date, self._end_date, area_of_interest)
+                    image_queue.put(
+                        (image.serialize(), name, out_path))
+            except Exception as e:
+                report_queue.put("CRITICAL",
+                                 f"Failed to create image for {index}: {e}")
+        image_queue.put(None)
 
-        collection_queue.put(None)
-
-    def _collection_consumer(self,
-                             collection_queue: mp.Queue,
-                             report_queue: mp.Queue,
-                             result_queue: mp.Queue,
-                             request_limiter: mp.Semaphore) -> None:
-        while (collection_task := collection_queue.get()) is not None:
+    def _image_consumer(self,
+                        image_queue: mp.Queue,
+                        report_queue: mp.Queue,
+                        result_queue: mp.Queue,
+                        request_limiter: mp.Semaphore) -> None:
+        while (image_task := image_queue.get()) is not None:
+            image, name, out_path = image_task
             attempts = 0
-            collection, name, out_path = collection_task
-            while attempts < self.retries:
+            while attempts < self._retries:
                 attempts += 1
                 try:
-                    if self.verbose:
-                        report_queue.put(
-                            f"Requesting Image references for Collection {name}...")
-
+                    report_queue.put("INFO",
+                                     f"Requesting Image pixels for {name}...")
                     with request_limiter:
-                        # TODO: parse response errors
                         payload = {
-                            "expression": collection.expression
+                            "expression": image,
+                            "fileFormat": self._file_type
                         }
-                        response = SESSION.send_request(
-                            COLLECTION_URL, payload)
-
-                    if self.verbose:
-                        report_queue.put(
-                            f"Downloading Image files for Collection {name}...")
-                    thread_queue = Queue()
-                    threads = [Thread(
-                        target=self._downloader,
-                        args=(image, out_path, thread_queue, request_limiter))
-                        for image in json.loads(response.body)["images"]]
-                    [t.join() for t in threads]
-
-                    results = [thread_queue.get() for _ in threads]
-                    if all([not isinstance(r, Exception) for r in results]):
-                        result_queue.put(name)
-                    else:
-                        result_queue.put(results)
-                    break
-                except Exception as e:
-                    if attempts == self.retries:
-                        # TODO: parse exceptions
-                        result_queue.put(e)
+                        response = SESSION.post(
+                            IMAGE_PIXEL_URL,
+                            payload
+                        )
+                        # Google's authorized session retries internally based on the status code
+                        response.raise_for_status()
                         break
+                except Exception as e:
+                    report_queue.put(
+                        "WARNING", f"Failed to download {name}: {e}")
+                    if attempts == self._retries:
+                        report_queue.put(
+                            "ERROR",
+                            f"Max retries reached for {name}: Skipping...")
+                        result_queue.put((name, e))
+                    else:
+                        report_queue.put(
+                            "INFO",
+                            f"Retrying download for {name}...")
+                    response = None
+
+            if response is not None:
+                try:
+                    report_queue.put(
+                        "INFO",
+                        f"Writing Image pixels to {out_path}...")
+                    out_file = Path(out_path)
+                    out_file.write_bytes(response.body)
+                    result_queue.put(name)
+                except Exception as e:
+                    report_queue.put(
+                        "ERROR",
+                        f"Failed to write to {out_path}: {e}")
+                    try:
+                        out_file.unlink(missing_ok=True)
+                    except Exception as e:
+                        report_queue.put(
+                            "ERROR",
+                            f"Failed to clean file {out_path}: {e}")
 
         result_queue.put(None)
-
-    def _downloader(self,
-                    image: dict,
-                    out_path: str,
-                    result_queue: Queue,
-                    request_limiter: mp.Semaphore) -> None:
-        attempts = 0
-        while attempts < self.retries:
-            attempts += 1
-            try:
-                # Someday, google will increase the concurrent request limit
-                # TODO: Perform image size check before download
-                with request_limiter:
-                    # TODO: parse response error
-                    payload = {
-                        "name": image["name"],
-                        "fileFormat": self.file_type
-                    }
-                    response = SESSION.send_request(
-                        IMAGE_PIXEL_URL, payload)
-
-                year = self.get_year_from_rfc3339(image["startTime"])
-                out_path = os.join(
-                    out_path,
-                    year + image["id"] + "." + self.file_type
-                )
-                outfile = Path(outfile)
-                outfile.write_bytes(response.body)
-                result_queue.put(None)
-                break
-            except Exception as e:
-                # TODO: parse exceptions
-                if attempts == self.retries:
-                    result_queue.put(e)
-                    break
-
-    def get_year_from_rfc3339(date_str: str) -> str:
-        date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-        year = str(date.year)
-        return year
 
     def _init_meta_data_gcloud(self, meta_data_path: str) -> None:
         # must be run on a posix compliant system to avoid copy. On windows, forked process do not inheret globals in the same way
         global META_DATA
         global CREDENTIALS
         global SESSION
-        META_DATA = np.load(meta_data_path)
+        META_DATA = load_geojson(meta_data_path)
         CREDENTIALS = service_account.Credentials.from_service_account_file(
             os.getenv("GEE_SERVICE_KEY_PATH"))
         SESSION = AuthorizedSession(CREDENTIALS)
@@ -328,24 +317,28 @@ class Downloader:
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Downloader Arguments')
+    parser.add_argument('--start_date', type=str, required=True,
+                        default="1985-06-01", help='Start date')
+    parser.add_argument('--end_date', type=str, required=True,
+                        default="2017-09-01", help='End date')
     parser.add_argument('--out_path', type=str,
-                        default=os.getcwd(), help='Output path')
+                        help='Output path')
+    parser.add_argument('--log_path', type=str,
+                        help='Path to save logs')
     parser.add_argument('--file_type', type=str,
-                        default='zarr', help='File type to save to')
+                        help='File type to save to')
     parser.add_argument('--meta_data_path', type=str,
-                        default="meta_data.npy", help='Path to meta data')
+                        help='Path to meta data')
     parser.add_argument('--num_workers', type=int,
-                        default=mp.cpu_count(), help='Number of workers')
-    parser.add_argument('--start_date', type=str,
-                        default="2017-09-01", help='Start date')
-    parser.add_argument('--end_date', type=str,
-                        default="1985-06-01", help='End date')
-    parser.add_argument('--retries', type=int, default=5,
+                        help='Number of workers')
+    parser.add_argument('--retries', type=int,
                         help='Number of retries for failed downloads')
-    parser.add_argument('--bounding_polygon', action='store_true',
-                        help='Download area bounding_polygon instead of subareas.')
     parser.add_argument('--request_limit', type=int,
-                        default=40, help='Number of requests')
+                        help='Number of requests')
+    parser.add_argument('--size_limit', type=int,
+                        help='Size limit in MB')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Overwrite existing files')
     parser.add_argument('--verbose', action='store_true',
                         help='Print verbose output')
     return parser.parse_args()
