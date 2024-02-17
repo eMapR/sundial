@@ -7,8 +7,7 @@ END_DATE_STR = "2023-09-01"
 START_DATE = datetime.strptime(START_DATE_STR, "%Y-%m-%d")
 END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
 
-# BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
-BASE_PATH = os.path.join("check", "sundial")
+BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 META_DATA_PATH = os.path.join(BASE_PATH, "meta_data.zarr")
 CHIP_DATA_PATH = os.path.join(BASE_PATH, "chip_data.zarr")
 TRAINING_DATA_PATH = os.path.join(BASE_PATH, "training_data.zarr")
@@ -67,20 +66,6 @@ DATAMODULE = {
 }
 
 SUNDIAL = {
-    "in_channels": len(BANDS),
-    "patch_size": 16,
     "num_frames": BACK_STEP + 1,
-    "tubelet_size": 1,
-    "encoder_embed_dim": 1024,
-    "encoder_depth": 24,
-    "encoder_heads": 8,
-    "decoder_embed_dim": 1024,
-    "decoder_depth": 24,
-    "decoder_heads": 8,
-    "mlp_ratio": .4,
-    "norm_layer": nn.LayerNorm,
-    "norm_pix_loss": True,
-    "patch_embed_norm": None,
-    "flatten": True,
-    "bias": True
+    "num_channels": len(BANDS),
 }
