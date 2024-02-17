@@ -2,7 +2,7 @@ import os
 import logging
 
 
-def get_logger(log_path: str, name: str = __name__) -> logging.Logger:
+def get_logger(log_path: str, name: str) -> logging.Logger:
     """
     Get a simple logger instance with the specified log path.
 
@@ -15,7 +15,7 @@ def get_logger(log_path: str, name: str = __name__) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
-    file_handler = logging.FileHandler(os.join(log_path, __name__ + '.log'))
+    file_handler = logging.FileHandler(os.path.join(log_path, name + '.log'))
     file_handler.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
