@@ -1,7 +1,5 @@
-import torch
-import torch.nn as nn
-import numpy as np
 import lightning as L
+import torch
 
 
 from transformers import VideoMAEConfig, VideoMAEModel, VideoMAEForPreTraining

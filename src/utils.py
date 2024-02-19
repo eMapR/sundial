@@ -46,6 +46,7 @@ def lt_image_generator(
         start_date: datetime,
         end_date: datetime,
         area_of_interest: ee.Geometry,
+        scale: int,
         mask_labels: list[str] = MASK_LABELS) -> ee.Image:
     lt = LandTrendr(
         start_date=start_date,
@@ -64,12 +65,13 @@ def lt_image_generator(
     return lt.build_sr_collection()\
         .toBands()\
         .select(old_band_names, new_band_names)\
-        .clipToBoundsAndScale(geometry=area_of_interest, scale=30)
+        .clipToBoundsAndScale(geometry=area_of_interest, scale=scale)
 
 
 def zarr_reshape(
         arr: np.ndarray,
         polygon_name: str,
+        point_name: str,
         start_year: int,
         end_year: int) -> None:
     xr_list = []
@@ -86,13 +88,16 @@ def zarr_reshape(
     xr_new = xr.concat(xr_list, dim="year")
     xr_new.chunk(chunks={"year": 1})
     xr_new.name = polygon_name
+    xr_new.attrs.update(**{"point": point_name})
     return xr_new
 
 
-def generate_name(coords: list[float]) -> str:
-    if len(coords) > 1:
+def generate_name(coords: tuple[float]) -> str:
+    if len(coords) > 2:
         coords = coords[:-1]
-    return "_".join([f"x{x}y{y}" for x, y in coords])
+        return "_".join([f"x{x}y{y}" for x, y in coords])
+    else:
+        return f"x{coords[0]}y{coords[1]}"
 
 
 def parse_meta_data(

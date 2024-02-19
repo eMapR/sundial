@@ -1,10 +1,10 @@
 import torch
 
-import xarray as xr
 import lightning as L
+import xarray as xr
 
-from typing import List, Literal
 from torch.utils.data import Dataset, DataLoader
+from typing import Literal
 
 from settings import DATAMODULE as configs
 
@@ -72,6 +72,7 @@ class ChipsDataModule(L.LightningDataModule):
         chips_path: str = configs["chips_path"],
         training_samples_path: str = configs["training_samples_path"],
         validate_samples_path: str = configs["validate_samples_path"],
+        test_samples_path: str = configs["test_samples_path"],
         predict_samples_path: str = configs["predict_samples_path"],
         chip_size: int = configs["chip_size"],
         base_year: int = configs["base_year"],
@@ -83,6 +84,7 @@ class ChipsDataModule(L.LightningDataModule):
         self.chips_path = chips_path
         self.training_samples_path = training_samples_path
         self.validate_samples_path = validate_samples_path
+        self.test_samples_path = test_samples_path
         self.predict_samples_path = predict_samples_path
         self.chip_size = chip_size
         self.base_year = base_year
@@ -91,33 +93,33 @@ class ChipsDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.transform = None  # look into mean/std normalization
 
-    def setup(self, stage: Literal["train", "predict"]) -> None:
+    def setup(self, stage: Literal["train", "test", "predict"]) -> None:
+        configs = {
+            "chips_path": self.chips_path,
+            "chip_size": self.chip_size,
+            "base_year": self.base_year,
+            "back_step": self.back_step,
+            "transform": self.transform
+        }
+
         match stage:
             case "train":
                 self.training_ds = ChipsDataset(
-                    chips_path=self.chips_path,
-                    chip_size=self.chip_size,
-                    base_year=self.base_year,
-                    back_step=self.back_step,
                     sample_names_path=self.training_samples_path,
-
-                    transform=self.transform)
+                    **configs)
                 self.validate_ds = ChipsDataset(
-                    chips_path=self.chips_path,
-                    chip_size=self.chip_size,
-                    base_year=self.base_year,
-                    back_step=self.back_step,
                     sample_names_path=self.validate_samples_path,
-                    transform=self.transform)
+                    **configs)
+
+            case "test":
+                self.test_ds = ChipsDataset(
+                    sample_names_path=self.test_samples_path,
+                    **configs)
 
             case "predict":
                 self.predict_ds = ChipsDataset(
-                    chips_path=self.chips_path,
-                    chip_size=self.chip_size,
-                    base_year=self.base_year,
-                    back_step=self.back_step,
                     sample_names_path=self.predict_samples_path,
-                    transform=self.transform)
+                    **configs)
 
     def train_dataloader(self):
         return DataLoader(
@@ -128,6 +130,14 @@ class ChipsDataModule(L.LightningDataModule):
         )
 
     def val_dataloader(self):
+        return DataLoader(
+            self.validate_ds,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
+
+    def test_dataloader(self):
         return DataLoader(
             self.validate_ds,
             batch_size=self.batch_size,

@@ -12,6 +12,9 @@ def get_logger(log_path: str, name: str) -> logging.Logger:
     Returns:
         logging.Logger: The logger instance.
     """
+    if not os.path.exists(log_path):
+        os.makedirs(log_path)
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
