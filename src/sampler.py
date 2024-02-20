@@ -1,6 +1,7 @@
 import ee
 import argparse
 import time
+import utm
 import yaml
 
 import geopandas as gpd
@@ -88,11 +89,26 @@ def draw_bounding_square(
         feature: ee.Feature,
         edge_size: int,
         projection: str | None = None) -> ee.feature:
-    if projection:
-        # Note: repojection is done at download
-        projection = ee.Projection(projection)
     point = feature.geometry()
-    square = point.buffer(edge_size // 2).bounds(proj=projection).coordinates()
+    maxError = ee.Number(0.001)
+    match projection:
+        case "UTM":
+            # Generate UTM zone
+            latitude = ee.Number(point.coordinates().get(0))
+            longitude = ee.Number(point.coordinates().get(1))
+            zone = ee.String(latitude.add(
+                ee.Number(180)).divide(6).round().format("%d"))
+            prefix = ee.String(ee.Algorithms.If(longitude.lt(
+                0), ee.String("EPSG:326"), ee.String("EPSG:327")))
+            projection = prefix.cat(zone)
+        case None:
+            # Note: repojection is done at download
+            maxError = None
+        case _:
+            projection = ee.Projection(projection)
+
+    square = point.buffer(
+        edge_size // 2).bounds(maxError=maxError, proj=projection).coordinates()
     return feature.set(
         "square",
         square)

@@ -249,14 +249,18 @@ class Downloader:
                     self._scale)
 
                 # Reprojecting the image if necessary
-                if self._reproject is not None:
-                    if type(self._reproject) == str:
-                        epsg_code = self._reproject
-                    else:
+                match self._reproject:
+                    case "UTM":
                         revserse_point = reversed(point_coords)
                         utm_zone = utm.from_latlon(*revserse_point)[-2:]
                         epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
                         epsg_code = f"{epsg_prefix}{utm_zone[0]}"
+                        report_queue.put(
+                            ("INFO", f"Reprojecting image payload {polygon_name} to {epsg_code}..."))
+                    case _:
+                        epsg_code = self._reproject
+
+                if epsg_code is not None:
                     report_queue.put(
                         ("INFO", f"Reprojecting image payload {polygon_name} to {epsg_code}..."))
                     image = image.reproject(crs=epsg_code, scale=self._scale)
