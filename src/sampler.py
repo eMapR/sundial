@@ -10,11 +10,15 @@ import xarray as xr
 
 from datetime import datetime
 from typing import Literal
+from shapely.ops import unary_union
 from shapely.geometry import Polygon, MultiPolygon
 from sklearn.model_selection import train_test_split
 
 from logger import get_logger
 from utils import parse_meta_data, SQUARE_COLUMNS
+
+MAX_SUBREGION_EDGE = 1e6
+MAX_NUM_POINTS_COUNT = 1e3
 
 
 def get_elevation_image(
@@ -36,6 +40,17 @@ def get_percentile_ranges(
         single_band_image: ee.Image,
         area_of_interest: ee.Geometry,
         percentiles: list[int]) -> list[int]:
+    """
+    Calculates the percentile ranges between 0 and 100 of a single band image within a specified area of interest.
+
+    Args:
+        single_band_image (ee.Image): The single band image.
+        area_of_interest (ee.Geometry): The area of interest.
+        percentiles (list[int]): The list of percentiles to calculate.
+
+    Returns:
+        list[int]: The sorted list of percentile ranges.
+    """
     return sorted(single_band_image.reduceRegion(
         reducer=ee.Reducer.percentile(percentiles),
         geometry=area_of_interest,
@@ -47,6 +62,18 @@ def stratify_by_percentile(
         single_band_image: ee.Image,
         percentiles: list[int],
         out_band_name: str = None) -> ee.Image:
+    """
+    Stratifies a single-band image into different classes based on list of percentile ranges.
+
+    Args:
+        single_band_image (ee.Image): The single-band image to be stratified.
+        percentiles (list[int]): A list of percentiles to use for stratification.
+        out_band_name (str, optional): The name of the output band. Defaults to None.
+
+    Returns:
+        ee.Image: The stratified image.
+
+    """
     result = ee.Image(0)
     for idx in range(len(percentiles) - 1):
         mask = single_band_image.gte(percentiles[idx]).And(
@@ -57,19 +84,60 @@ def stratify_by_percentile(
     return result
 
 
+def draw_bounding_square(
+        feature: ee.Feature,
+        edge_size: int,
+        projection: str | None = None) -> ee.feature:
+    if projection:
+        # Note: repojection is done at download
+        projection = ee.Projection(projection)
+    point = feature.geometry()
+    square = point.buffer(edge_size // 2).bounds(proj=projection).coordinates()
+    return feature.set(
+        "square",
+        square)
+
+
+def generate_random_points(
+        feature: ee.Feature,
+        radius: int,
+        num_points: int,
+) -> ee.FeatureCollection:
+    geometry = feature.geometry().buffer(distance=radius)
+    return ee.FeatureCollection.randomPoints(
+        region=geometry,
+        points=num_points,
+        seed=round(time.time()),
+    )
+
+
 def stratified_sampling(
-        num_points_per: int,
-        num_subclasses: int,
+        num_points: int,
+        num_strata: int,
         start_date: datetime,
         end_date: datetime,
-        area_of_interest: Polygon | MultiPolygon,
-        scale: int) -> gpd.GeoDataFrame:
-    ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
-    area_of_interest = ee.Geometry.Polygon(
-        list(area_of_interest.exterior.coords))
-    percentiles = ee.List.sequence(0, 100, count=num_subclasses+1)
+        area_of_interest: ee.Geometry,
+        scale: int) -> ee.FeatureCollection:
+    """
+    Performs stratified sampling on images within a specified area of interest based on PRISM and elevation.
 
-    LOGGER.info("Getting raw images for stratisfied sampling...")
+    Args:
+        num_points (int): The total number of points to sample.
+        num_strata (int): The total number of strata to divide the data into.
+        start_date (datetime): The start date of the time range for image collection.
+        end_date (datetime): The end date of the time range for image collection.
+        area_of_interest (ee.Geometry): The area of interest for sampling.
+        scale (int): The scale at which to perform stratified sampling.
+
+    Returns:
+        ee.FeatureCollection: A feature collection containing the sampled points.
+    """
+    num_images = 2
+    num_strata = num_strata ** (1/num_images)
+    num_points = num_points // num_strata
+    percentiles = ee.List.sequence(0, 100, count=num_strata+1)
+
+    LOGGER.info("Getting mean images for stratified sampling...")
     raw_images = []
     raw_images.append(get_prism_image(area_of_interest, start_date, end_date))
     raw_images.append(get_elevation_image(area_of_interest))
@@ -84,20 +152,21 @@ def stratified_sampling(
 
     LOGGER.info("Concatenating stratified images...")
     combined = ee.Image.cat(stratified_images)
-    num_bands = len(stratified_images)
+    num_bands = num_images
     concatenate_expression = " + ".join(
         [f"(b({i})*(100**{i}))" for i in range(num_bands)])
     concatenated = combined.expression(concatenate_expression).toInt()
 
-    LOGGER.info("Sampling points...")
-    features = concatenated.stratifiedSample(
-        num_points_per,
+    LOGGER.info("Requesting stratified sampling...")
+    return concatenated.stratifiedSample(
+        num_points,
         region=area_of_interest,
         scale=scale,
         geometries=True)
 
+
+def download_features(features: ee.FeatureCollection) -> gpd.GeoDataFrame:
     LOGGER.info("Converting to GeoDataFrame...")
-    # TODO: add try, exceptions, and logging
     try:
         return ee.data.computeFeatures({
             "expression": features,
@@ -106,61 +175,6 @@ def stratified_sampling(
         LOGGER.critical(
             f"Failed to convert feature collection to GeoDataFrame: {e}")
         raise e
-
-
-def generate_overlapping_squares(
-        polygon: Polygon | MultiPolygon,
-        edge_size: float) -> list[Polygon]:
-
-    x_min, y_min, x_max, y_max = polygon.bounds
-    x_padding = (((x_max - x_min) % edge_size) / 2)
-    y_padding = (((y_max - y_min) % edge_size) / 2)
-
-    if edge_size > (y_max - y_min):
-        y_padding = 0
-    if edge_size > (x_max - x_min):
-        x_padding = 0
-
-    x_start = x_min - x_padding
-    y_start = y_min - y_padding
-    x_end = x_max + x_padding
-    y_end = y_max + y_padding
-
-    squares = []
-    x = x_start
-    while x < x_end:
-        y = y_start
-        while y < y_end:
-            square = [(x, y),
-                      (x + edge_size, y),
-                      (x + edge_size, y + edge_size),
-                      (x, y + edge_size),
-                      (x, y)]
-            if square.intersects(polygon):
-                squares.append(square)
-            y += edge_size
-        x += edge_size
-
-    return squares
-
-
-def generate_overlapping_indices(
-        square_pixel_length: int,
-        index_pixel_length: int) -> list[list[list[int, int]]]:
-    padding = square_pixel_length % index_pixel_length
-    end_padding = padding // 2
-    start_padding = padding - end_padding
-
-    indices = []
-    x = start_padding
-    while x < square_pixel_length:
-        y = start_padding
-        while y < square_pixel_length:
-            indices.append([[x, x + index_pixel_length],
-                           [y, y + index_pixel_length]])
-            y += index_pixel_length
-        x += index_pixel_length
-    return indices
 
 
 def generate_gaussian_squares(
@@ -176,33 +190,6 @@ def generate_gaussian_squares(
         square_centroid, edge_size) for _ in range(num_squares) for square_centroid in square_centroids]
 
     return squares
-
-
-def generate_gaussian_indices(
-        square_pixel_length: int,
-        index_pixel_length: int,
-        std_dev: float,
-        num_squares: int) -> list[list[list[int, int]]]:
-    x_coords = np.random.normal(square_pixel_length // 2, std_dev, num_squares)
-    y_coords = np.random.normal(square_pixel_length // 2, std_dev, num_squares)
-    index_centroids = np.column_stack((x_coords, y_coords))
-    start_diff = index_pixel_length // 2
-    end_diff = start_diff
-    if index_pixel_length % 2 == 0:
-        start_diff -= 1
-
-    indices = []
-    for centroid in index_centroids:
-        if all(
-            [centroid[0] - start_diff >= 0,
-             centroid[0] + end_diff < square_pixel_length,
-             centroid[1] - start_diff >= 0,
-             centroid[1] + end_diff < square_pixel_length]
-        ):
-            indices.append([[centroid[0] - start_diff, centroid[0] + end_diff],
-                            [centroid[1] - start_diff, centroid[1] + end_diff]])
-
-    return indices
 
 
 def generate_single_square(
@@ -227,86 +214,58 @@ def generate_single_square(
 def generate_squares(
         start_date: datetime,
         end_date: datetime,
-        method: Literal["overlap", "gaussian", "single"],
+        method: Literal["convering_grid", "random", "stratified"],
         file_path: str | None,
-        new_points: bool,
-        num_points_per: int | None,
-        num_subclasses: int,
-        scale: int,
-        save_path: str | None,
-        edge_size: float,
-        std_dev: float | None,
-        num_squares: int | None,
+        num_points: int | None,
+        num_strata: int,
+        strat_scale: int,
+        edge_size: int | float,
         meta_data_path) -> None:
+    ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
     LOGGER.info("Loading geo file into GeoDataFrame...")
     gdf = gpd.read_file(file_path)
-    if new_points:
-        LOGGER.info("Generating stratified samples into GeoDataFrame...")
-        if num_points_per is None:
-            raise ValueError("num_points is required for generating polygons")
-        if num_subclasses is None:
-            raise ValueError(
-                "num_subclasses is required for generating polygons")
-        if scale is None:
-            raise ValueError("scale is required for generating polygons")
-        gdf = stratified_sampling(
-            num_points_per,
-            num_subclasses,
-            start_date,
-            end_date,
-            gdf["geometry"][0],
-            scale)
-        if save_path is not None:
-            gdf.to_file(save_path)
+    unary_polygon = unary_union(gdf["geometry"])
+    gee_polygon = ee.Geometry.Polygon(
+        list(unary_polygon.exterior.coords))
+    # TODO: partition a polygon into smaller polygons and request samples in parallel
 
+    LOGGER.info(f"Generating squares via {method}...")
     match method:
-        case "overlap":
-            LOGGER.info("Generating overlapping squares...")
-            df_list = []
-            for polygon in gdf["geometry"]:
-                df = pd.DataFrame(
-                    generate_overlapping_squares(polygon, edge_size),
-                    columns=SQUARE_COLUMNS)
-                df["point"] = [polygon.centroid.coords[0]] * df.shape[0]
-                df_list.append(df)
-            df_out = pd.concat(df_list, axis=0)
+        case "convering_grid":
+            squares = gee_polygon.coveringGrid(
+                scale=edge_size)
+        case "random":
+            points = generate_random_points(
+                gee_polygon, edge_size, num_points)
+            squares = points.map(
+                lambda f: draw_bounding_square(f, edge_size))
 
-        case "gaussian":
-            LOGGER.info("Generating gaussian squares...")
-            if std_dev is None:
-                raise ValueError("std_dev is required for gaussian sampling")
-            if num_squares is None:
-                raise ValueError(
-                    "num_squares is required for gaussian sampling")
-            df_list = []
-            for point in gdf["geometry"]:
-                point = point.centroid.coords[0]
-                df = pd.DataFrame(
-                    generate_gaussian_squares(
-                        point,
-                        edge_size,
-                        std_dev,
-                        num_squares),
-                    columns=SQUARE_COLUMNS)
-                df["point"] = [point] * df.shape[0]
-                df_list.append(df)
-                break
-            df_out = pd.concat(df_list, axis=0)
+        case "stratified":
+            points = stratified_sampling(
+                num_points,
+                num_strata,
+                start_date,
+                end_date,
+                gee_polygon,
+                strat_scale)
+            squares = points.map(
+                lambda f: draw_bounding_square(f, edge_size))
 
-        case "single":
-            LOGGER.info("Generating single squares...")
-            df_out = pd.DataFrame(
-                [generate_single_square(point, edge_size)
-                 for point in gdf["geometry"]],
-                columns=SQUARE_COLUMNS)
-        case _:
-            LOGGER.critical("Invalid method")
-            raise ValueError("Invalid method")
+    LOGGER.info("Downloading squares from GEE...")
+    gdf = download_features(squares)
 
-    LOGGER.info("Saving squares to file...")
-    df_out.index = range(len(df_out))
-    xarr = df.to_xarray().astype([("x", float), ("y", float)])
+    LOGGER.info("Processing squares for zarr...")
+    df_out = gdf["square"]\
+        .explode()\
+        .apply(pd.Series)\
+        .add_prefix("square_")\
+        .map(tuple)
+    df_out["point"] = gdf["geometry"].apply(lambda p: p.coords[0])
+    df_out["constant"] = gdf["constant"]
+
+    LOGGER.info("Converting to xarray and saving...")
+    xarr = df_out.to_xarray().astype([("x", float), ("y", float)])
     xarr.to_zarr(
         store=meta_data_path,
         mode="a")
@@ -337,12 +296,13 @@ def generate_time_samples(
     df_out.index = range(len(df_out))
 
     LOGGER.info(
-        "Splitting data into training, validation, and prediction sets...")
+        "Splitting sample data into training, validation, and test sets...")
     df_train, df_validate = train_test_split(
         df_out, test_size=0.20, random_state=round(time.time()))
     df_validate, df_test = train_test_split(
         df_validate, test_size=0.01, random_state=round(time.time()))
 
+    LOGGER.info(f"Saving sample data to {path}...")
     df_list = [df_train, df_validate, df_test]
     paths = [training_samples_path, validate_samples_path, test_samples_path]
 
@@ -362,35 +322,45 @@ def main(**kwargs):
     global LOGGER
     LOGGER = get_logger(configs["log_path"], configs["log_name"])
 
-    if kwargs["generate_squares"]:
-        square_config = {
-            "start_date": configs["start_date"],
-            "end_date": configs["end_date"],
-            "method": configs["method"],
-            "file_path": configs["file_path"],
-            "new_points": configs["new_points"],
-            "num_points_per": configs["num_points_per"],
-            "num_subclasses": configs["num_subclasses"],
-            "scale": configs["scale"],
-            "save_path": configs["save_path"],
-            "edge_size": configs["edge_size"],
-            "std_dev": configs["std_dev"],
-            "num_squares": configs["num_squares"],
-            "meta_data_path": configs["meta_data_path"],
-        }
-        generate_squares(**square_config)
+    try:
+        if kwargs["generate_squares"]:
+            LOGGER.info("Generating squares...")
+            start = time.time()
+            square_config = {
+                "start_date": configs["start_date"],
+                "end_date": configs["end_date"],
+                "method": configs["method"],
+                "file_path": configs["file_path"],
+                "num_points": configs["num_points"],
+                "num_strata": configs["num_strata"],
+                "strat_scale": configs["strat_scale"],
+                "edge_size": configs["edge_size"],
+                "meta_data_path": configs["meta_data_path"],
+            }
+            generate_squares(**square_config)
+            end = time.time()
+            LOGGER.info(
+                f"Generating squares completed in: {round((end - start)/2)} minutes")
 
-    if kwargs["generate_time_samples"]:
-        time_samples_config = {
-            "start_year": configs["start_date"].year,
-            "end_year": configs["end_date"].year,
-            "back_step": configs["back_step"],
-            "meta_data_path": configs["meta_data_path"],
-            "training_samples_path": configs["training_samples_path"],
-            "validate_samples_path": configs["validate_samples_path"],
-            "test_samples_path": configs["test_samples_path"],
-        }
-        generate_time_samples(**time_samples_config)
+        if kwargs["generate_time_samples"]:
+            LOGGER.info("Generating time samples...")
+            start = time.time()
+            time_samples_config = {
+                "start_year": configs["start_date"].year,
+                "end_year": configs["end_date"].year,
+                "back_step": configs["back_step"],
+                "meta_data_path": configs["meta_data_path"],
+                "training_samples_path": configs["training_samples_path"],
+                "validate_samples_path": configs["validate_samples_path"],
+                "test_samples_path": configs["test_samples_path"],
+            }
+            generate_time_samples(**time_samples_config)
+            end = time.time()
+            LOGGER.info(
+                f"Generating time samples completed in: {round((end - start)/2)} minutes")
+            # TODO:  develop a decorator for logging performance time
+    except Exception as e:
+        LOGGER.critical(f"Failed to generate samples: {e}")
 
 
 def parse_args():

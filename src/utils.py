@@ -72,6 +72,7 @@ def zarr_reshape(
         arr: np.ndarray,
         polygon_name: str,
         point_name: str,
+        edge_size: int,
         start_year: int,
         end_year: int) -> None:
     xr_list = []
@@ -85,11 +86,33 @@ def zarr_reshape(
              arr[f"{year}_B7"]]),
             dims=['x', 'y', "band"])
         xr_list.append(xr_year.astype(float))
-    xr_new = xr.concat(xr_list, dim="year")
-    xr_new.chunk(chunks={"year": 1})
-    xr_new.name = polygon_name
-    xr_new.attrs.update(**{"point": point_name})
-    return xr_new
+    xarr = xr.concat(xr_list, dim="year")
+    xarr.chunk(chunks={"year": 1})
+    xarr.name = polygon_name
+    xarr.attrs.update(**{"point": point_name})
+
+    if edge_size:
+        xarr = pad_xy_xarray(xarr, edge_size)
+
+    return xarr
+
+
+def pad_xy_xarray(
+        xarr: xr.DataArray,
+        edge_size: int) -> xr.DataArray:
+    x_diff = edge_size - xarr["x"].size
+    y_diff = edge_size - xarr["y"].size
+
+    x_start = x_diff // 2
+    x_end = x_diff - x_start
+
+    y_start = y_diff // 2
+    y_end = y_diff - y_start
+
+    xarr = xarr.pad(
+        x=(x_start, x_end),
+        y=(y_start, y_end))
+    return xarr
 
 
 def generate_name(coords: tuple[float]) -> str:

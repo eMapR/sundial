@@ -4,12 +4,11 @@ import numpy as np
 import multiprocessing as mp
 import os
 import time
+import utm
 import xarray as xr
 import yaml
 import zarr
 
-
-# from google.api_core import retry
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -28,12 +27,13 @@ class Downloader:
     A class for downloading images from Google Earth Engine via polygons passed in by geojson.
 
     Args:
-        start_date (datetime): The start date to filter image data.
-        end_date (datetime): The end date to filter image data.
+        start_date (datetime): The start date to filter image collection.
+        end_date (datetime): The end date to filter image collection.
         file_type (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]): The file type to save the image data as.
-        scale (int): The scale to use for the image data.
-        out_path (str): The path to save the image data to.
-        meta_data_path (str): The path to the meta data file.
+        scale (int): The scale to use for projecting image.
+        edge_size (int): The edge size to use to calculate padding.
+        chip_data_path (str): The path to save the image data to.
+        meta_data_path (str): The path to the meta data file with coordinates.
         num_workers (int): The number of workers to use for the parallel download process.
         retries (int): The number of retries to use for the download process.
         request_limit (int): The number of requests to make at a time.
@@ -55,7 +55,9 @@ class Downloader:
             end_date: datetime,
             file_type: Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"],
             scale: int,
-            out_path: str,
+            edge_size: int,
+            reproject: bool,
+            chip_data_path: str,
             meta_data_path: str,
             num_workers: int,
             retries: int,
@@ -64,12 +66,15 @@ class Downloader:
             overwrite: bool,
             log_path: str,
             log_name: str,
+            test: bool
     ) -> None:
         self._start_date = start_date
         self._end_date = end_date
         self._file_type = file_type
         self._scale = scale
-        self._out_path = out_path
+        self._edge_size = edge_size
+        self._reproject = reproject
+        self._out_path = chip_data_path
         self._meta_data_path = meta_data_path
         self._num_workers = num_workers
         self._retries = retries
@@ -78,12 +83,13 @@ class Downloader:
         self._overwrite = overwrite
         self._log_path = log_path
         self._log_name = log_name
+        self._test = test
 
         # TODO: Parameterize the image generator callable
         # TODO: Perform attribute checks
         self._image_gen_callable = lt_image_generator
         self._meta_data = xr.open_zarr(self._meta_data_path)
-        self._meta_size = self._meta_data["index"].size
+        self._meta_size = 10 if test else self._meta_data["index"].size
 
     def start(self) -> None:
         """
@@ -113,9 +119,7 @@ class Downloader:
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
-        io_lock = manager.Lock()
         request_limiter = manager.Semaphore(self._request_limit)
-
         workers = set()
 
         reporter = mp.Process(
@@ -140,7 +144,6 @@ class Downloader:
                     image_queue,
                     result_queue,
                     report_queue,
-                    io_lock,
                     request_limiter),
                 daemon=True)
             workers.add(image_consumer)
@@ -154,7 +157,8 @@ class Downloader:
             report_queue.put(("INFO", result))
         end_time = time.time()
         report_queue.put(("INFO",
-                         f"Download completed in {round((end_time - start_time) / (60))} minutes..."))
+                         f"Download completed in {round((end_time - start_time) / (60), 2)} minutes..."))
+        report_queue.put(("INFO", "Finalizing last file writes..."))
         report_queue.put(None)
         [w.join() for w in workers]
 
@@ -187,21 +191,22 @@ class Downloader:
                 file_ext = "tif"
             case "NPY" | "NUMPY_NDARRAY":
                 file_ext = "npy"
+            case "ZARR":
+                file_ext = "zarr"
         for idx in range(self._meta_size):
             try:
                 # creating an outpath for each polygon
-                _, point_name, polygon_coords, polygon_name\
+                point_coords, point_name, polygon_coords, polygon_name\
                     = parse_meta_data(self._meta_data, idx)
 
                 # checking for existing files
                 if self._file_type != "ZARR":
-                    out_path = os.path.join(out_path,
-                                            point_name,
-                                            f"{polygon_name}.{file_ext}")
+                    chip_data_path = os.path.join(chip_data_path,
+                                                  f"{polygon_name}.{file_ext}")
 
-                    if not self._overwrite and Path(out_path).exists():
+                    if not self._overwrite and Path(chip_data_path).exists():
                         report_queue.put(
-                            "INFO", f"File {out_path} already exists. Skipping...")
+                            "INFO", f"File {chip_data_path} already exists. Skipping...")
                         result_queue.put(polygon_name)
                         continue
                 else:
@@ -210,7 +215,7 @@ class Downloader:
                             # opening with read only mode to check for existing zarr groups
                             zarr.open(
                                 store=os.path.join(
-                                    self._out_path, point_name),
+                                    self._out_path),
                                 mode="r")[polygon_name]
                             report_queue.put(("INFO",
                                               f"{polygon_name} already exists at path. Skipping..."))
@@ -238,7 +243,25 @@ class Downloader:
                     ("INFO", f"Creating image payload {polygon_name}..."))
                 area_of_interest = ee.Geometry.Polygon(polygon_coords)
                 image = self._image_gen_callable(
-                    self._start_date, self._end_date, area_of_interest, self._scale)
+                    self._start_date,
+                    self._end_date,
+                    area_of_interest,
+                    self._scale)
+
+                # Reprojecting the image if necessary
+                if self._reproject is not None:
+                    if type(self._reproject) == str:
+                        epsg_code = self._reproject
+                    else:
+                        revserse_point = reversed(point_coords)
+                        utm_zone = utm.from_latlon(*revserse_point)[-2:]
+                        epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
+                        epsg_code = f"{epsg_prefix}{utm_zone[0]}"
+                    report_queue.put(
+                        ("INFO", f"Reprojecting image payload {polygon_name} to {epsg_code}..."))
+                    image = image.reproject(crs=epsg_code, scale=self._scale)
+
+                # encoding the image for the image consumer
                 payload = {
                     "expression": ee.serializer.encode(image),
                     "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
@@ -249,9 +272,9 @@ class Downloader:
                     (payload, polygon_name, point_name, self._out_path))
             except Exception as e:
                 report_queue.put(
-                    ("CRITICAL", f"Failed to create image for {polygon_name} skipping: {e}"))
+                    ("CRITICAL", f"Failed to create image payload for {polygon_name} skipping: {e}"))
                 result_queue.put(polygon_name)
-        image_queue.put(None)
+        [image_queue.put(None) for i in range(self._num_workers)]
 
     def _xr_image_generator(self,
                             image_queue: mp.Queue,
@@ -274,13 +297,12 @@ class Downloader:
                         image_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
-                        io_lock: mp.Lock,
                         request_limiter: mp.Semaphore) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         while (image_task := image_queue.get()) is not None:
-            payload, polygon_name, point_name, out_path = image_task
+            payload, polygon_name, point_name, chip_data_path = image_task
             attempts = 0
-
+            arr = None
             # attempt to download the image
             while attempts < self._retries:
                 attempts += 1
@@ -308,40 +330,41 @@ class Downloader:
             # write the image to disk
             if arr is not None:
                 report_queue.put(
-                    ("INFO", f"Attempting to save {polygon_name} pixels to {out_path}..."))
+                    ("INFO", f"Attempting to save {polygon_name} pixels to {chip_data_path}..."))
                 try:
                     # TODO: perform reshaping along years for non zarr file types
                     match self._file_type:
                         case "NPY" | "GEO_TIFF":
-                            out_file = Path(out_path)
+                            out_file = Path(chip_data_path)
                             out_file.write_bytes(arr)
                         case "NUMPY_NDARRAY":
-                            np.save(out_path, arr)
+                            np.save(chip_data_path, arr)
                         case "ZARR":
                             report_queue.put((
-                                "INFO", f"Reshaping image {arr.shape} to zarr..."))
+                                "INFO", f"Reshaping {arr.shape} {polygon_name} to zarr..."))
                             xarr = zarr_reshape(arr,
                                                 polygon_name,
                                                 point_name,
+                                                self._edge_size,
                                                 self._start_date.year,
                                                 self._end_date.year)
 
                             report_queue.put((
-                                "INFO", f"Writing image of shape {xarr.shape}..."))
-                            with io_lock:
-                                xarr.to_zarr(
-                                    store=out_path,
-                                    group=point_name,
-                                    mode="a")
+                                "INFO", f"Writing {xarr.shape} {polygon_name} to file..."))
+
+                            # Note: no io lock is needed since each image is it's own array
+                            xarr.to_zarr(
+                                store=chip_data_path,
+                                mode="a")
                 except Exception as e:
                     report_queue.put(
-                        ("ERROR", f"Failed to write to {out_path}: {type(e)} {e}"))
+                        ("ERROR", f"Failed to write {polygon_name} to {chip_data_path}: {type(e)} {e}"))
                     if self._file_type == "NPY":
                         try:
                             out_file.unlink(missing_ok=True)
                         except Exception as e:
                             report_queue.put(
-                                ("ERROR", f"Failed to clean file {out_path}: {type(e)} {e}"))
+                                ("ERROR", f"Failed to clean file {polygon_name} in {chip_data_path}: {type(e)} {e}"))
             result_queue.put(polygon_name)
 
         result_queue.put(None)

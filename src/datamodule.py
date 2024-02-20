@@ -12,41 +12,46 @@ from settings import DATAMODULE as configs
 class ChipsDataset(Dataset):
     def __init__(self,
                  chips_path: str,
-                 sample_names_path: str,
+                 sample_path_names: str,
                  chip_size: int,
                  base_year: int,
                  back_step: int,
                  transform=None):
         super().__init__()
         self.chips_path = chips_path
-        self.sample_names_path = sample_names_path
+        self.sample_path_names = sample_path_names
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
         self.transform = transform
 
-    def clip_chip(self, data):
-        diff = data.shape[0] - self.chip_size
-        start_diff = diff // 2
-        end_diff = diff - start_diff
-        return data[:,
-                    start_diff-1:-end_diff,
-                    start_diff-1:-end_diff]
+    def clip_chip(self, xarr):
+        x_diff = xarr["x"].size - self.chip_size
+        y_diff = xarr["y"].size - self.chip_size
 
-    def __getitem__(self, idx):
-        sample_name_data = xr.open_zarr(self.sample_names_path)
+        x_start = x_diff // 2
+        x_end = x_diff - x_start
 
-        point_name = sample_name_data["point"].isel(index=idx).values.item()
-        polygon_name = sample_name_data["square"].isel(index=idx).values.item()
-        year = sample_name_data["year"].isel(index=idx).values.item()
+        y_start = y_diff // 2
+        y_end = y_diff - y_start
+        return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
 
+    def slice_year(self, xarr, year):
         end_year = int(year) - self.base_year
         start_year = end_year - self.back_step
+        return xarr.sel(year=slice(start_year, end_year+1))
 
-        chip = xr.open_zarr(self.samples_path, group=point_name)[
-            polygon_name][start_year:end_year]
+    def __getitem__(self, idx):
+        # opening dataarray
+        paths = xr.open_zarr(self.sample_path_names)
+        name = paths["square"].isel(index=idx).values.item()
+        year = paths["year"].isel(index=idx).values.item()
+        chip = xr.open_zarr(self.chips_path)[name]
 
-        chip = self.clip_chip(chip)
+        # slicing target year and pixels
+        chip = self.slice_year(self, chip, year)
+        if self.chip_size < chip["x"].size:
+            chip = self.clip_chip(chip)
 
         # TODO: normalize band values
         if self.transform:
