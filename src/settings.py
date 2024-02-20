@@ -48,7 +48,7 @@ DOWNLOADER = {
     "file_type": "ZARR",
     "scale": SCALE,
     "edge_size": round((SAMPLER["edge_size"]/SCALE)*1.05),
-    "reproject": True,
+    "reproject": "UTM",
     "chip_data_path": CHIP_DATA_PATH,
     "meta_data_path": META_DATA_PATH,
     "num_workers": 64,

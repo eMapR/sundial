@@ -12,14 +12,10 @@ import xarray as xr
 from datetime import datetime
 from typing import Literal
 from shapely.ops import unary_union
-from shapely.geometry import Polygon, MultiPolygon
 from sklearn.model_selection import train_test_split
 
 from logger import get_logger
 from utils import parse_meta_data, SQUARE_COLUMNS
-
-MAX_SUBREGION_EDGE = 1e6
-MAX_NUM_POINTS_COUNT = 1e3
 
 
 def get_elevation_image(
@@ -102,7 +98,7 @@ def draw_bounding_square(
                 0), ee.String("EPSG:326"), ee.String("EPSG:327")))
             projection = prefix.cat(zone)
         case None:
-            # Note: repojection is done at download
+            # Note: repojection can be done at download
             maxError = None
         case _:
             projection = ee.Projection(projection)
@@ -256,7 +252,6 @@ def generate_squares(
                 gee_polygon, edge_size, num_points)
             squares = points.map(
                 lambda f: draw_bounding_square(f, edge_size))
-
         case "stratified":
             points = stratified_sampling(
                 num_points,
