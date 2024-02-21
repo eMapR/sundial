@@ -74,7 +74,7 @@ class ChipsDataModule(L.LightningDataModule):
 
     def __init__(
         self,
-        chips_path: str = configs["chips_path"],
+        chip_data_path: str = configs["chip_data_path"],
         training_samples_path: str = configs["training_samples_path"],
         validate_samples_path: str = configs["validate_samples_path"],
         test_samples_path: str = configs["test_samples_path"],
@@ -86,7 +86,7 @@ class ChipsDataModule(L.LightningDataModule):
         num_workers: int = configs["num_workers"],
     ):
         super().__init__()
-        self.chips_path = chips_path
+        self.chip_data_path = chip_data_path
         self.training_samples_path = training_samples_path
         self.validate_samples_path = validate_samples_path
         self.test_samples_path = test_samples_path
@@ -98,9 +98,9 @@ class ChipsDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.transform = None  # look into mean/std normalization
 
-    def setup(self, stage: Literal["train", "test", "predict"]) -> None:
+    def setup(self, stage: Literal["train", "validate", "test", "predict"]) -> None:
         configs = {
-            "chips_path": self.chips_path,
+            "chip_data_path": self.chip_data_path,
             "chip_size": self.chip_size,
             "base_year": self.base_year,
             "back_step": self.back_step,
@@ -112,6 +112,8 @@ class ChipsDataModule(L.LightningDataModule):
                 self.training_ds = ChipsDataset(
                     sample_names_path=self.training_samples_path,
                     **configs)
+                
+            case "validate":
                 self.validate_ds = ChipsDataset(
                     sample_names_path=self.validate_samples_path,
                     **configs)

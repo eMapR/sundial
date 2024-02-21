@@ -111,7 +111,8 @@ def pad_xy_xarray(
 
     xarr = xarr.pad(
         x=(x_start, x_end),
-        y=(y_start, y_end))
+        y=(y_start, y_end),
+        keep_attrs=True)
     return xarr
 
 

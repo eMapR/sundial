@@ -3,9 +3,9 @@
 usage() {
     echo "Usage: $0 [-h|--help] [-c|--configs <file>] [-d|--download]"
     echo "Options:"
-    echo "  -h, --help         Show this help message"
-    echo "  -c, --configs      Specify a YAML configuration file"
-    echo "  -d, --download     Specify whether to download or not (default: true)"
+    echo "  -h, --help          Show this help message"
+    echo "  -c, --config        Specify a YAML configuration file"
+    echo "  -d, --download      Specify whether to download or not (default: true)"
 }
 
 # TODO: Add conda environment checks
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        -c|--configs)
+        -c|--config)
             if [[ ! -f "$2" ]]; then
                 echo "Error: Config file '$2' does not exist."
                 exit 1

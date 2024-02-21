@@ -8,35 +8,43 @@ END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
 
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 DATA_PATH = os.path.join(BASE_PATH, "data")
-META_DATA_PATH = os.path.join(DATA_PATH, "meta_data.zarr")
-CHIP_DATA_PATH = os.path.join(DATA_PATH, "chip_data.zarr")
-TRAINING_SAMPLES_PATH = os.path.join(DATA_PATH, "training_samples.zarr")
-VALIDATE_SAMPLES_PATH = os.path.join(DATA_PATH, "validate_samples.zarr")
-PREDICT_SAMPLES_PATH = os.path.join(DATA_PATH, "predict_samples.zarr")
-TEST_SAMPLES_PATH = os.path.join(DATA_PATH, "test_samples.zarr")
+SAMPLE_PATH = os.path.join(
+    BASE_PATH, "samples", os.getenv("SUNDIAL_SAMPLE_NAME"))
+
+META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
+CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
+TRAINING_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "training_samples.zarr")
+VALIDATE_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "validate_samples.zarr")
+PREDICT_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "predict_samples.zarr")
+TEST_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "test_samples.zarr")
 BASE_LOG_PATH = os.path.join(DATA_PATH, "logs")
 
 SQUARE_COLUMNS = [f"square_{i}" for i in range(5)]
 BANDS = ["B1", "B2", "B3", "B4", "B5", "B7"]
 MASK_LABELS = ["cloud"]
 
-CHIP_SIZE = 256
+CHIP_SIZE = 253 # Google will add it's own padding to get to 256
 SCALE = 30
+PADDING = 1.05
+
 BACK_STEP = 5
+
 
 SAMPLER = {
     "start_date": START_DATE,
     "end_date": END_DATE,
     "method": "stratified",
-    "file_path": os.path.join(DATA_PATH, "blm_or_wa_bounds"),
+    "geo_file_path": os.path.join(DATA_PATH, "shapes", os.getenv("SUNDIAL_SAMPLE_NAME")),
     "num_points": 1e4,
     "num_strata": 1e2,
     "strat_scale": 1e4,
-    "edge_size": 7.7e3,
+    "edge_size": round(CHIP_SIZE * SCALE),
+    "training_ratio": 2e-1,
+    "test_ratio": 2e-3,
     "back_step": BACK_STEP,
     "meta_data_path": META_DATA_PATH,
     "training_samples_path": TRAINING_SAMPLES_PATH,
-    "validate_samples_path": PREDICT_SAMPLES_PATH,
+    "validate_samples_path": VALIDATE_SAMPLES_PATH,
     "test_samples_path": TEST_SAMPLES_PATH,
     "log_path": BASE_LOG_PATH,
     "log_name": "sundial.sampler",
@@ -48,7 +56,7 @@ DOWNLOADER = {
     "end_date": END_DATE,
     "file_type": "ZARR",
     "scale": SCALE,
-    "edge_size": round((SAMPLER["edge_size"]/SCALE)*1.05),
+    "edge_size": round((SAMPLER["edge_size"]/SCALE)*PADDING),
     "reproject": "UTM",
     "chip_data_path": CHIP_DATA_PATH,
     "meta_data_path": META_DATA_PATH,
@@ -63,7 +71,7 @@ DOWNLOADER = {
 }
 
 DATAMODULE = {
-    "chips_path": CHIP_DATA_PATH,
+    "chip_data_path": CHIP_DATA_PATH,
     "training_samples_path": TRAINING_SAMPLES_PATH,
     "validate_samples_path": PREDICT_SAMPLES_PATH,
     "test_samples_path": TEST_SAMPLES_PATH,
@@ -76,6 +84,26 @@ DATAMODULE = {
 }
 
 SUNDIAL = {
+    "image_size": CHIP_SIZE,
+    "patch_size": 16,
+    "num_channels": 6,
     "num_frames": BACK_STEP + 1,
-    "num_channels": len(BANDS),
+    "tubelet_size": 1,
+    "hidden_size": 768,
+    "num_hidden_layers": 12,
+    "num_attention_heads": 12,
+    "intermediate_size": 3072,
+    "hidden_act": "gelu",
+    "hidden_dropout_prob": 0.0,
+    "attention_probs_dropout_prob": 0.0,
+    "initializer_range": 0.02,
+    "layer_norm_eps": 1e-12,
+    "qkv_bias": True,
+    "use_mean_pooling": True,
+    "decoder_num_attention_heads": 6,
+    "decoder_hidden_size": 384,
+    "decoder_num_hidden_layers": 4,
+    "decoder_intermediate_size": 1536,
+    "norm_pix_loss": True,
+    "learning_rate": 1e-3,
 }

@@ -3,13 +3,13 @@
 usage() {
     echo "Usage: $0 [-h|--help] [-c|--configs <file>] [-d|--method]"
     echo "Options:"
-    echo "  -h, --help         Show this help message"
-    echo "  -c, --configs      Specify a YAML configuration file"
-    echo "  -m, --method       Specify what method to run model (default: fit)"
+    echo "  -h, --help          Show this help message"
+    echo "  -c, --config        Specify a YAML configuration file"
+    echo "  -m, --method        Specify what method to run model (default: fit)"
 }
 
 # TODO: Add conda environment checks
-download=fit
+method=fit
 
 while [[ $# -gt 0 ]]; do
     key="$1"

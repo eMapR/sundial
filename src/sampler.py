@@ -227,7 +227,7 @@ def generate_squares(
         start_date: datetime,
         end_date: datetime,
         method: Literal["convering_grid", "random", "stratified"],
-        file_path: str | None,
+        geo_file_path: str | None,
         num_points: int | None,
         num_strata: int,
         strat_scale: int,
@@ -236,7 +236,7 @@ def generate_squares(
     ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
     LOGGER.info("Loading geo file into GeoDataFrame...")
-    gdf = gpd.read_file(file_path)
+    gdf = gpd.read_file(geo_file_path)
     unary_polygon = unary_union(gdf["geometry"])
     gee_polygon = ee.Geometry.Polygon(
         list(unary_polygon.exterior.coords))
@@ -286,6 +286,8 @@ def generate_time_samples(
         start_year: int,
         end_year: int,
         back_step: int,
+        training_ratio: float,
+        test_ratio: float,
         meta_data_path: str,
         training_samples_path: str,
         validate_samples_path: str,
@@ -308,10 +310,11 @@ def generate_time_samples(
 
     LOGGER.info(
         "Splitting sample data into training, validation, and test sets...")
+
+    df_train, df_test = train_test_split(
+        df_out, test_size=test_ratio, random_state=round(time.time()))
     df_train, df_validate = train_test_split(
-        df_out, test_size=0.20, random_state=round(time.time()))
-    df_validate, df_test = train_test_split(
-        df_validate, test_size=0.01, random_state=round(time.time()))
+        df_train, test_size=training_ratio, random_state=round(time.time()))
 
     LOGGER.info(f"Saving sample data to path...")
     df_list = [df_train, df_validate, df_test]
@@ -324,11 +327,11 @@ def generate_time_samples(
 
 
 def main(**kwargs):
+    from settings import SAMPLER as configs
     if (config_path := kwargs["config_path"]) is not None:
         with open(config_path, "r") as f:
-            configs = yaml.safe_load(f)
-    else:
-        from settings import SAMPLER as configs
+            configs = configs | yaml.safe_load(f)
+
     global LOGGER
     LOGGER = get_logger(configs["log_path"], configs["log_name"])
 
@@ -340,7 +343,7 @@ def main(**kwargs):
                 "start_date": configs["start_date"],
                 "end_date": configs["end_date"],
                 "method": configs["method"],
-                "file_path": configs["file_path"],
+                "geo_file_path": configs["geo_file_path"],
                 "num_points": configs["num_points"],
                 "num_strata": configs["num_strata"],
                 "strat_scale": configs["strat_scale"],
@@ -359,6 +362,8 @@ def main(**kwargs):
                 "start_year": configs["start_date"].year,
                 "end_year": configs["end_date"].year,
                 "back_step": configs["back_step"],
+                "training_ratio": configs["training_ratio"],
+                "test_ratio": configs["test_ratio"],
                 "meta_data_path": configs["meta_data_path"],
                 "training_samples_path": configs["training_samples_path"],
                 "validate_samples_path": configs["validate_samples_path"],

@@ -1,0 +1,17 @@
+---
+start_date: "1985-06-01"
+end_date: "2023-09-01"
+method: "stratified"
+geo_file_path: "your/get_file/path"
+num_points: 10000
+num_strata: 100
+strat_scale: 10000
+edge_size: 7500
+back_step: 5
+meta_data_path: "your/meta/data/path"
+training_samples_path: "your/training_samples/path"
+validate_samples_path: "your/validate_samples/path"
+test_samples_path: "your/test_samples/path"
+log_path: "your/logs/path"
+log_name: "sundial.sampler"
+test: false
