@@ -157,7 +157,7 @@ class Downloader:
             report_queue.put(("INFO", result))
         end_time = time.time()
         report_queue.put(("INFO",
-                         f"Download completed in {round((end_time - start_time) / (60), 2)} minutes..."))
+                         f"Download completed in {(end_time - start_time) / 60:.2} minutes..."))
         report_queue.put(("INFO", "Finalizing last file writes..."))
         report_queue.put(None)
         [w.join() for w in workers]

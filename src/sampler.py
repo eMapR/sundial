@@ -313,10 +313,9 @@ def generate_time_samples(
     df_validate, df_test = train_test_split(
         df_validate, test_size=0.01, random_state=round(time.time()))
 
-    LOGGER.info(f"Saving sample data to {path}...")
+    LOGGER.info(f"Saving sample data to path...")
     df_list = [df_train, df_validate, df_test]
     paths = [training_samples_path, validate_samples_path, test_samples_path]
-
     for df, path in zip(df_list, paths):
         yarr = df.to_xarray()
         yarr.to_zarr(
@@ -351,7 +350,7 @@ def main(**kwargs):
             generate_squares(**square_config)
             end = time.time()
             LOGGER.info(
-                f"Generating squares completed in: {round((end - start)/2)} minutes")
+                f"Generating squares completed in: {(end - start)/60:.2} minutes")
 
         if kwargs["generate_time_samples"]:
             LOGGER.info("Generating time samples...")
@@ -368,7 +367,7 @@ def main(**kwargs):
             generate_time_samples(**time_samples_config)
             end = time.time()
             LOGGER.info(
-                f"Generating time samples completed in: {round((end - start)/2)} minutes")
+                f"Generating time samples completed in: {(end - start)/60:.2} minutes")
             # TODO:  develop a decorator for logging performance time
     except Exception as e:
         LOGGER.critical(f"Failed to generate samples: {e}")

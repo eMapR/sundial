@@ -50,7 +50,7 @@ done
 
 
 if [[ -n "$config_file" ]]; then
-    python src/runner.py $method -c "$config_file" 
+    python $SUNDIAL_BASE_PATH/src/runner.py $method -c "$config_file" 
 else
-    python src/runner.py $method
+    python $SUNDIAL_BASE_PATH/src/runner.py $method
 fi

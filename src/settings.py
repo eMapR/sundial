@@ -7,13 +7,14 @@ START_DATE = datetime.strptime(START_DATE_STR, "%Y-%m-%d")
 END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
 
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
-META_DATA_PATH = os.path.join(BASE_PATH, "meta_data.zarr")
-CHIP_DATA_PATH = os.path.join(BASE_PATH, "chip_data.zarr")
-TRAINING_SAMPLES_PATH = os.path.join(BASE_PATH, "training_samples.zarr")
-VALIDATE_SAMPLES_PATH = os.path.join(BASE_PATH, "validate_samples.zarr")
-PREDICT_SAMPLES_PATH = os.path.join(BASE_PATH, "predict_samples.zarr")
-TEST_SAMPLES_PATH = os.path.join(BASE_PATH, "test_samples.zarr")
-BASE_LOG_PATH = os.path.join(BASE_PATH, "logs")
+DATA_PATH = os.path.join(BASE_PATH, "data")
+META_DATA_PATH = os.path.join(DATA_PATH, "meta_data.zarr")
+CHIP_DATA_PATH = os.path.join(DATA_PATH, "chip_data.zarr")
+TRAINING_SAMPLES_PATH = os.path.join(DATA_PATH, "training_samples.zarr")
+VALIDATE_SAMPLES_PATH = os.path.join(DATA_PATH, "validate_samples.zarr")
+PREDICT_SAMPLES_PATH = os.path.join(DATA_PATH, "predict_samples.zarr")
+TEST_SAMPLES_PATH = os.path.join(DATA_PATH, "test_samples.zarr")
+BASE_LOG_PATH = os.path.join(DATA_PATH, "logs")
 
 SQUARE_COLUMNS = [f"square_{i}" for i in range(5)]
 BANDS = ["B1", "B2", "B3", "B4", "B5", "B7"]
@@ -27,7 +28,7 @@ SAMPLER = {
     "start_date": START_DATE,
     "end_date": END_DATE,
     "method": "stratified",
-    "file_path": os.path.join(BASE_PATH, "blm_or_wa_bounds"),
+    "file_path": os.path.join(DATA_PATH, "blm_or_wa_bounds"),
     "num_points": 1e4,
     "num_strata": 1e2,
     "strat_scale": 1e4,

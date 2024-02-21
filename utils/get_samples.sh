@@ -50,13 +50,13 @@ done
 
 
 if [[ -n "$config_file" ]]; then
-    python src/sampler.py -c "$config_file"
+    python $SUNDIAL_BASE_PATH/src/sampler.py -c "$config_file"
     if [[ "$download" == true ]]; then
-        python src/downloader.py -c "$config_file"
+        python $SUNDIAL_BASE_PATH/src/downloader.py -c "$config_file"
     fi
 else
-    python src/sampler.py
+    python $SUNDIAL_BASE_PATH/src/sampler.py
     if [[ "$download" == true ]]; then
-        python src/downloader.py
+        python $SUNDIAL_BASE_PATH/src/downloader.py
     fi
 fi
