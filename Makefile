@@ -20,19 +20,19 @@ default:
 	@echo "	To run Sundial, use the following commands:"
 	@echo
 	@echo "    Sundial Methods:"
-	@echo "        sample:      Retrieves chip sample from Google Earth Engine.                                        'IN-DEVELOPMENT'"
+	@echo "        sample:      Retrieves chip sample from Google Earth Engine.                                        'Alpha'"
 	@echo "        train:       Train Sundial model with optional config.                                              'IN-DEVELOPMENT'"
 	@echo "        validate:    Validate Sundial model with optional config.                                           'IN-DEVELOPMENT'"
 	@echo "        test:        Test Sundial model with optional config.                                               'IN-DEVELOPMENT'"
-	@echo "        predict:     Predict using Sundial. Must provide image path in CONFIG.                               'IN-DEVELOPMENT'"
-	@echo "        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.     'IN-DEVELOPMENT'"
+	@echo "        predict:     Predict using Sundial. Must provide image path in SUNDIAL_CONFIG.                      'IN-DEVELOPMENT'"
+	@echo "        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.    'IN-DEVELOPMENT'"
 	@echo
 	@echo "    Variables:"
 	@echo "        SUNDIAL_BASE_PATH:   Base path for Sundial scripts. Default: 'shell pwd' of this file"
 	@echo "        SUNDIAL_SAMPLE_NAME: Sample name. Default: 'blm_or_wa_bounds'"
 	@echo "        SUNDIAL_ENV_NAME:    Sundial environment name. Default: 'sundial'"
-	@echo "        SUNDIAL_PROCESSING:  SUNDIAL_PROCESSING method. Default: 'hpc'"
-	@echo "        CONFIG:              CONFIG file path. Default: 'src/settings.py'"
+	@echo "        SUNDIAL_PROCESSING:  Sundial processing method. Default: 'hpc'"
+	@echo "        SUNDIAL_CONFIG:      Sundial config file path. Default: 'src/settings.py'"
 	@echo
 
 sample:
@@ -44,12 +44,12 @@ sample:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=CONFIG="$(CONFIG)" \
+			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/sample.slurm; \
 	else\
 		echo "Running on local machine..."; \
-		if [[ -n "$(CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/sample.sh -c $(CONFIG); \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			$(SUNDIAL_BASE_PATH)/utils/sample.sh -c $(SUNDIAL_CONFIG); \
 		else\
 			$(SUNDIAL_BASE_PATH)/utils/sample.sh; \
 		fi \
@@ -64,12 +64,12 @@ train:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=method="train",CONFIG="$(CONFIG)" \
+			--export=METHOD="train",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
-		if [[ -n "$(CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "train" -c $(CONFIG); \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "train" -c $(SUNDIAL_CONFIG); \
 		else \
 			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "train"; \
 		fi \
@@ -84,12 +84,12 @@ validate:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=method="validate",CONFIG="$(CONFIG)" \
+			--export=METHOD="validate",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
-		if [[ -n "$(CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "validate" -c $(CONFIG); \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "validate" -c $(SUNDIAL_CONFIG); \
 		else \
 			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "validate"; \
 		fi \
@@ -104,12 +104,12 @@ test:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=method="test",CONFIG="$(CONFIG)" \
+			--export=METHOD="test",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
-		if [[ -n "$(CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "test" -c $(CONFIG); \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "test" -c $(SUNDIAL_CONFIG); \
 		else \
 			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "test"; \
 		fi \
@@ -125,12 +125,12 @@ predict:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=method="predict",CONFIG="$(CONFIG)" \
+			--export=METHOD="predict",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)"SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
-		if [[ -n "$(CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "predict" -c $(CONFIG); \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "predict" -c $(SUNDIAL_CONFIG); \
 		else \
 			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "predict"; \
 		fi \
