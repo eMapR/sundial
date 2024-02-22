@@ -66,10 +66,10 @@ model:
 
 data:
   chip_data_path: null
-  training_samples_path: null
-  validate_samples_path: null
-  test_samples_path: null
-  predict_samples_path: null
+  training_sample_path: null
+  validate_sample_path: null
+  test_sample_path: null
+  predict_sample_path: null
   chip_size: 256
   base_year: 2023
   back_step: 5

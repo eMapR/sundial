@@ -10,6 +10,7 @@ ifndef SUNDIAL_PROCESSING
 endif
 ifndef SUNDIAL_ENV_NAME 
 	SUNDIAL_ENV_NAME := sundial
+endif
 
 .SILENT: sample train validate test predict nuke
 
@@ -19,10 +20,10 @@ default:
 	@echo "	To run Sundial, use the following commands:"
 	@echo
 	@echo "    Sundial Methods:"
-	@echo "        sample:      Retrieves chip samples from Google Earth Engine.                                        'IN-DEVELOPMENT'"
-	@echo "        train:       Train Sundial model with optional configs.                                              'IN-DEVELOPMENT'"
-	@echo "        validate:    Validate Sundial model with optional configs.                                           'IN-DEVELOPMENT'"
-	@echo "        test:        Test Sundial model with optional configs.                                               'IN-DEVELOPMENT'"
+	@echo "        sample:      Retrieves chip sample from Google Earth Engine.                                        'IN-DEVELOPMENT'"
+	@echo "        train:       Train Sundial model with optional config.                                              'IN-DEVELOPMENT'"
+	@echo "        validate:    Validate Sundial model with optional config.                                           'IN-DEVELOPMENT'"
+	@echo "        test:        Test Sundial model with optional config.                                               'IN-DEVELOPMENT'"
 	@echo "        predict:     Predict using Sundial. Must provide image path in CONFIG.                               'IN-DEVELOPMENT'"
 	@echo "        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.     'IN-DEVELOPMENT'"
 	@echo
@@ -35,16 +36,16 @@ default:
 	@echo
 
 sample:
-	echo "Retreiving chip samples from Google Earth Engine. This may take a while..."; \
+	echo "Retreiving chip sample from Google Earth Engine. This may take a while..."; \
 	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.samples.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.samples.e \
+			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.o \
+			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/get_samples.slurm; \
+			$(SUNDIAL_BASE_PATH)/sample.slurm; \
 	else\
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -137,4 +138,4 @@ predict:
 
 nuke:
 	echo "Deleting meta data and ZARR chips datasets."; \
-	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_SAMPLE_NAME); \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/sample/$(SUNDIAL_SAMPLE_NAME); \

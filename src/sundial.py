@@ -3,33 +3,33 @@ import torch
 
 
 from transformers import VideoMAEConfig, VideoMAEModel, VideoMAEForPreTraining
-from settings import SUNDIAL as configs
+from settings import SUNDIAL as config
 
 
 class Sundial(L.LightningModule):
     def __init__(self,
-                 image_size: int = configs["image_size"],
-                 patch_size: int = configs["patch_size"],
-                 num_channels: int = configs["num_channels"],
-                 num_frames: int = configs["num_frames"],
-                 tubelet_size: int = configs["tubelet_size"],
-                 hidden_size: int = configs["hidden_size"],
-                 num_hidden_layers: int = configs["num_hidden_layers"],
-                 num_attention_heads: int = configs["num_attention_heads"],
-                 intermediate_size: int = configs["intermediate_size"],
-                 hidden_act: str = configs["hidden_act"],
-                 hidden_dropout_prob: float = configs["hidden_dropout_prob"],
-                 attention_probs_dropout_prob: float = configs["attention_probs_dropout_prob"],
-                 initializer_range: float = configs["initializer_range"],
-                 layer_norm_eps: float = configs["layer_norm_eps"],
-                 qkv_bias: bool = configs["qkv_bias"],
-                 use_mean_pooling: bool = configs["use_mean_pooling"],
-                 decoder_num_attention_heads: int = configs["decoder_num_attention_heads"],
-                 decoder_hidden_size: int = configs["decoder_hidden_size"],
-                 decoder_num_hidden_layers: int = configs["decoder_num_hidden_layers"],
-                 decoder_intermediate_size: int = configs["decoder_intermediate_size"],
-                 norm_pix_loss: bool = configs["norm_pix_loss"],
-                 learning_rate: float = configs["learning_rate"],
+                 image_size: int = config["image_size"],
+                 patch_size: int = config["patch_size"],
+                 num_channels: int = config["num_channels"],
+                 num_frames: int = config["num_frames"],
+                 tubelet_size: int = config["tubelet_size"],
+                 hidden_size: int = config["hidden_size"],
+                 num_hidden_layers: int = config["num_hidden_layers"],
+                 num_attention_heads: int = config["num_attention_heads"],
+                 intermediate_size: int = config["intermediate_size"],
+                 hidden_act: str = config["hidden_act"],
+                 hidden_dropout_prob: float = config["hidden_dropout_prob"],
+                 attention_probs_dropout_prob: float = config["attention_probs_dropout_prob"],
+                 initializer_range: float = config["initializer_range"],
+                 layer_norm_eps: float = config["layer_norm_eps"],
+                 qkv_bias: bool = config["qkv_bias"],
+                 use_mean_pooling: bool = config["use_mean_pooling"],
+                 decoder_num_attention_heads: int = config["decoder_num_attention_heads"],
+                 decoder_hidden_size: int = config["decoder_hidden_size"],
+                 decoder_num_hidden_layers: int = config["decoder_num_hidden_layers"],
+                 decoder_intermediate_size: int = config["decoder_intermediate_size"],
+                 norm_pix_loss: bool = config["norm_pix_loss"],
+                 learning_rate: float = config["learning_rate"],
                  **kwargs):
         super().__init__()
         self.config = VideoMAEConfig(

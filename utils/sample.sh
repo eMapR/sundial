@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-    echo "Usage: $0 [-h|--help] [-c|--configs <file>] [-d|--download]"
+    echo "Usage: $0 [-h|--help] [-c|--config <file>] [-d|--download]"
     echo "Options:"
     echo "  -h, --help          Show this help message"
     echo "  -c, --config        Specify a YAML configuration file"

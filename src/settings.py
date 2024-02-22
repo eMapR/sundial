@@ -8,15 +8,14 @@ END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
 
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 DATA_PATH = os.path.join(BASE_PATH, "data")
-SAMPLE_PATH = os.path.join(
-    BASE_PATH, "samples", os.getenv("SUNDIAL_SAMPLE_NAME"))
+SAMPLE_PATH = os.path.join(DATA_PATH, "samples", os.getenv("SUNDIAL_SAMPLE_NAME"))
 
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
-TRAINING_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "training_samples.zarr")
-VALIDATE_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "validate_samples.zarr")
-PREDICT_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "predict_samples.zarr")
-TEST_SAMPLES_PATH = os.path.join(SAMPLE_PATH, "test_samples.zarr")
+TRAINING_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "training_sample.zarr")
+VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
+PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
+TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
 BASE_LOG_PATH = os.path.join(DATA_PATH, "logs")
 
 SQUARE_COLUMNS = [f"square_{i}" for i in range(5)]
@@ -43,9 +42,9 @@ SAMPLER = {
     "test_ratio": 2e-3,
     "back_step": BACK_STEP,
     "meta_data_path": META_DATA_PATH,
-    "training_samples_path": TRAINING_SAMPLES_PATH,
-    "validate_samples_path": VALIDATE_SAMPLES_PATH,
-    "test_samples_path": TEST_SAMPLES_PATH,
+    "training_sample_path": TRAINING_SAMPLE_PATH,
+    "validate_sample_path": VALIDATE_SAMPLE_PATH,
+    "test_sample_path": TEST_SAMPLE_PATH,
     "log_path": BASE_LOG_PATH,
     "log_name": "sundial.sampler",
     "test": False,
@@ -72,10 +71,10 @@ DOWNLOADER = {
 
 DATAMODULE = {
     "chip_data_path": CHIP_DATA_PATH,
-    "training_samples_path": TRAINING_SAMPLES_PATH,
-    "validate_samples_path": PREDICT_SAMPLES_PATH,
-    "test_samples_path": TEST_SAMPLES_PATH,
-    "predict_samples_path": PREDICT_SAMPLES_PATH,
+    "training_sample_path": TRAINING_SAMPLE_PATH,
+    "validate_sample_path": PREDICT_SAMPLE_PATH,
+    "test_sample_path": TEST_SAMPLE_PATH,
+    "predict_sample_path": PREDICT_SAMPLE_PATH,
     "batch_size": 1024,
     "num_workers": 16,
     "chip_size": CHIP_SIZE,
@@ -84,7 +83,7 @@ DATAMODULE = {
 }
 
 SUNDIAL = {
-    "image_size": CHIP_SIZE,
+    "image_size": 256,
     "patch_size": 16,
     "num_channels": 6,
     "num_frames": BACK_STEP + 1,

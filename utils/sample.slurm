@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --export=ALL
-#SBATCH --job-name=sundial.get_samples
+#SBATCH --job-name=sundial.sample
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=32
 

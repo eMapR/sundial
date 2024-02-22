@@ -1,7 +1,7 @@
 import ee
 import argparse
+import os
 import time
-import utm
 import yaml
 
 import geopandas as gpd
@@ -240,7 +240,7 @@ def generate_squares(
     unary_polygon = unary_union(gdf["geometry"])
     gee_polygon = ee.Geometry.Polygon(
         list(unary_polygon.exterior.coords))
-    # TODO: partition a polygon into smaller polygons and request samples in parallel
+    # TODO: partition a polygon into smaller polygons and request sample in parallel
 
     LOGGER.info(f"Generating squares via {method}...")
     match method:
@@ -282,21 +282,21 @@ def generate_squares(
         mode="a")
 
 
-def generate_time_samples(
+def generate_time_sample(
         start_year: int,
         end_year: int,
         back_step: int,
         training_ratio: float,
         test_ratio: float,
         meta_data_path: str,
-        training_samples_path: str,
-        validate_samples_path: str,
-        test_samples_path: str) -> None:
+        training_sample_path: str,
+        validate_sample_path: str,
+        test_sample_path: str) -> None:
     meta_data = xr.open_zarr(meta_data_path)
     years = range(end_year, start_year + back_step, -1)
     df_years = pd.DataFrame(years, columns=["year"])
 
-    LOGGER.info("Creating coodinate-time combination samples...")
+    LOGGER.info("Creating coodinate-time combination sample...")
     df_list = []
     for idx in range(meta_data.sizes["index"]):
         _, point_name, _, polygon_name = parse_meta_data(
@@ -318,7 +318,7 @@ def generate_time_samples(
 
     LOGGER.info(f"Saving sample data to path...")
     df_list = [df_train, df_validate, df_test]
-    paths = [training_samples_path, validate_samples_path, test_samples_path]
+    paths = [training_sample_path, validate_sample_path, test_sample_path]
     for df, path in zip(df_list, paths):
         yarr = df.to_xarray()
         yarr.to_zarr(
@@ -327,62 +327,63 @@ def generate_time_samples(
 
 
 def main(**kwargs):
-    from settings import SAMPLER as configs
+    from settings import SAMPLER as config, SAMPLE_PATH
+    os.makedirs(SAMPLE_PATH, exist_ok=True)
     if (config_path := kwargs["config_path"]) is not None:
         with open(config_path, "r") as f:
-            configs = configs | yaml.safe_load(f)
-
+            config = config | yaml.safe_load(f)
+    
     global LOGGER
-    LOGGER = get_logger(configs["log_path"], configs["log_name"])
-
+    LOGGER = get_logger(config["log_path"], config["log_name"])
+    
     try:
         if kwargs["generate_squares"]:
             LOGGER.info("Generating squares...")
             start = time.time()
             square_config = {
-                "start_date": configs["start_date"],
-                "end_date": configs["end_date"],
-                "method": configs["method"],
-                "geo_file_path": configs["geo_file_path"],
-                "num_points": configs["num_points"],
-                "num_strata": configs["num_strata"],
-                "strat_scale": configs["strat_scale"],
-                "edge_size": configs["edge_size"],
-                "meta_data_path": configs["meta_data_path"],
+                "start_date": config["start_date"],
+                "end_date": config["end_date"],
+                "method": config["method"],
+                "geo_file_path": config["geo_file_path"],
+                "num_points": config["num_points"],
+                "num_strata": config["num_strata"],
+                "strat_scale": config["strat_scale"],
+                "edge_size": config["edge_size"],
+                "meta_data_path": config["meta_data_path"],
             }
             generate_squares(**square_config)
             end = time.time()
             LOGGER.info(
                 f"Generating squares completed in: {(end - start)/60:.2} minutes")
 
-        if kwargs["generate_time_samples"]:
-            LOGGER.info("Generating time samples...")
+        if kwargs["generate_time_sample"]:
+            LOGGER.info("Generating time sample...")
             start = time.time()
-            time_samples_config = {
-                "start_year": configs["start_date"].year,
-                "end_year": configs["end_date"].year,
-                "back_step": configs["back_step"],
-                "training_ratio": configs["training_ratio"],
-                "test_ratio": configs["test_ratio"],
-                "meta_data_path": configs["meta_data_path"],
-                "training_samples_path": configs["training_samples_path"],
-                "validate_samples_path": configs["validate_samples_path"],
-                "test_samples_path": configs["test_samples_path"],
+            time_sample_config = {
+                "start_year": config["start_date"].year,
+                "end_year": config["end_date"].year,
+                "back_step": config["back_step"],
+                "training_ratio": config["training_ratio"],
+                "test_ratio": config["test_ratio"],
+                "meta_data_path": config["meta_data_path"],
+                "training_sample_path": config["training_sample_path"],
+                "validate_sample_path": config["validate_sample_path"],
+                "test_sample_path": config["test_sample_path"],
             }
-            generate_time_samples(**time_samples_config)
+            generate_time_sample(**time_sample_config)
             end = time.time()
             LOGGER.info(
-                f"Generating time samples completed in: {(end - start)/60:.2} minutes")
+                f"Generating time sample completed in: {(end - start)/60:.2} minutes")
             # TODO:  develop a decorator for logging performance time
     except Exception as e:
-        LOGGER.critical(f"Failed to generate samples: {e}")
+        LOGGER.critical(f"Failed to generate sample: {e}")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Sampler Arguments')
     parser.add_argument('--config_path', type=str, default=None)
     parser.add_argument('--generate_squares', type=bool, default=True)
-    parser.add_argument('--generate_time_samples', type=bool, default=True)
+    parser.add_argument('--generate_time_sample', type=bool, default=True)
     return vars(parser.parse_args())
 
 

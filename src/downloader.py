@@ -119,6 +119,7 @@ class Downloader:
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
+        io_lock = manager.Lock()
         request_limiter = manager.Semaphore(self._request_limit)
         workers = set()
 
@@ -144,6 +145,7 @@ class Downloader:
                     image_queue,
                     result_queue,
                     report_queue,
+                    io_lock,
                     request_limiter),
                 daemon=True)
             workers.add(image_consumer)
@@ -301,6 +303,7 @@ class Downloader:
                         image_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
+                        io_lock: mp.Lock,
                         request_limiter: mp.Semaphore) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         while (image_task := image_queue.get()) is not None:
@@ -356,10 +359,11 @@ class Downloader:
                             report_queue.put((
                                 "INFO", f"Writing polygon {xarr.shape} to {chip_data_path}... {polygon_name}"))
 
-                            # Note: no io lock is needed since each image is it's own array
-                            xarr.to_zarr(
-                                store=chip_data_path,
-                                mode="a")
+                            # unfortunately, xarray .zmetadata does not play well with mp
+                            with io_lock:
+                                xarr.to_zarr(
+                                    store=chip_data_path,
+                                    mode="a")
                 except Exception as e:
                     report_queue.put(
                         ("ERROR", f"Failed to write polygon to {chip_data_path}: {type(e)} {e} {polygon_name}"))
@@ -382,12 +386,15 @@ def parse_args():
 
 def main(**kwargs):
     # TODO: add additional kwargs checks
-    from settings import DOWNLOADER as configs
+    from settings import DOWNLOADER as config, SAMPLE_PATH
+    os.makedirs(SAMPLE_PATH, exist_ok=True)
+    
     if (config_path := kwargs["config_path"]) is not None:
         with open(config_path, "r") as f:
-            configs = configs | yaml.safe_load(f)
-
-    downloader = Downloader(**configs)
+            config = config | yaml.safe_load(f)
+    
+    
+    downloader = Downloader(**config)
     downloader.start()
 
 

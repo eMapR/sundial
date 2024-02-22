@@ -1,7 +1,7 @@
 #!/bin/bash
 
 usage() {
-    echo "Usage: $0 [-h|--help] [-c|--configs <file>] [-d|--method]"
+    echo "Usage: $0 [-h|--help] [-c|--config <file>] [-d|--method]"
     echo "Options:"
     echo "  -h, --help          Show this help message"
     echo "  -c, --config        Specify a YAML configuration file"
@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        -c|--configs)
+        -c|--config)
             if [[ ! -f "$2" ]]; then
                 echo "Error: Config file '$2' does not exist."
                 exit 1
