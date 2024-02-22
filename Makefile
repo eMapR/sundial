@@ -45,7 +45,7 @@ sample:
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/sample.slurm; \
+			$(SUNDIAL_BASE_PATH)/utils/sample.slurm; \
 	else\
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -65,7 +65,7 @@ train:
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=method="train",CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/run.slurm; \
+			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -85,7 +85,7 @@ validate:
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=method="validate",CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/run.slurm; \
+			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -105,7 +105,7 @@ test:
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=method="test",CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/run.slurm; \
+			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -126,7 +126,7 @@ predict:
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
 			--export=method="predict",CONFIG="$(CONFIG)" \
-			$(SUNDIAL_BASE_PATH)/run.slurm; \
+			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(CONFIG)" ]]; then \
@@ -138,4 +138,4 @@ predict:
 
 nuke:
 	echo "Deleting meta data and ZARR chips datasets."; \
-	rm -rf $(SUNDIAL_BASE_PATH)/data/sample/$(SUNDIAL_SAMPLE_NAME); \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_SAMPLE_NAME); \
