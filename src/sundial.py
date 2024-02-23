@@ -2,7 +2,7 @@ import lightning as L
 import torch
 
 
-from transformers import VideoMAEConfig, VideoMAEModel, VideoMAEForPreTraining
+from transformers import VideoMAEConfig, VideoMAEForPreTraining
 from settings import SUNDIAL as config
 
 
@@ -56,24 +56,45 @@ class Sundial(L.LightningModule):
             norm_pix_loss=norm_pix_loss,
             **kwargs
         )
-        self.back_bone = VideoMAEForPreTraining(self.config)
+        self.model = VideoMAEForPreTraining(self.config)
         self.learning_rate = learning_rate
 
     def forward(self, inputs) -> torch.Tensor:
-        return self.back_bone(inputs)
+        return self.model(inputs)
 
     def training_step(self, batch, *args) -> torch.Tensor:
-        outputs = self.back_bone(batch)
+        outputs = self.model(batch)
         return outputs.loss
 
     def validation_step(self, batch, *args) -> torch.Tensor:
-        outputs = self.back_bone(batch)
-        return outputs.loss
+        outputs = self.model(batch)
+        metrics = {"val_loss": outputs.loss}
+        self.log_dict(metrics)
+        return metrics
+
+    def test_step(self, batch, *args) -> torch.Tensor:
+        outputs = self.model(batch)
+        metrics = {"test_loss": outputs.loss}
+        self.log_dict(metrics)
+        return metrics
 
     def predict_step(self, batch, *args) -> torch.Tensor:
-        outputs = self.back_bone(batch)
+        outputs = self.model(batch)
+        # TODO: Construct dataset for predictions
         return outputs.loss
 
-    def configure_optimizers(self):
-        # TODO: implement dynamic learning rate
-        return torch.optim.AdamW(lr=self.learning_rate)
+    def configure_optimizers(self, *args):
+        optimizer = torch.optim.Adam(*args, lr=self.learning_rate)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=1, gamma=0.1)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": 16,
+                "frequency": 1,
+                "monitor": "val_loss",
+                "strict": True,
+                "name": "adam_lr",
+            }
+        }

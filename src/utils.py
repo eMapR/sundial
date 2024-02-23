@@ -5,7 +5,7 @@ import xarray as xr
 from datetime import datetime
 from ltgee import LandTrendr
 
-from settings import SQUARE_COLUMNS, MASK_LABELS
+from settings import SQUARE_COLUMNS, MASK_LABELS, BACK_STEP
 
 
 def estimate_download_size(
@@ -70,7 +70,7 @@ def lt_image_generator(
 
 def zarr_reshape(
         arr: np.ndarray,
-        polygon_name: str,
+        square_name: str,
         point_name: str,
         edge_size: int,
         start_year: int,
@@ -88,7 +88,7 @@ def zarr_reshape(
         xr_list.append(xr_year.astype(float))
     xarr = xr.concat(xr_list, dim="year")
     xarr.chunk(chunks={"year": 1})
-    xarr.name = polygon_name
+    xarr.name = square_name
     xarr.attrs.update(**{"point": point_name})
 
     if edge_size:
@@ -126,11 +126,21 @@ def generate_name(coords: tuple[float]) -> str:
 
 def parse_meta_data(
         meta_data: xr.Dataset,
-        index: int) -> tuple[list[tuple[float, float]], str, tuple[float, float], str]:
+        index: int) -> tuple[list[tuple[float, float]], str, tuple[float, float], str, datetime | None, datetime | None]:
     point_coords = meta_data["point"].isel(
         index=index).values.item()
-    point_name = generate_name(point_coords)
-    polygon_coords = meta_data[SQUARE_COLUMNS].isel(
+    point_name = meta_data["point_name"].isel(
+        index=index).values.item()
+    square_coords = meta_data[SQUARE_COLUMNS].isel(
         index=index).to_dataarray().values.tolist()
-    polygon_name = generate_name(polygon_coords)
-    return point_coords, point_name, polygon_coords, polygon_name
+    square_name = meta_data["square_name"].isel(
+        index=index).values.item()
+    if "year" in meta_data.variables.keys():
+        end_year = meta_data["year"].isel(
+            index=index).values.item()
+        end_date = datetime(end_year, 9, 1)
+        start_date = datetime(end_date - BACK_STEP, 6, 1)
+    else:
+        start_date = None
+        end_date = None
+    return point_coords, point_name, square_coords, square_name, start_date, end_date

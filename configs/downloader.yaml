@@ -11,6 +11,7 @@ num_workers: 64
 retries: 1
 request_limit: 40
 ignore_size_limit: true
+io_lock: true
 overwrite: false
 log_path: "your/logs/path"
 log_name: "sundial.downloader"

@@ -163,3 +163,5 @@ cython_debug/
 
 *.zarr
 *.log
+lightning_logs/
+data/shapes/ads_damage_1990-2022

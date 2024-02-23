@@ -44,7 +44,7 @@ class ChipsDataset(Dataset):
     def __getitem__(self, idx):
         # opening dataarray
         paths = xr.open_zarr(self.sample_names_path)
-        name = paths["square"].isel(index=idx).values.item()
+        name = paths["square_name"].isel(index=idx).values.item()
         year = paths["year"].isel(index=idx).values.item()
         chip = xr.open_zarr(self.chips_path)[name]
 
@@ -108,11 +108,11 @@ class ChipsDataModule(L.LightningDataModule):
         }
 
         match stage:
-            case "train":
+            case "fit":
                 self.training_ds = ChipsDataset(
                     sample_names_path=self.training_sample_path,
                     **config)
-                
+
             case "validate":
                 self.validate_ds = ChipsDataset(
                     sample_names_path=self.validate_sample_path,

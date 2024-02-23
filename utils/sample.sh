@@ -51,12 +51,16 @@ done
 
 if [[ -n "$config_file" ]]; then
     python $SUNDIAL_BASE_PATH/src/sampler.py -c "$config_file"
-    if [[ "$download" == true ]]; then
-        python $SUNDIAL_BASE_PATH/src/downloader.py -c "$config_file"
+    if [[ -d "$SUNDIAL_BASE_PATH/data/samples/$SUNDIAL_SAMPLE_NAME/meta_data.zarr" ]]; then
+        if [[ "$download" == true ]]; then
+            python $SUNDIAL_BASE_PATH/src/downloader.py -c "$config_file"
+        fi
     fi
 else
     python $SUNDIAL_BASE_PATH/src/sampler.py
-    if [[ "$download" == true ]]; then
-        python $SUNDIAL_BASE_PATH/src/downloader.py
+    if [[ -d "$SUNDIAL_BASE_PATH/data/samples/$SUNDIAL_SAMPLE_NAME/meta_data.zarr" ]]; then
+        if [[ "$download" == true ]]; then
+            python $SUNDIAL_BASE_PATH/src/downloader.py
+        fi
     fi
 fi

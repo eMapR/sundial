@@ -12,7 +12,12 @@ ifndef SUNDIAL_ENV_NAME
 	SUNDIAL_ENV_NAME := sundial
 endif
 
-.SILENT: sample train validate test predict nuke
+export SUNDIAL_BASE_PATH
+export SUNDIAL_SAMPLE_NAME
+export SUNDIAL_PROCESSING
+export SUNDIAL_ENV_NAME
+
+.SILENT: sample fit validate test predict nuke
 
 default:
 	@echo "Welcome to Sundial!"
@@ -55,7 +60,7 @@ sample:
 		fi \
 	fi \
 
-train:
+fit:
 	echo "Training Sundial... This may take a while..."; \
 	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
@@ -64,14 +69,14 @@ train:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH)/utils \
-			--export=METHOD="train",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=METHOD="fit",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "train" -c $(SUNDIAL_CONFIG); \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "fit" -c $(SUNDIAL_CONFIG); \
 		else \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "train"; \
+			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "fit"; \
 		fi \
 	fi \
 

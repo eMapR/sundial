@@ -1,13 +1,17 @@
 ---
-start_date: "1985-06-01"
-end_date: "2023-09-01"
 method: "stratified"
 geo_file_path: "your/get_file/path"
 num_points: 10000
 num_strata: 100
-strat_scale: 10000
+start_date: "1985-06-01"
+end_date: "2023-09-01"
 edge_size: 7500
+strata_scale: 10000
+strata_colums: null
+projection: null
 back_step: 5
+training_ratio: 0.2
+test_ratio: 0.002
 meta_data_path: "your/meta/data/path"
 training_sample_path: "your/training_sample/path"
 validate_sample_path: "your/validate_sample/path"
