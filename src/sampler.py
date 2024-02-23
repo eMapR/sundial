@@ -288,10 +288,10 @@ def generate_squares(
             squares = points.map(
                 lambda f: draw_bounding_square(f, edge_size, projection))
 
-    LOGGER.info("Downloading squares from GEE...")
+    LOGGER.info("Downloading squares to dataframe from GEE...")
     gdf = download_features(squares)
 
-    LOGGER.info("Processing squares for zarr...")
+    LOGGER.info("Processing dataframe columns for zarr...")
     df_out = gdf.loc[:, "square"]\
         .explode()\
         .apply(pd.Series)\
@@ -299,6 +299,7 @@ def generate_squares(
         .map(tuple)
     df_out.loc[:, "geometry"] = gdf.loc[:, "geometry"].apply(
         lambda p: p.coords[0])
+    df_out.loc[:, "projection"] = projection
     df_out.loc[:, "point"] = gdf.loc[:, "point"]
     df_out.loc[:, "point_name"] = df_out.loc[:, "point"].apply(generate_name)
     df_out.loc[:, "square_name"] = df_out.loc[:, SQUARE_COLUMNS].apply(
