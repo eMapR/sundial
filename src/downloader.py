@@ -78,7 +78,7 @@ class Downloader:
         self._file_type = file_type
         self._scale = scale
         self._edge_size = edge_size
-        self._reprojectionio = reprojection
+        self._reprojection = reprojection
         self._overlap_band = overlap_band
         self._chip_data_path = chip_data_path
         self._meta_data_path = meta_data_path

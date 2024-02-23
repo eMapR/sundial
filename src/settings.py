@@ -29,6 +29,7 @@ PADDING = 1.05
 
 BACK_STEP = 5
 RANDOM_STATE = 42
+NUM_CHANNELS = len(BANDS)
 
 SAMPLER = {
     "generate_squares": True,
@@ -64,6 +65,7 @@ DOWNLOADER = {
     "scale": SCALE,
     "edge_size": round((SAMPLER["edge_size"]/SCALE)*PADDING),
     "reprojection": "UTM",
+    "overlap_band": False,
     "chip_data_path": CHIP_DATA_PATH,
     "meta_data_path": META_DATA_PATH,
     "num_workers": 64,
@@ -93,7 +95,7 @@ DATAMODULE = {
 SUNDIAL = {
     "image_size": 256,
     "patch_size": 16,
-    "num_channels": 6,
+    "num_channels": NUM_CHANNELS,
     "num_frames": BACK_STEP + 1,
     "tubelet_size": 1,
     "hidden_size": 768,
