@@ -68,16 +68,15 @@ def lt_image_generator(
     new_band_names = [f"{str(start_date.year + i)}_{band}" for i in range(size)
                       for band in lt._band_names]
 
-    image = lt.build_sr_collection()\
+    image = collection\
         .toBands()\
         .select(old_band_names, new_band_names)\
-        .clipToBoundsAndScale(geometry=area_of_interest, scale=scale)
 
     if overlap_band:
         overlap_area = ee.Geometry.Polygon(geometry, projection=projection)
         overlap_image = ee.Image.constant(1).clip(overlap_area)
         image = image.addBands(overlap_image.select(["constant"], ["overlap"]))
-    return image
+    return image.clipToBoundsAndScale(geometry=area_of_interest, scale=scale)
 
 
 def zarr_reshape(
@@ -105,6 +104,10 @@ def zarr_reshape(
 
     if edge_size:
         xarr = pad_xy_xarray(xarr, edge_size)
+
+    if "overlap" in arr.dtype.names:
+        xarr["overlap"] = xr.DataArray(arr["overlap"], dims=['x', 'y'])\
+            .astype(int)
 
     return xarr
 
