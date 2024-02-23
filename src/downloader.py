@@ -32,7 +32,8 @@ class Downloader:
         file_type (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]): The file type to save the image data as.
         scale (int): The scale to use for projecting image.
         edge_size (int): The edge size to use to calculate padding.
-        reproject (bool): A flag to reproject the image data.
+        reprojection (str): A str flag to reproject the image data if set.
+        overlap_band (bool): A flag to add a band that labels by pixel in the square whether the it overlaps the geometry.
         chip_data_path (str): The path to save the image data to.
         meta_data_path (str): The path to the meta data file with coordinates.
         num_workers (int): The number of workers to use for the parallel download process.
@@ -58,7 +59,8 @@ class Downloader:
             file_type: Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"],
             scale: int,
             edge_size: int,
-            reproject: bool,
+            reprojection: bool,
+            overlap_band: bool,
             chip_data_path: str,
             meta_data_path: str,
             num_workers: int,
@@ -76,7 +78,8 @@ class Downloader:
         self._file_type = file_type
         self._scale = scale
         self._edge_size = edge_size
-        self._reproject = reproject
+        self._reprojectionio = reprojection
+        self._overlap_band = overlap_band
         self._chip_data_path = chip_data_path
         self._meta_data_path = meta_data_path
         self._num_workers = num_workers
@@ -101,7 +104,7 @@ class Downloader:
         """
         if not self._ignore_size_limit:
             # this assumes all squares are the same size
-            _, _, square_coords, start_date, end_date = parse_meta_data(
+            _, _, _, square_coords, start_date, end_date = parse_meta_data(
                 self._meta_data, 0)
             test_area = ee.Geometry.Polygon(square_coords)
             if start_date is None:
@@ -211,7 +214,14 @@ class Downloader:
         for idx in range(self._meta_size):
             try:
                 # creating an outpath for each square
-                point_coords, point_name, square_coords, square_name, start_date, end_date\
+                geometry, \
+                    projection, \
+                    point_coords, \
+                    point_name, \
+                    square_coords, \
+                    square_name, \
+                    start_date, \
+                    end_date\
                     = parse_meta_data(self._meta_data, idx)
                 if start_date is None:
                     start_date = self._start_date
@@ -260,27 +270,30 @@ class Downloader:
                 # creating payload for each square to send to GEE
                 report_queue.put(
                     ("INFO", f"Creating image payload for square... {square_name}"))
-                area_of_interest = ee.Geometry.Polygon(square_coords)
                 image = self._image_gen_callable(
                     start_date,
                     end_date,
-                    area_of_interest,
-                    self._scale)
+                    square_coords,
+                    self._scale,
+                    geometry,
+                    projection,
+                    self._overlap_band)
 
                 # Reprojecting the image if necessary
-                match self._reproject:
+                match self._reprojection:
                     case "UTM":
                         revserse_point = reversed(point_coords)
                         utm_zone = utm.from_latlon(*revserse_point)[-2:]
                         epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
                         epsg_code = f"{epsg_prefix}{utm_zone[0]}"
                     case _:
-                        epsg_code = self._reproject
+                        epsg_code = self._reprojection
 
                 if epsg_code is not None:
                     report_queue.put(
                         ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
-                    image = image.reproject(crs=epsg_code, scale=self._scale)
+                    image = image.reprojection(
+                        crs=epsg_code, scale=self._scale)
 
                 # encoding the image for the image consumer
                 payload = {

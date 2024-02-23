@@ -13,7 +13,7 @@ SAMPLE_PATH = os.path.join(
 
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
-TRAINING_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "training_sample.zarr")
+TRAINING_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.zarr")
 VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
@@ -63,7 +63,7 @@ DOWNLOADER = {
     "file_type": "ZARR",
     "scale": SCALE,
     "edge_size": round((SAMPLER["edge_size"]/SCALE)*PADDING),
-    "reproject": "UTM",
+    "reprojection": "UTM",
     "chip_data_path": CHIP_DATA_PATH,
     "meta_data_path": META_DATA_PATH,
     "num_workers": 64,

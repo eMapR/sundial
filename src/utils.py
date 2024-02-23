@@ -45,9 +45,14 @@ def estimate_download_size(
 def lt_image_generator(
         start_date: datetime,
         end_date: datetime,
-        area_of_interest: ee.Geometry,
+        area_of_interest: list[tuple[float, float]],
         scale: int,
+        geometry: list[tuple[float, float]],
+        projection: str,
+        overlap_band: bool,
         mask_labels: list[str] = MASK_LABELS) -> ee.Image:
+    area_of_interest = ee.Geometry.Polygon(
+        area_of_interest, projection=projection)
     lt = LandTrendr(
         start_date=start_date,
         end_date=end_date,
@@ -62,10 +67,17 @@ def lt_image_generator(
                       for band in lt._band_names]
     new_band_names = [f"{str(start_date.year + i)}_{band}" for i in range(size)
                       for band in lt._band_names]
-    return lt.build_sr_collection()\
+
+    image = lt.build_sr_collection()\
         .toBands()\
         .select(old_band_names, new_band_names)\
         .clipToBoundsAndScale(geometry=area_of_interest, scale=scale)
+
+    if overlap_band:
+        overlap_area = ee.Geometry.Polygon(geometry, projection=projection)
+        overlap_image = ee.Image.constant(1).clip(overlap_area)
+        image = image.addBands(overlap_image.select(["constant"], ["overlap"]))
+    return image
 
 
 def zarr_reshape(
@@ -127,6 +139,9 @@ def generate_name(coords: tuple[float]) -> str:
 def parse_meta_data(
         meta_data: xr.Dataset,
         index: int) -> tuple[list[tuple[float, float]], str, tuple[float, float], str, datetime | None, datetime | None]:
+    # this is a bit of a hack to get around the fact that return multiple types in one go is a bit of a pain
+    geometry = meta_data["geometry"].isel(index=index).values.item()
+    projection = meta_data["projection"].isel(index=index).values.item()
     point_coords = meta_data["point"].isel(
         index=index).values.item()
     point_name = meta_data["point_name"].isel(
@@ -143,4 +158,11 @@ def parse_meta_data(
     else:
         start_date = None
         end_date = None
-    return point_coords, point_name, square_coords, square_name, start_date, end_date
+    return geometry, \
+        projection, \
+        point_coords, \
+        point_name, \
+        square_coords, \
+        square_name, \
+        start_date, \
+        end_date

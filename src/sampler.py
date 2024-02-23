@@ -86,7 +86,9 @@ def draw_bounding_square(
         feature: ee.Feature,
         edge_size: int,
         projection: str | None) -> ee.feature:
-    point = feature.geometry()
+    geometry = feature.geometry()
+    point = ee.Algorithms.If(geometry.type().equals(
+        "Point"), geometry, geometry.centroid())
     maxError = ee.Number(0.001)
     match projection:
         case "UTM":
@@ -106,9 +108,10 @@ def draw_bounding_square(
 
     square = point.buffer(
         edge_size // 2).bounds(maxError=maxError, proj=projection).coordinates()
-    return feature.set(
-        "square",
-        square)
+    return feature.set({
+        "square": square,
+        "point": point
+    })
 
 
 def generate_random_points(
@@ -294,8 +297,9 @@ def generate_squares(
         .apply(pd.Series)\
         .add_prefix("square_")\
         .map(tuple)
-    df_out.loc[:, "point"] = gdf.loc[:, "geometry"].apply(
+    df_out.loc[:, "geometry"] = gdf.loc[:, "geometry"].apply(
         lambda p: p.coords[0])
+    df_out.loc[:, "point"] = gdf.loc[:, "point"]
     df_out.loc[:, "point_name"] = df_out.loc[:, "point"].apply(generate_name)
     df_out.loc[:, "square_name"] = df_out.loc[:, SQUARE_COLUMNS].apply(
         lambda r: generate_name(r.tolist()), axis=1)
@@ -326,7 +330,7 @@ def generate_time_combinations(
 
     df_list = []
     for idx in range(meta_data.sizes["index"]):
-        _, point_name, _, square_name, _, _ = parse_meta_data(
+        _, _, point_name, _, square_name, _, _ = parse_meta_data(
             meta_data, idx)
         new_df = df_years.copy()
         new_df.loc[:, "point_name"] = point_name

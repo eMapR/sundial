@@ -4,7 +4,7 @@ end_date: "2023-09-01"
 file_type: "ZARR"
 scale: 30
 edge_size: 7500
-reproject: true
+reprojection: true
 chip_data_path: "your/chip_data/path"
 meta_data_path: "your/meta_data/path"
 num_workers: 64
