@@ -1,5 +1,6 @@
 import ee
 import numpy as np
+import os
 import xarray as xr
 
 from datetime import datetime
@@ -169,3 +170,12 @@ def parse_meta_data(
         square_name, \
         start_date, \
         end_date
+
+def convert_to_mmseg_format(
+        meta_data_str: str,
+        variable_names: str | list[str],
+        delimiter: str) -> None:
+    df = xr.open_zarr(meta_data_str).to_dataframe()
+    txt_path = os.path.splitext(meta_data_str)[0] + '.txt'
+    return df.loc[:, variable_names].to_csv(
+        txt_path, sep=delimiter, header=False, index=False)

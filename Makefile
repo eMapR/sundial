@@ -1,21 +1,20 @@
 SHELL := /bin/bash
 ifndef SUNDIAL_BASE_PATH
 	SUNDIAL_BASE_PATH := $(shell pwd)
+	export SUNDIAL_BASE_PATH
 endif
 ifndef SUNDIAL_SAMPLE_NAME
 	SUNDIAL_SAMPLE_NAME := blm_or_wa_bounds
+	export SUNDIAL_SAMPLE_NAME
 endif
 ifndef SUNDIAL_PROCESSING
 	SUNDIAL_PROCESSING := hpc
+	export SUNDIAL_PROCESSING
 endif
 ifndef SUNDIAL_ENV_NAME 
 	SUNDIAL_ENV_NAME := sundial
+	export SUNDIAL_ENV_NAME
 endif
-
-export SUNDIAL_BASE_PATH
-export SUNDIAL_SAMPLE_NAME
-export SUNDIAL_PROCESSING
-export SUNDIAL_ENV_NAME
 
 .SILENT: sample fit validate test predict nuke
 
@@ -48,7 +47,7 @@ sample:
 			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.o \
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
 			--partition $(X86_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH)/utils \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/sample.slurm; \
 	else\
@@ -68,7 +67,7 @@ fit:
 			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.o \
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.e \
 			--partition $(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH)/utils \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=METHOD="fit",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
@@ -88,7 +87,7 @@ validate:
 			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.o \
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.e \
 			--partition $(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH)/utils \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=METHOD="validate",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
@@ -108,7 +107,7 @@ test:
 			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.o \
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH)/utils \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=METHOD="test",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
@@ -129,7 +128,7 @@ predict:
 			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.o \
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH)/utils \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=METHOD="predict",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)"SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \

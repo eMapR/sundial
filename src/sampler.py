@@ -354,7 +354,7 @@ def split_sample_data(
     return df_train, df_validate, df_test
 
 
-def save_sample_data(
+def save_sample_data_zarr(
         df_train: pd.DataFrame,
         df_validate: pd.DataFrame,
         df_test: pd.DataFrame,
@@ -368,6 +368,23 @@ def save_sample_data(
         yarr.to_zarr(
             store=path,
             mode="a")
+
+
+def save_sample_paths_txt(
+        df_train: pd.DataFrame,
+        df_validate: pd.DataFrame,
+        df_test: pd.DataFrame,
+        column_names: str | list[str],
+        delimiter: str | None,
+        training_sample_path: str,
+        validate_sample_path: str,
+        test_sample_path: str) -> None:
+    df_list = [df_train, df_validate, df_test]
+    zarr_paths = [training_sample_path, validate_sample_path, test_sample_path]
+    txt_paths = [os.path.splitext(path)[0] + '.txt' for path in zarr_paths]
+    for df, path in zip(df_list, txt_paths):
+        df.loc[:, column_names].to_csv(
+            path, sep=delimiter, header=False, index=False)
 
 
 def main(**kwargs):
@@ -424,7 +441,7 @@ def main(**kwargs):
             df_out, config["training_ratio"], config["test_ratio"])
 
         LOGGER.info("Saving sample data splits to paths...")
-        save_sample_data(
+        save_sample_data_zarr(
             df_train, df_validate, df_test,
             config["training_sample_path"],
             config["validate_sample_path"],
@@ -440,6 +457,7 @@ def parse_args():
     parser.add_argument('--config_path', type=str, default=None)
     parser.add_argument('--generate_squares', type=bool, default=True)
     parser.add_argument('--generate_time_sample', type=bool, default=True)
+    parser.add_argument('--generate_train_test', type=bool, default=True)
     return vars(parser.parse_args())
 
 

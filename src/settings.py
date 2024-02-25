@@ -8,16 +8,16 @@ END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
 
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 DATA_PATH = os.path.join(BASE_PATH, "data")
+BASE_LOG_PATH = os.path.join(BASE_PATH, "logs")
+
 SAMPLE_PATH = os.path.join(
     DATA_PATH, "samples", os.getenv("SUNDIAL_SAMPLE_NAME"))
-
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
 TRAINING_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.zarr")
 VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
-BASE_LOG_PATH = os.path.join(DATA_PATH, "logs")
 
 SQUARE_COLUMNS = [f"square_{i}" for i in range(5)]
 BANDS = ["B1", "B2", "B3", "B4", "B5", "B7"]
