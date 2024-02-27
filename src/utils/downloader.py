@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Literal
 from zarr.errors import PathNotFoundError, GroupNotFoundError, ArrayNotFoundError
 
+from helpers import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
 from logger import get_logger
-from sampler import parse_meta_data
-from utils import estimate_download_size, lt_image_generator, zarr_reshape
+from settings import FILE_EXT_MAP
 
 
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
@@ -204,18 +204,11 @@ class Downloader:
                          report_queue: mp.Queue
                          ) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
-        match self._file_type:
-            case "GEO_TIFF":
-                file_ext = "tif"
-            case "NPY" | "NUMPY_NDARRAY":
-                file_ext = "npy"
-            case "ZARR":
-                file_ext = "zarr"
+        file_ext = FILE_EXT_MAP[self._file_type]
         for idx in range(self._meta_size):
             try:
                 # creating an outpath for each square
-                geometry, \
-                    projection, \
+                geometry_coords, \
                     point_coords, \
                     point_name, \
                     square_coords, \
@@ -270,14 +263,15 @@ class Downloader:
                 # creating payload for each square to send to GEE
                 report_queue.put(
                     ("INFO", f"Creating image payload for square... {square_name}"))
+                report_queue.put(
+                    ("INFO", f"{geometry_coords}... {square_coords}"))
                 image = self._image_gen_callable(
                     start_date,
                     end_date,
                     square_coords,
                     self._scale,
-                    geometry,
-                    projection,
-                    self._overlap_band)
+                    self._overlap_band,
+                    geometry_coords)
 
                 # Reprojecting the image if necessary
                 match self._reprojection:
@@ -292,7 +286,7 @@ class Downloader:
                 if epsg_code is not None:
                     report_queue.put(
                         ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
-                    image = image.reprojection(
+                    image = image.reproject(
                         crs=epsg_code, scale=self._scale)
 
                 # encoding the image for the image consumer
@@ -380,9 +374,7 @@ class Downloader:
                             xarr = zarr_reshape(arr,
                                                 square_name,
                                                 point_name,
-                                                self._edge_size,
-                                                self._start_date.year,
-                                                self._end_date.year)
+                                                self._edge_size)
 
                             # unfortunately, xarray .zmetadata file does not play well with mp
                             def task():

@@ -6,7 +6,7 @@ import xarray as xr
 from datetime import datetime
 from ltgee import LandTrendr
 
-from settings import SQUARE_COLUMNS, MASK_LABELS, BACK_STEP
+from settings import BACK_STEP, MASK_LABELS, SQUARE_COLUMNS
 
 
 def estimate_download_size(
@@ -46,18 +46,16 @@ def estimate_download_size(
 def lt_image_generator(
         start_date: datetime,
         end_date: datetime,
-        area_of_interest: list[tuple[float, float]],
+        square_coords: list[tuple[float, float]],
         scale: int,
-        geometry: list[tuple[float, float]],
-        projection: str,
         overlap_band: bool,
+        overlap_coords: list[tuple[float, float]],
         mask_labels: list[str] = MASK_LABELS) -> ee.Image:
-    area_of_interest = ee.Geometry.Polygon(
-        area_of_interest, projection=projection)
+    square = ee.Geometry.Polygon(square_coords)
     lt = LandTrendr(
         start_date=start_date,
         end_date=end_date,
-        area_of_interest=area_of_interest,
+        area_of_interest=square,
         mask_labels=mask_labels,
         run=False
     )
@@ -74,41 +72,39 @@ def lt_image_generator(
         .select(old_band_names, new_band_names)\
 
     if overlap_band:
-        overlap_area = ee.Geometry.Polygon(geometry, projection=projection)
+        overlap_area = ee.Geometry.Polygon(overlap_coords)
         overlap_image = ee.Image.constant(1).clip(overlap_area)
         image = image.addBands(overlap_image.select(["constant"], ["overlap"]))
-    return image.clipToBoundsAndScale(geometry=area_of_interest, scale=scale)
+    return image.clipToBoundsAndScale(geometry=square, scale=scale)
 
 
 def zarr_reshape(
         arr: np.ndarray,
         square_name: str,
         point_name: str,
-        edge_size: int,
-        start_year: int,
-        end_year: int) -> None:
-    xr_list = []
-    for year in range(start_year, end_year + 1):
-        xr_year = xr.DataArray(np.dstack(
-            [arr[f"{year}_B1"],
-             arr[f"{year}_B2"],
-             arr[f"{year}_B3"],
-             arr[f"{year}_B4"],
-             arr[f"{year}_B5"],
-             arr[f"{year}_B7"]]),
-            dims=['x', 'y', "band"])
-        xr_list.append(xr_year.astype(float))
+        edge_size: int) -> None:
+    years, bands = zip(*[b.split('_')
+                       for b in arr.dtype.names if b != "overlap"])
+    years = set(years)
+    bands = set(bands)
+    xr_list = [
+        xr.DataArray(
+            np.dstack([arr[f"{y}_{b}"] for b in bands]),
+            dims=['x', 'y', "band"]
+        ).astype(float)
+        for y in years]
+
     xarr = xr.concat(xr_list, dim="year")
     xarr.chunk(chunks={"year": 1})
     xarr.name = square_name
     xarr.attrs.update(**{"point": point_name})
 
-    if edge_size:
-        xarr = pad_xy_xarray(xarr, edge_size)
-
     if "overlap" in arr.dtype.names:
         xarr["overlap"] = xr.DataArray(arr["overlap"], dims=['x', 'y'])\
             .astype(int)
+
+    if edge_size > min(xarr["x"].shape[0],  xarr["y"].shape[0]):
+        xarr = pad_xy_xarray(xarr, edge_size)
 
     return xarr
 
@@ -144,9 +140,12 @@ def parse_meta_data(
         meta_data: xr.Dataset,
         index: int) -> tuple[list[tuple[float, float]], str, tuple[float, float], str, datetime | None, datetime | None]:
     # this is a bit of a hack to get around the fact that return multiple types in one go is a bit of a pain
-    geometry = meta_data["geometry"].isel(index=index).values.item()
-    projection = meta_data["projection"].isel(index=index).values.item()
-    point_coords = meta_data["point"].isel(
+
+    geometry_columns = [k for k in meta_data.keys() if "geometry_" in k]
+    geometry_values = meta_data[geometry_columns].isel(
+        index=index).to_dataarray().values.tolist()
+    geometry = [p for p in geometry_values if all(c == c for c in p)]
+    point_coords = meta_data["point_coords"].isel(
         index=index).values.item()
     point_name = meta_data["point_name"].isel(
         index=index).values.item()
@@ -158,24 +157,14 @@ def parse_meta_data(
         end_year = meta_data["year"].isel(
             index=index).values.item()
         end_date = datetime(end_year, 9, 1)
-        start_date = datetime(end_date - BACK_STEP, 6, 1)
+        start_date = datetime(end_year - BACK_STEP, 6, 1)
     else:
         start_date = None
         end_date = None
     return geometry, \
-        projection, \
         point_coords, \
         point_name, \
         square_coords, \
         square_name, \
         start_date, \
         end_date
-
-def convert_to_mmseg_format(
-        meta_data_str: str,
-        variable_names: str | list[str],
-        delimiter: str) -> None:
-    df = xr.open_zarr(meta_data_str).to_dataframe()
-    txt_path = os.path.splitext(meta_data_str)[0] + '.txt'
-    return df.loc[:, variable_names].to_csv(
-        txt_path, sep=delimiter, header=False, index=False)

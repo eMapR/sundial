@@ -14,7 +14,7 @@ SAMPLE_PATH = os.path.join(
     DATA_PATH, "samples", os.getenv("SUNDIAL_SAMPLE_NAME"))
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
-TRAINING_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.zarr")
+TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.zarr")
 VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
@@ -31,6 +31,14 @@ BACK_STEP = 5
 RANDOM_STATE = 42
 NUM_CHANNELS = len(BANDS)
 
+GEE_FILE_TYPE = "ZARR"
+FILE_EXT_MAP = {
+    "GEO_TIFF": "tif",
+    "NPY": "npy",
+    "NUMPY_NDARRAY": "npy",
+    "ZARR": "zarr"
+}
+
 SAMPLER = {
     "generate_squares": True,
     "generate_time_samples": True,
@@ -43,13 +51,12 @@ SAMPLER = {
     "edge_size": round(CHIP_SIZE * SCALE),
     "strata_scale": 1e4,
     "strata_columns": None,
-    "projection": None,
     "fraction": None,
     "back_step": BACK_STEP,
     "training_ratio": 2e-1,
     "test_ratio": 2e-3,
     "meta_data_path": META_DATA_PATH,
-    "training_sample_path": TRAINING_SAMPLE_PATH,
+    "train_sample_path": TRAIN_SAMPLE_PATH,
     "validate_sample_path": VALIDATE_SAMPLE_PATH,
     "test_sample_path": TEST_SAMPLE_PATH,
     "overwrite": True,
@@ -61,7 +68,7 @@ SAMPLER = {
 DOWNLOADER = {
     "start_date": START_DATE,
     "end_date": END_DATE,
-    "file_type": "ZARR",
+    "file_type": GEE_FILE_TYPE,
     "scale": SCALE,
     "edge_size": round((SAMPLER["edge_size"]/SCALE)*PADDING),
     "reprojection": "UTM",
@@ -79,40 +86,14 @@ DOWNLOADER = {
     "test": False,
 }
 
-DATAMODULE = {
+DATALOADER = {
+    "file_type": FILE_EXT_MAP[GEE_FILE_TYPE],
     "chip_data_path": CHIP_DATA_PATH,
-    "training_sample_path": TRAINING_SAMPLE_PATH,
-    "validate_sample_path": PREDICT_SAMPLE_PATH,
+    "train_sample_path": TRAIN_SAMPLE_PATH,
+    "validate_sample_path": VALIDATE_SAMPLE_PATH,
     "test_sample_path": TEST_SAMPLE_PATH,
     "predict_sample_path": PREDICT_SAMPLE_PATH,
-    "batch_size": 1024,
-    "num_workers": 16,
-    "chip_size": CHIP_SIZE,
+    "chip_size": CHIP_SIZE+3,
     "base_year": END_DATE.year,
     "back_step": BACK_STEP
-}
-
-SUNDIAL = {
-    "image_size": 256,
-    "patch_size": 16,
-    "num_channels": NUM_CHANNELS,
-    "num_frames": BACK_STEP + 1,
-    "tubelet_size": 1,
-    "hidden_size": 768,
-    "num_hidden_layers": 12,
-    "num_attention_heads": 12,
-    "intermediate_size": 3072,
-    "hidden_act": "gelu",
-    "hidden_dropout_prob": 0.0,
-    "attention_probs_dropout_prob": 0.0,
-    "initializer_range": 0.02,
-    "layer_norm_eps": 1e-12,
-    "qkv_bias": True,
-    "use_mean_pooling": True,
-    "decoder_num_attention_heads": 6,
-    "decoder_hidden_size": 384,
-    "decoder_num_hidden_layers": 4,
-    "decoder_intermediate_size": 1536,
-    "norm_pix_loss": True,
-    "learning_rate": 1e-3,
 }

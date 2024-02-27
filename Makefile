@@ -16,7 +16,7 @@ ifndef SUNDIAL_ENV_NAME
 	export SUNDIAL_ENV_NAME
 endif
 
-.SILENT: sample fit validate test predict nuke
+.SILENT: sample download fit validate test predict nuke
 
 default:
 	@echo "Welcome to Sundial!"
@@ -40,7 +40,7 @@ default:
 	@echo
 
 sample:
-	echo "Retreiving chip sample from Google Earth Engine. This may take a while..."; \
+	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
 	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
@@ -53,9 +53,29 @@ sample:
 	else\
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/sample.sh -c $(SUNDIAL_CONFIG); \
+			python $(SUNDIAL_BASE_PATH)/src/utils/sampler.py --config_path $(SUNDIAL_CONFIG); \
 		else\
-			$(SUNDIAL_BASE_PATH)/utils/sample.sh; \
+			python $(SUNDIAL_BASE_PATH)/src/utils/sampler.py; \
+		fi \
+	fi \
+
+download:
+	echo "Downloading chip sample from Google Earth Engine. This may take a while..."; \
+	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
+		echo "Submitting job to HPC..."; \
+		sbatch \
+			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.o \
+			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
+			--partition $(X86_PARTITION) \
+			--chdir=$(SUNDIAL_BASE_PATH) \
+			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			$(SUNDIAL_BASE_PATH)/utils/download.slurm; \
+	else\
+		echo "Running on local machine..."; \
+		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
+			python $(SUNDIAL_BASE_PATH)/src/utils/downloader.py --config_path $(SUNDIAL_CONFIG); \
+		else\
+			python $(SUNDIAL_BASE_PATH)/src/utils/downloader.py; \
 		fi \
 	fi \
 
@@ -73,9 +93,9 @@ fit:
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "fit" -c $(SUNDIAL_CONFIG); \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py fit --config $(SUNDIAL_CONFIG); \
 		else \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "fit"; \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py fit; \
 		fi \
 	fi \
 
@@ -93,9 +113,9 @@ validate:
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "validate" -c $(SUNDIAL_CONFIG); \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py validate --config $(SUNDIAL_CONFIG); \
 		else \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "validate"; \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py validate; \
 		fi \
 	fi \
 
@@ -113,9 +133,9 @@ test:
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "test" -c $(SUNDIAL_CONFIG); \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py test --config $(SUNDIAL_CONFIG); \
 		else \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "test"; \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py test; \
 		fi \
 	fi \
 
@@ -134,9 +154,9 @@ predict:
 	else \
 		echo "Running on local machine..."; \
 		if [[ -n "$(SUNDIAL_CONFIG)" ]]; then \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "predict" -c $(SUNDIAL_CONFIG); \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py predict --config $(SUNDIAL_CONFIG); \
 		else \
-			$(SUNDIAL_BASE_PATH)/utils/run.sh -m "predict"; \
+			python $(SUNDIAL_BASE_PATH)/src/runner.py predict; \
 		fi \
 	fi \
 

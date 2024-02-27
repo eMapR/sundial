@@ -8,7 +8,7 @@
 conda activate ${SUNDIAL_ENV_NAME}
 
 if [[ -n ${SUNDIAL_CONFIG} ]]; then
-    ./run.sh -m ${METHOD} -c ${SUNDIAL_CONFIG}
+    python $SUNDIAL_BASE_PATH/src/runner.py ${METHOD} --config ${SUNDIAL_CONFIG}
 else
-    ./run.sh -m ${METHOD}
+    python $SUNDIAL_BASE_PATH/src/runner.py ${METHOD}
 fi

@@ -1,20 +1,13 @@
-import time
+from lightning.pytorch.cli import LightningCLI
 
-from lightning.pytorch.cli import ArgsType, LightningCLI
-
-from datamodule import ChipsDataModule
-
-from settings import RANDOM_STATE
-from sundial import Sundial
+from models import *
+from dataloaders import *
+from utils.settings import RANDOM_STATE
 
 
-def main(args: ArgsType = None, **kwargs):
-    # TODO: implement downloader and sampler pipelines as subcommands
+def main():
     LightningCLI(
-        model_class=Sundial,
         seed_everything_default=RANDOM_STATE,
-        datamodule_class=ChipsDataModule,
-        args=args,
     )
 
 

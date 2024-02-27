@@ -14,9 +14,9 @@ from typing import Literal
 from shapely.ops import unary_union
 from sklearn.model_selection import train_test_split
 
+from helpers import parse_meta_data, generate_name
 from logger import get_logger
-from settings import RANDOM_STATE
-from utils import parse_meta_data, generate_name, SQUARE_COLUMNS
+from settings import RANDOM_STATE, SQUARE_COLUMNS
 
 
 def get_elevation_image(
@@ -84,33 +84,21 @@ def stratify_by_percentile(
 
 def draw_bounding_square(
         feature: ee.Feature,
-        edge_size: int,
-        projection: str | None) -> ee.feature:
+        edge_size: int) -> ee.feature:
+    maxError = ee.Number(0.01)
     geometry = feature.geometry()
-    point = ee.Algorithms.If(geometry.type().equals(
-        "Point"), geometry, geometry.centroid())
-    maxError = ee.Number(0.001)
-    match projection:
-        case "UTM":
-            # Generate UTM zone
-            latitude = ee.Number(point.coordinates().get(0))
-            longitude = ee.Number(point.coordinates().get(1))
-            zone = ee.String(latitude.add(
-                ee.Number(180)).divide(6).round().format("%d"))
-            prefix = ee.String(ee.Algorithms.If(longitude.lt(
-                0), ee.String("EPSG:326"), ee.String("EPSG:327")))
-            projection = prefix.cat(zone)
-        case None:
-            # Note: repojection can be done at download
-            maxError = None
-        case _:
-            projection = ee.Projection(projection)
-
-    square = point.buffer(
-        edge_size // 2).bounds(maxError=maxError, proj=projection).coordinates()
+    point = ee.Geometry(
+        ee.Algorithms.If(
+            geometry.type().equals("Point"),
+            geometry,
+            geometry.centroid(maxError=maxError)
+        ))
+    square_coords = point.buffer(
+        edge_size // 2).bounds(maxError=maxError).coordinates()
+    point_coords = point.coordinates()
     return feature.set({
-        "square": square,
-        "point": point
+        "square_coords": square_coords,
+        "point_coords": point_coords
     })
 
 
@@ -133,8 +121,7 @@ def stratified_sampling(
         start_date: datetime,
         end_date: datetime,
         area_of_interest: ee.Geometry,
-        scale: int,
-        projection: str | None) -> ee.FeatureCollection:
+        scale: int) -> ee.FeatureCollection:
     """
     Performs stratified sampling on images within a specified area of interest based on PRISM and elevation.
 
@@ -179,7 +166,6 @@ def stratified_sampling(
         num_points,
         region=area_of_interest,
         scale=scale,
-        projection=projection,
         geometries=True)
 
 
@@ -194,40 +180,6 @@ def download_features(features: ee.FeatureCollection) -> gpd.GeoDataFrame:
         raise e
 
 
-def generate_gaussian_squares(
-        centroid_coords: tuple[float, float],
-        edge_size: float,
-        std_dev: float,
-        num_squares: int) -> list[tuple[float, float]]:
-    centroid_x, centroid_y = centroid_coords
-    x_coords = np.random.normal(centroid_x, std_dev, num_squares)
-    y_coords = np.random.normal(centroid_y, std_dev, num_squares)
-    square_centroids = np.column_stack((x_coords, y_coords))
-    squares = [generate_single_square(
-        square_centroid, edge_size) for _ in range(num_squares) for square_centroid in square_centroids]
-
-    return squares
-
-
-def generate_single_square(
-        centroid_coords: tuple[float, float],
-        edge_size: float) -> list[tuple[float, float]]:
-    dist_from_centroid = edge_size / 2
-    centroid_x, centroid_y = centroid_coords
-    return [
-        (centroid_x - dist_from_centroid,
-         centroid_y + dist_from_centroid),
-        (centroid_x + dist_from_centroid,
-         centroid_y + dist_from_centroid),
-        (centroid_x + dist_from_centroid,
-         centroid_y - dist_from_centroid),
-        (centroid_x - dist_from_centroid,
-         centroid_y - dist_from_centroid),
-        (centroid_x - dist_from_centroid,
-         centroid_y + dist_from_centroid)
-    ]
-
-
 def generate_squares(
         method: Literal["convering_grid", "random", "stratified", "single"],
         geo_file_path: str,
@@ -239,28 +191,26 @@ def generate_squares(
         end_date: datetime | None,
         strata_scale: int | None,
         strata_columns: list[str] | None,
-        projection: str | None,
         fraction: float | None) -> None:
     ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
     LOGGER.info("Loading geo file into GeoDataFrame...")
     gdf = gpd.read_file(geo_file_path)
 
-    if method != "dataframe":
-        unary_polygon = unary_union(gdf["geometry"])
+    if method != "single":
+        unary_polygon = unary_union(gdf["geometry"].to_crs(epsg=4326))
         gee_polygon = ee.Geometry.Polygon(
             list(unary_polygon.exterior.coords))
 
     LOGGER.info(f"Generating squares via {method}...")
     match method:
         case "convering_grid":
-            squares = gee_polygon.coveringGrid(
-                scale=edge_size, proj=projection)
+            squares = gee_polygon.coveringGrid(scale=edge_size)
         case "random":
             points = generate_random_points(
                 gee_polygon, edge_size, num_points)
             squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size, projection))
+                lambda f: draw_bounding_square(f, edge_size, None))
         case "stratified":
             points = stratified_sampling(
                 num_points,
@@ -268,51 +218,64 @@ def generate_squares(
                 start_date,
                 end_date,
                 gee_polygon,
-                strata_scale,
-                projection)
+                strata_scale)
             squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size, projection))
+                lambda f: draw_bounding_square(f, edge_size, None))
         case "single":
-            if num_points is not None:
-                groupby = gdf.groupby(strata_columns)
-                sample = groupby.sample(n=num_points)
-            elif fraction is not None:
+            if fraction is not None:
                 groupby = gdf.groupby(strata_columns)
                 sample = groupby.sample(frac=fraction)
+            elif num_points is not None:
+                groupby = gdf.groupby(strata_columns)
+                sample = groupby.sample(n=num_points)
             else:
                 sample = gdf
             sample = sample.reset_index(drop=True)
-            points = ee.FeatureCollection([ee.Geometry.Point(
-                list(p.centroid.coords)[0], proj=projection)
+            sample.loc[:, "geometry"] = sample.loc[:, "geometry"].to_crs(
+                epsg=4326)
+            points = ee.FeatureCollection([ee.Geometry.Polygon(
+                list(p.exterior.coords))
                 for p in sample.loc[:, "geometry"]])
             squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size, projection))
+                lambda f: draw_bounding_square(f, edge_size))
 
     LOGGER.info("Downloading squares to dataframe from GEE...")
     gdf = download_features(squares)
 
     LOGGER.info("Processing dataframe columns for zarr...")
-    df_out = gdf.loc[:, "square"]\
+    df_out = gdf.loc[:, "square_coords"]\
         .explode()\
         .apply(pd.Series)\
         .add_prefix("square_")\
         .map(tuple)
-    df_out.loc[:, "geometry"] = gdf.loc[:, "geometry"].apply(
-        lambda p: p.coords[0])
-    df_out.loc[:, "projection"] = projection
-    df_out.loc[:, "point"] = gdf.loc[:, "point"]
-    df_out.loc[:, "point_name"] = df_out.loc[:, "point"].apply(generate_name)
+
+    match gdf.loc[0:0, "geometry"].item().geom_type:
+        case "Polygon":
+            def f(p): return list(p.exterior.coords)
+        case "Point":
+            def f(p): return list(p.coords)
+    df_out = pd.concat([df_out, gdf.loc[:, "geometry"]
+                        .apply(f)
+                        .apply(pd.Series)
+                        .add_prefix("geometry_")], axis=1)
+    geometry_columns = df_out.filter(like="geometry_").columns.to_list()
+
+    df_out.loc[:, "point_coords"] = gdf.loc[:, "point_coords"].apply(tuple)
+    df_out.loc[:, "point_name"] = df_out.loc[:,
+                                             "point_coords"].apply(generate_name)
     df_out.loc[:, "square_name"] = df_out.loc[:, SQUARE_COLUMNS].apply(
         lambda r: generate_name(r.tolist()), axis=1)
     if "constant" in gdf.columns:
         df_out.loc[:, "constant"] = gdf.loc[:, "constant"]
     if strata_columns is not None:
+        if "year" in sample.columns:
+            df_out.loc[:, "year"] = sample.loc[:, "year"]
         for col in strata_columns:
             df_out.loc[:, col] = sample.loc[:, col]
 
     LOGGER.info("Converting to xarray and saving...")
     xarr = df_out.to_xarray()
-    coord_columns = SQUARE_COLUMNS + ["point"]
+    coord_columns = SQUARE_COLUMNS + geometry_columns + ["point_coords"]
     xarr[coord_columns] = xarr[coord_columns].astype(
         [("x", float), ("y", float)])
     xarr.to_zarr(
@@ -358,11 +321,11 @@ def save_sample_data_zarr(
         df_train: pd.DataFrame,
         df_validate: pd.DataFrame,
         df_test: pd.DataFrame,
-        training_sample_path: str,
+        train_sample_path: str,
         validate_sample_path: str,
         test_sample_path: str) -> None:
     df_list = [df_train, df_validate, df_test]
-    paths = [training_sample_path, validate_sample_path, test_sample_path]
+    paths = [train_sample_path, validate_sample_path, test_sample_path]
     for df, path in zip(df_list, paths):
         yarr = df.to_xarray()
         yarr.to_zarr(
@@ -376,11 +339,11 @@ def save_sample_paths_txt(
         df_test: pd.DataFrame,
         column_names: str | list[str],
         delimiter: str | None,
-        training_sample_path: str,
+        train_sample_path: str,
         validate_sample_path: str,
         test_sample_path: str) -> None:
     df_list = [df_train, df_validate, df_test]
-    zarr_paths = [training_sample_path, validate_sample_path, test_sample_path]
+    zarr_paths = [train_sample_path, validate_sample_path, test_sample_path]
     txt_paths = [os.path.splitext(path)[0] + '.txt' for path in zarr_paths]
     for df, path in zip(df_list, txt_paths):
         df.loc[:, column_names].to_csv(
@@ -410,7 +373,6 @@ def main(**kwargs):
                 "end_date": config["end_date"],
                 "strata_scale": config["strata_scale"],
                 "strata_columns": config["strata_columns"],
-                "projection": config["projection"],
                 "fraction": config["fraction"],
                 "meta_data_path": config["meta_data_path"],
             }
@@ -443,7 +405,7 @@ def main(**kwargs):
         LOGGER.info("Saving sample data splits to paths...")
         save_sample_data_zarr(
             df_train, df_validate, df_test,
-            config["training_sample_path"],
+            config["train_sample_path"],
             config["validate_sample_path"],
             config["test_sample_path"])
 
