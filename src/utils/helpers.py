@@ -6,7 +6,7 @@ import xarray as xr
 from datetime import datetime
 from ltgee import LandTrendr
 
-from settings import BACK_STEP, MASK_LABELS, SQUARE_COLUMNS
+from settings import MASK_LABELS, SQUARE_COLUMNS, STRATA_ATTR_NAME, STRATA_DIM_NAME
 
 
 def estimate_download_size(
@@ -80,9 +80,13 @@ def lt_image_generator(
 
 def zarr_reshape(
         arr: np.ndarray,
+        pixel_edge_size: int,
         square_name: str,
         point_name: str,
-        edge_size: int) -> None:
+        attributes: dict | None,
+        strata_map: dict | None) -> xr.DataArray:
+
+    # unflattening the array to shape (year, x, y, band)
     years, bands = zip(*[b.split('_')
                        for b in arr.dtype.names if b != "overlap"])
     years = set(years)
@@ -93,27 +97,48 @@ def zarr_reshape(
             dims=['x', 'y', "band"]
         ).astype(float)
         for y in years]
-
     xarr = xr.concat(xr_list, dim="year")
-    xarr.chunk(chunks={"year": 1})
+
+    # adding strata data as attributes
     xarr.name = square_name
-    xarr.attrs.update(**{"point": point_name})
+    new_attrs = attributes | {"point": point_name}
+    xarr.attrs.update(**new_attrs)
 
-    if "overlap" in arr.dtype.names:
-        xarr["overlap"] = xr.DataArray(arr["overlap"], dims=['x', 'y'])\
-            .astype(int)
+    xarr_ann = None
+    if "overlap" in arr.dtype.names and STRATA_ATTR_NAME in xarr.attrs.keys():
+        overlap = xr.DataArray(arr["overlap"], dims=['x', 'y'])
+        stratum = xarr.attrs[STRATA_ATTR_NAME]
+        xarr.assign_coords({stratum: overlap})
+        stratum_idx = strata_map[stratum]
 
-    if edge_size > min(xarr["x"].shape[0],  xarr["y"].shape[0]):
-        xarr = pad_xy_xarray(xarr, edge_size)
+        # Ideally, we want a probability for each class
+        # it is much easier to get a number per class
+        # if each strata has it's own tensor
+        # TODO: move this to tensor initialization to not store 0 values
+        xarr_ann_list = [xr.DataArray(np.zeros(overlap.shape), dims=['x', 'y'], name=stratum)
+                         for _ in strata_map]
+        xarr_ann = xr.concat(xarr_ann_list, dim=STRATA_DIM_NAME)
+        xarr_ann[stratum_idx:stratum_idx+1, :, :] = overlap
+        xarr_ann.name = square_name
 
-    return xarr
+    # padding the xarray to the edge size to maintain consistent image size in zarr
+    if pixel_edge_size > min(xarr["x"].shape[0],  xarr["y"].shape[0]):
+        xarr = pad_xy_xarray(xarr, pixel_edge_size)
+        if xarr_ann is not None:
+            xarr_ann = pad_xy_xarray(xarr_ann, pixel_edge_size)
+
+    xarr = xarr.chunk(chunks={"year": 1})
+    if xarr_ann is not None:
+        xarr_ann = xarr_ann.chunk(chunks={STRATA_DIM_NAME: 1})
+
+    return xarr, xarr_ann
 
 
 def pad_xy_xarray(
         xarr: xr.DataArray,
-        edge_size: int) -> xr.DataArray:
-    x_diff = edge_size - xarr["x"].size
-    y_diff = edge_size - xarr["y"].size
+        pixel_edge_size: int) -> xr.DataArray:
+    x_diff = pixel_edge_size - xarr["x"].size
+    y_diff = pixel_edge_size - xarr["y"].size
 
     x_start = x_diff // 2
     x_end = x_diff - x_start
@@ -128,7 +153,7 @@ def pad_xy_xarray(
     return xarr
 
 
-def generate_name(coords: tuple[float]) -> str:
+def generate_coords_name(coords: tuple[float]) -> str:
     if len(coords) > 2:
         coords = coords[:-1]
         return "_".join([f"x{x}y{y}" for x, y in coords])
@@ -138,13 +163,21 @@ def generate_name(coords: tuple[float]) -> str:
 
 def parse_meta_data(
         meta_data: xr.Dataset,
-        index: int) -> tuple[list[tuple[float, float]], str, tuple[float, float], str, datetime | None, datetime | None]:
+        index: int,
+        back_step: int) -> tuple[list[tuple[float, float]],
+                                 str,
+                                 tuple[float, float],
+                                 str,
+                                 datetime | None,
+                                 datetime | None,
+                                 dict]:
     # this is a bit of a hack to get around the fact that return multiple types in one go is a bit of a pain
-
     geometry_columns = [k for k in meta_data.keys() if "geometry_" in k]
     geometry_values = meta_data[geometry_columns].isel(
         index=index).to_dataarray().values.tolist()
     geometry = [p for p in geometry_values if all(c == c for c in p)]
+
+    # pulling directly to preserve order for polygon unamibguity
     point_coords = meta_data["point_coords"].isel(
         index=index).values.item()
     point_name = meta_data["point_name"].isel(
@@ -153,18 +186,25 @@ def parse_meta_data(
         index=index).to_dataarray().values.tolist()
     square_name = meta_data["square_name"].isel(
         index=index).values.item()
+
+    # generating start and end date from year attribute and back step
     if "year" in meta_data.variables.keys():
         end_year = meta_data["year"].isel(
             index=index).values.item()
         end_date = datetime(end_year, 9, 1)
-        start_date = datetime(end_year - BACK_STEP, 6, 1)
+        start_date = datetime(end_year - back_step, 6, 1)
     else:
         start_date = None
         end_date = None
+
+    data_vars = meta_data.isel(index=index).to_dict()["data_vars"].items()
+    attributes = {k: v["data"] for k, v in data_vars
+                  if all([s not in k for s in ["geometry", "square", "point"]])}
     return geometry, \
         point_coords, \
         point_name, \
         square_coords, \
         square_name, \
         start_date, \
-        end_date
+        end_date, \
+        attributes

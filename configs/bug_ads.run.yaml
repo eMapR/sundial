@@ -3,11 +3,11 @@ model:
     class_path: SundialPrithvi
     init_args:
         weights_path: /mnt/c/Users/scone/sundial/src/backbones/prithvi/Prithvi_100M.pt
-        num_classes: 2
-        embed_dim: 768
+        num_classes: 19
+        edge_size: 256
         learning_rate: 0.0001
-        mask_ratio: 0.0
-        upscale_depth: 4
+        upscale_depth: 3
+        upscale_dropout: true
         prithvi:
             model_args:
                 decoder_depth: 8
@@ -22,13 +22,6 @@ model:
                 patch_size: 16
                 tubelet_size: 1
             train_params:
-                bands:
-                - B2
-                - B3
-                - B4
-                - B5
-                - B6
-                - B7
                 data_mean:
                 - 775.2290211032589
                 - 1080.992780391705
@@ -43,15 +36,18 @@ model:
                 - 1368.3446143747644
                 - 1291.6764008585435
                 - 1154.505683480695
-                mask_ratio: 0.75
+                mask_ratio: 0.0
                 random_cropping: true
-
 
 data: 
     class_path: ChipsDataModule
     init_args: 
-        batch_size: 32
+        batch_size: 1
         num_workers: 4
-        mask_name: "overlap"
+        chip_size: 256
         base_year: null
         back_step: null
+
+trainer:
+  max_epochs: 1024
+  log_every_n_steps: 64

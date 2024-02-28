@@ -7,6 +7,10 @@ ifndef SUNDIAL_SAMPLE_NAME
 	SUNDIAL_SAMPLE_NAME := blm_or_wa_bounds
 	export SUNDIAL_SAMPLE_NAME
 endif
+ifndef SUNDIAL_EXPERIMENT_SUFFIX
+	SUNDIAL_EXPERIMENT_SUFFIX := 
+	export SUNDIAL_EXPERIMENT_SUFFIX
+endif
 ifndef SUNDIAL_PROCESSING
 	SUNDIAL_PROCESSING := hpc
 	export SUNDIAL_PROCESSING
@@ -32,11 +36,12 @@ default:
 	@echo "        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.    'IN-DEVELOPMENT'"
 	@echo
 	@echo "    Variables:"
-	@echo "        SUNDIAL_BASE_PATH:   Base path for Sundial scripts. Default: 'shell pwd' of this file"
-	@echo "        SUNDIAL_SAMPLE_NAME: Sample name. Default: 'blm_or_wa_bounds'"
-	@echo "        SUNDIAL_ENV_NAME:    Sundial environment name. Default: 'sundial'"
-	@echo "        SUNDIAL_PROCESSING:  Sundial processing method. Default: 'hpc'"
-	@echo "        SUNDIAL_CONFIG:      Sundial config file path. Default: 'src/settings.py'"
+	@echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of this file"
+	@echo "        SUNDIAL_SAMPLE_NAME:         Sample name. Default: 'blm_or_wa_bounds'"
+	@echo "        SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name. Default: ''"
+	@echo "        SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
+	@echo "        SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'"
+	@echo "        SUNDIAL_CONFIG:              Sundial config file path. Default: 'src/settings.py'"
 	@echo
 
 sample:
@@ -48,7 +53,7 @@ sample:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/sample.slurm; \
 	else\
 		echo "Running on local machine..."; \
@@ -68,7 +73,7 @@ download:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/download.slurm; \
 	else\
 		echo "Running on local machine..."; \
@@ -88,7 +93,7 @@ fit:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=METHOD="fit",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=METHOD="fit",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
@@ -108,7 +113,7 @@ validate:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=METHOD="validate",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=METHOD="validate",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
@@ -128,7 +133,7 @@ test:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=METHOD="test",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=METHOD="test",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)",SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
@@ -149,7 +154,7 @@ predict:
 			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=METHOD="predict",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)"SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)" \
+			--export=METHOD="predict",SUNDIAL_CONFIG="$(SUNDIAL_CONFIG)",SUNDIAL_BASE_PATH="$(SUNDIAL_BASE_PATH)",SUNDIAL_ENV_NAME="$(SUNDIAL_ENV_NAME)"SUNDIAL_SAMPLE_NAME="$(SUNDIAL_SAMPLE_NAME)",SUNDIAL_EXPERIMENT_SUFFIX="$(SUNDIAL_EXPERIMENT_SUFFIX)" \
 			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \

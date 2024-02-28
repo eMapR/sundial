@@ -1,13 +1,13 @@
+import lightning as L
 import os
 import torch
-
-import lightning as L
 import xarray as xr
+import yaml
 
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from utils.settings import DATALOADER as config
+from utils.settings import DATALOADER as config, STRATA_ATTR_NAME, STRATA_MAP_PATH
 
 
 def zarr_loader(data_path: str, name: int, **kwargs):
@@ -25,22 +25,22 @@ class ChipsDataset(Dataset):
     def __init__(self,
                  file_type: str,
                  chip_data_path: str,
+                 anno_data_path: str,
                  sample_path: str,
                  chip_size: int,
                  base_year: int | None,
                  back_step: int | None,
-                 mask_name: str | None,
-                 transform=None,
+                 normalize=None,
                  **kwargs):
         super().__init__()
         self.file_type = file_type
         self.chip_data_path = chip_data_path
+        self.anno_data_path = anno_data_path
         self.sample_path = sample_path
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
-        self.mask_name = mask_name
-        self.transform = transform
+        self.normalize = normalize
 
         self.image_loader = self._zarr_loader if self.file_type == "zarr" else self._zarr_loader
 
@@ -55,10 +55,13 @@ class ChipsDataset(Dataset):
         y_end = y_diff - y_start
         return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
 
-    def get_mask(self, xarr):
-        return xarr["overlap"].to_numpy()
+    def get_strata(self, name):
+        strata = self.image_loader(self.anno_data_path, name)
+        if self.chip_size < max(strata["x"].size, strata["y"].size):
+            strata = self.clip_chip(strata)
+        return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
-    def slice_year(self, xarr, year):
+    def slice_year(self, xarr: xr.Dataset, year: int):
         end_year = int(year) - self.base_year
         start_year = end_year - self.back_step
         # TODO: ensure coordinates are retained in xarray selection
@@ -79,18 +82,18 @@ class ChipsDataset(Dataset):
             chip = self.clip_chip(chip)
 
         # TODO: normalize band values
-        if self.transform:
-            chip = self.transform(chip)
+        if self.normalize is not None:
+            chip = self.normalize(chip)
 
-        if self.mask_name is not None:
-            mask = self.get_mask(image)
-            return torch.as_tensor(chip.to_numpy(), dtype=torch.float), torch.as_tensor(mask, dtype=torch.float)
+        if self.anno_data_path is not None:
+            strata = self.get_strata(name)
+            return torch.as_tensor(chip.to_numpy(), dtype=torch.float), strata
         else:
             return torch.as_tensor(chip.to_numpy(), dtype=torch.float)
 
     def __len__(self):
         paths = xr.open_zarr(self.sample_path)
-        return len(paths["index"])
+        return paths["index"].size
 
     def _zarr_loader(self, data_path: str, name: int, **kwargs):
         image = xr.open_zarr(data_path)[name]
@@ -108,9 +111,9 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-        mask_name: str,
         file_type: str = config["file_type"],
         chip_data_path: str = config["chip_data_path"],
+        anno_data_path: str = config["anno_data_path"],
         train_sample_path: str = config["train_sample_path"],
         validate_sample_path: str = config["validate_sample_path"],
         test_sample_path: str = config["test_sample_path"],
@@ -123,9 +126,9 @@ class ChipsDataModule(L.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.mask_name = mask_name
         self.file_type = file_type.lower()
         self.chip_data_path = chip_data_path
+        self.anno_data_path = anno_data_path
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
@@ -139,10 +142,10 @@ class ChipsDataModule(L.LightningDataModule):
         config = {
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
+            "anno_data_path": self.anno_data_path,
             "chip_size": self.chip_size,
             "base_year": self.base_year,
             "back_step": self.back_step,
-            "mask_name": self.mask_name,
             "transform": self.transform
         }
 
@@ -181,7 +184,7 @@ class ChipsDataModule(L.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(
-            self.validate_ds,
+            dataset=self.validate_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -189,7 +192,7 @@ class ChipsDataModule(L.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            self.test_ds,
+            dataset=self.test_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,

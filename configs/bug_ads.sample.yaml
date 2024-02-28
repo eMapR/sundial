@@ -1,4 +1,5 @@
 ---
 method: single
 fraction: 2.0e-4
+generate_time_combinations: false
 strata_columns: ['damage', "host"]

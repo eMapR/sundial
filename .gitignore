@@ -166,3 +166,4 @@ cython_debug/
 logs/
 lightning_logs/
 data/shapes/ads_damage_1990-2022
+data/samples

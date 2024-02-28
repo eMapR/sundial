@@ -30,18 +30,23 @@ class Downloader:
         start_date (datetime): The start date to filter image collection.
         end_date (datetime): The end date to filter image collection.
         file_type (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]): The file type to save the image data as.
+        overwrite (bool): A flag to overwrite existing image data.
         scale (int): The scale to use for projecting image.
-        edge_size (int): The edge size to use to calculate padding.
+        pixel_edge_size (int): The edge size to use to calculate padding.
         reprojection (str): A str flag to reproject the image data if set.
         overlap_band (bool): A flag to add a band that labels by pixel in the square whether the it overlaps the geometry.
+        back_step (int): The number of years to step back from the end date.
+
         chip_data_path (str): The path to save the image data to.
+        anno_data_path (str): The path to the strata map file.
         meta_data_path (str): The path to the meta data file with coordinates.
+
         num_workers (int): The number of workers to use for the parallel download process.
         retries (int): The number of retries to use for the download process.
         request_limit (int): The number of requests to make at a time.
         ignore_size_limit (bool): A flag to ignore the size limits for the image data.
         io_lock (bool): A flag to use a lock for the io process.
-        overwrite (bool): A flag to overwrite existing image data.
+
         log_path (str): The path to save the log file to.
         log_name (str): The name of the log file.
 
@@ -57,46 +62,50 @@ class Downloader:
             start_date: datetime | None,
             end_date: datetime | None,
             file_type: Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"],
+            overwrite: bool,
             scale: int,
-            edge_size: int,
+            pixel_edge_size: int,
             reprojection: bool,
             overlap_band: bool,
+            back_step: int,
             chip_data_path: str,
+            strata_map_path: str,
+            anno_data_path: str,
             meta_data_path: str,
             num_workers: int,
             retries: int,
             request_limit: int,
             ignore_size_limit: bool,
             io_lock: bool,
-            overwrite: bool,
             log_path: str,
             log_name: str,
-            test: bool
     ) -> None:
         self._start_date = start_date
         self._end_date = end_date
         self._file_type = file_type
+        self._overwrite = overwrite
         self._scale = scale
-        self._edge_size = edge_size
+        self._pixel_edge_size = pixel_edge_size
         self._reprojection = reprojection
         self._overlap_band = overlap_band
+        self._back_step = back_step
         self._chip_data_path = chip_data_path
+        self._strata_map_path = strata_map_path
+        self._anno_data_path = anno_data_path
         self._meta_data_path = meta_data_path
         self._num_workers = num_workers
         self._retries = retries
         self._request_limit = request_limit
         self._ignore_size_limit = ignore_size_limit
         self._io_lock = io_lock
-        self._overwrite = overwrite
         self._log_path = log_path
         self._log_name = log_name
-        self._test = test
 
         # TODO: Parameterize the image generator callable
         # TODO: Perform attribute checks
         self._image_gen_callable = lt_image_generator
         self._meta_data = xr.open_zarr(self._meta_data_path)
-        self._meta_size = 10 if test else self._meta_data["index"].size
+        self._meta_size = self._meta_data["index"].size
 
     def start(self) -> None:
         """
@@ -104,8 +113,8 @@ class Downloader:
         """
         if not self._ignore_size_limit:
             # this assumes all squares are the same size
-            _, _, _, square_coords, start_date, end_date = parse_meta_data(
-                self._meta_data, 0)
+            _, _, _, square_coords, start_date, end_date, _ = parse_meta_data(
+                self._meta_data, 0, self._back_step)
             test_area = ee.Geometry.Polygon(square_coords)
             if start_date is None:
                 start_date = self._start_date
@@ -132,7 +141,8 @@ class Downloader:
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
-        io_lock = manager.Lock() if self._io_lock else None
+        chip_io_lock = manager.Lock()
+        ann_io_lock = manager.Lock()
         request_limiter = manager.Semaphore(self._request_limit)
         workers = set()
 
@@ -158,7 +168,8 @@ class Downloader:
                     image_queue,
                     result_queue,
                     report_queue,
-                    io_lock,
+                    chip_io_lock,
+                    ann_io_lock,
                     request_limiter),
                 daemon=True)
             workers.add(image_consumer)
@@ -168,15 +179,22 @@ class Downloader:
         report_queue.put(("INFO",
                          f"Starting download of {self._meta_size} points of interest..."))
         idx = 0
-        while (result := result_queue.get()) is not None:
-            idx += 1
+        jdx = 0
+        while idx < self._meta_size:
             # TODO: perform result checks and monitor gee processes
-            report_queue.put(
-                ("INFO", f"{idx}/{self._meta_size} Completed. {result}"))
+            result = result_queue.get()
+            if result is not None:
+                idx += 1
+                report_queue.put(
+                    ("INFO", f"{idx}/{self._meta_size} Completed. {result}"))
+            else:
+                jdx += 1
+                report_queue.put(
+                    ("INFO", f"{jdx}/{self._num_workers} Workers terminated."))
         end_time = time.time()
         report_queue.put(("INFO",
-                         f"Download completed in {(end_time - start_time) / 60:.2} minutes..."))
-        report_queue.put(("INFO", "Finalizing last file writes..."))
+                         f"Download completed in {(end_time - start_time) / 60:.2} minutes."))
+        report_queue.put(("INFO", "Finalizing last file writes."))
         report_queue.put(None)
         [w.join() for w in workers]
 
@@ -207,15 +225,16 @@ class Downloader:
         file_ext = FILE_EXT_MAP[self._file_type]
         for idx in range(self._meta_size):
             try:
-                # creating an outpath for each square
+                # reading meta data from xarray
                 geometry_coords, \
                     point_coords, \
                     point_name, \
                     square_coords, \
                     square_name, \
                     start_date, \
-                    end_date\
-                    = parse_meta_data(self._meta_data, idx)
+                    end_date, \
+                    attributes \
+                    = parse_meta_data(self._meta_data, idx, self._back_step)
                 if start_date is None:
                     start_date = self._start_date
                 if end_date is None:
@@ -225,19 +244,24 @@ class Downloader:
                 if self._file_type != "ZARR":
                     chip_data_path = os.path.join(self._chip_data_path,
                                                   f"{square_name}.{file_ext}")
-
-                    if not self._overwrite and Path(chip_data_path).exists():
+                    anno_data_path = os.path.join(self._anno_data_path,
+                                                  f"{square_name}.{file_ext}")
+                    if not self._overwrite and Path(chip_data_path).exists() and Path(anno_data_path).exists():
                         report_queue.put(
                             "INFO", f"File {chip_data_path} already exists. Skipping...")
                         result_queue.put(square_name)
                         continue
                 else:
                     chip_data_path = self._chip_data_path
+                    anno_data_path = self._anno_data_path
                     if not self._overwrite:
                         try:
                             # opening with read only mode to check for existing zarr groups
                             zarr.open(
                                 store=chip_data_path,
+                                mode="r")[square_name]
+                            zarr.open(
+                                store=anno_data_path,
                                 mode="r")[square_name]
                             report_queue.put(("INFO",
                                               f"Polygon already exists at path. Skipping... {square_name}"))
@@ -282,7 +306,6 @@ class Downloader:
                         epsg_code = f"{epsg_prefix}{utm_zone[0]}"
                     case _:
                         epsg_code = self._reprojection
-
                 if epsg_code is not None:
                     report_queue.put(
                         ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
@@ -297,42 +320,30 @@ class Downloader:
 
                 # sending payload to the image consumer
                 image_queue.put(
-                    (payload, square_name, point_name, chip_data_path))
+                    (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
             except Exception as e:
                 report_queue.put(
                     ("CRITICAL", f"Failed to create image payload for square skipping: {type(e)} {e} {square_name}"))
                 result_queue.put(square_name)
         [image_queue.put(None) for i in range(self._num_workers)]
 
-    def _xr_image_generator(self,
-                            image_queue: mp.Queue,
-                            result_queue: mp.Queue
-                            ) -> None:
-        """
-        # with the xee backend for the Earth Engine API. The following code is a placeholder.
-        # SR is a collection but the output for open_dataset is NaN. If an image is used, the output
-        # error with limit (10MB) exceeded instead of 48MB. The issue is likely with the xee backend.
-        # ds = xr.open_dataset(
-        #     sr_collection,
-        #     scale=30,
-        #     geometry=p_sml,
-        #     engine=xee.EarthEngineBackendEntrypoint,
-        # )
-        """
-        pass
-
     def _image_consumer(self,
                         image_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
-                        io_lock: mp.Lock,
+                        chip_io_lock: mp.Lock,
+                        ann_io_lock: mp.Lock,
                         request_limiter: mp.Semaphore) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
+        with open(self._strata_map_path, "r") as f:
+            strata_map = yaml.safe_load(f)
+
         while (image_task := image_queue.get()) is not None:
-            payload, square_name, point_name, chip_data_path = image_task
+            payload, square_name, point_name, chip_data_path, anno_data_path, attributes = image_task
             attempts = 0
             arr = None
-            # attempt to download the image
+
+            # attempt to download the image from gee
             while attempts < self._retries:
                 attempts += 1
                 try:
@@ -371,23 +382,23 @@ class Downloader:
                         case "ZARR":
                             report_queue.put((
                                 "INFO", f"Reshaping square {arr.shape} to zarr... {square_name}"))
-                            xarr = zarr_reshape(arr,
-                                                square_name,
-                                                point_name,
-                                                self._edge_size)
+                            xarr, xarr_ann = zarr_reshape(arr,
+                                                          self._pixel_edge_size,
+                                                          square_name,
+                                                          point_name,
+                                                          attributes,
+                                                          strata_map)
 
-                            # unfortunately, xarray .zmetadata file does not play well with mp
-                            def task():
-                                report_queue.put((
-                                    "INFO", f"Writing square {xarr.shape} to {chip_data_path}... {square_name}"))
-                                xarr.to_zarr(
-                                    store=chip_data_path,
-                                    mode="a")
-                            if io_lock is not None:
-                                with io_lock:
-                                    task()
-                            else:
-                                task()
+                            # unfortunately, xarray .zmetadata file does not play well with mp so io lock is needed
+                            report_queue.put(
+                                ("INFO", f"Writing square {xarr.shape} to {chip_data_path}... {square_name}"))
+                            with chip_io_lock:
+                                xarr.to_zarr(store=chip_data_path, mode="a")
+                            if xarr_ann is not None:
+                                with ann_io_lock:
+                                    xarr_ann.\
+                                        to_zarr(
+                                            store=anno_data_path, mode="a")
                 except Exception as e:
                     report_queue.put(
                         ("ERROR", f"Failed to write square to {chip_data_path}: {type(e)} {e} {square_name}"))
