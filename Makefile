@@ -51,8 +51,8 @@ sample:
 	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.sampler.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.sampler.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
@@ -67,8 +67,8 @@ download:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.sample.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.downloader.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.downloader.e \
 			--partition $(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
@@ -83,8 +83,8 @@ fit:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.train.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.train.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.train.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
@@ -99,8 +99,8 @@ validate:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.validate.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.validate.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.validate.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
@@ -111,12 +111,12 @@ validate:
 	fi \
 
 test:
-	echo "Testing Sundial... Please check $(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e..."; \
+	echo "Testing Sundial... Please check $(SUNDIAL_BASE_PATH)/logs/sundial.test.e..."; \
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.test.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
@@ -132,8 +132,8 @@ predict:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.o \
-			--error=$(SUNDIAL_BASE_PATH)/data/logs/sundial.test.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/sundial.test.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/sundial.test.e \
 			--partition $(A64_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
