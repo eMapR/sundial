@@ -72,14 +72,14 @@ make SUNDIAL_PROCESSING=local SUNDIAL_CONFIG=./configs/bug_ads.run.yaml SUNDIAL_
 While the framework for deep learning is done via [Pytorch Lightning](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html), the pipeline down from GEE can be configured using a similar format. See src/pipeline/settings.py for more details. In addition, images are generated using an annual medoid composite since for now, that is our focus, but another image generator function can be provided to the class if you instantiate it separately.
 
 The configs worth looking at are:
-  - SAMPLER.method               Method to generate samples options: ["convering_grid" | "random" | "stratified" | "single"]
-  - SAMPLER.num_points           Number of points to sample from original shapefile
-  - SAMPLER.num_strata           Number of strata to generate from statistics
-  - SAMPLER.meter_edge_size      Edge size of squares in meters
-  - SAMPLER.strata_columns       Columns found in shapefile to generate strata for training
+  - SAMPLER.method: Method to generate samples options: ["convering_grid" | "random" | "stratified" | "single"]
+  - SAMPLER.num_points: Number of points to sample from original shapefile
+  - SAMPLER.num_strata: Number of strata to generate from statistics
+  - SAMPLER.meter_edge_size: Edge size of squares in meters
+  - SAMPLER.strata_columns: Columns found in shapefile to generate strata for training
 
-  - DOWNLOADER.file_type         File type to download ["NPY" | "NUMPY_NDARRAY" | "ZARR" | "GEO_TIFF"]
-  - DOWNLOADER.scale             Scale to generate image
-  - DOWNLOADER.reprojection      Reprojection string (EPSG:****)
-  - DOWNLOADER.overlap_band      Wether to include an additional band that notes wether the pixel in the generated square overlaps the original polygon
-  - DOWNLOADER.pixel_edge_size   Edge size of chip image in pixels
+  - DOWNLOADER.file_type: File type to download ["NPY" | "NUMPY_NDARRAY" | "ZARR" | "GEO_TIFF"]
+  - DOWNLOADER.scale: Scale to generate image
+  - DOWNLOADER.reprojection: Reprojection string (EPSG:****)
+  - DOWNLOADER.overlap_band: Wether to include an additional band that notes wether the pixel in the generated square overlaps the original polygon
+  - DOWNLOADER.pixel_edge_size: Edge size of chip image in pixels
