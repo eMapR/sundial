@@ -7,4 +7,4 @@
 
 conda activate ${SUNDIAL_ENV_NAME}
 
-python ${SUNDIAL_BASE_PATH}/src/pipeline/sampler.py --config $(SUNDIAL_CONFIG)
+python ${SUNDIAL_BASE_PATH}/src/pipeline/sampler.py --config ${SUNDIAL_CONFIG}

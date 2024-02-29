@@ -5,16 +5,16 @@ SHELL := /bin/bash
 .EXPORT_ALL_VARIABLES:
 
 ifndef SUNDIAL_BASE_PATH
-export SUNDIAL_BASE_PATH := $(shell pwd)
+SUNDIAL_BASE_PATH := $(shell pwd)
 endif
 ifndef SUNDIAL_SAMPLE_NAME
-export SUNDIAL_SAMPLE_NAME := blm_or_wa_bounds
+SUNDIAL_SAMPLE_NAME := blm_or_wa_bounds
 endif
 ifndef SUNDIAL_EXPERIMENT_SUFFIX
-export SUNDIAL_EXPERIMENT_SUFFIX :=
+SUNDIAL_EXPERIMENT_SUFFIX :=
 endif
 ifndef SUNDIAL_CKPT_PATH
-export SUNDIAL_CKPT_PATH := null
+SUNDIAL_CKPT_PATH := null
 endif
 ifndef SUNDIAL_PROCESSING
 SUNDIAL_PROCESSING := hpc
@@ -22,6 +22,7 @@ endif
 ifndef SUNDIAL_ENV_NAME 
 SUNDIAL_ENV_NAME := sundial
 endif
+
 
 default:
 	@echo "Welcome to Sundial!"
@@ -40,14 +41,17 @@ default:
 	@echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of this file"
 	@echo "        SUNDIAL_SAMPLE_NAME:         Sample name. Default: 'blm_or_wa_bounds'"
 	@echo "        SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name. Default: ''"
-	@echo "        ::qSUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
+	@echo "        SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
 	@echo "        SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'"
 	@echo "        SUNDIAL_CONFIG:              Sundial config file path. Default: 'src/settings.py'"
 	@echo "        SUNDIAL_CKPT_PATH:           Sundial checkpoint path. Default: 'null'"
 	@echo
 
+tester:
+	$(SUNDIAL_BASE_PATH)/utils/test.sh
+
 sample:
-	@echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
+	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
 	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
 		echo "Submitting job to HPC..."; \
 		sbatch \
