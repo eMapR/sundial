@@ -10,13 +10,13 @@ import pandas as pd
 import xarray as xr
 
 from datetime import datetime
+from multiprocessing.pool import ThreadPool
 from typing import Literal
 from shapely.ops import unary_union
-from sklearn.model_selection import train_test_split
 
-from helpers import parse_meta_data, generate_coords_name
+from utils import parse_meta_data, generate_coords_name
 from logger import get_logger
-from settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME
+from settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME, GEE_REQUEST_LIMIT, GEE_FEATURE_LIMIT
 
 
 def get_elevation_image(
@@ -224,6 +224,16 @@ def process_download(
     return df_out, geometry_columns
 
 
+def get_square_features(sample: gpd.GeoDataFrame, meter_edge_size: int) -> gpd.GeoDataFrame:
+    points = ee.FeatureCollection([ee.Geometry.Polygon(
+        list(p.exterior.coords))
+        for p in sample.loc[:, "geometry"]])
+    squares = points.map(
+        lambda f: draw_bounding_square(f, meter_edge_size))
+    gdf = download_features(squares)
+    return gdf
+
+
 def generate_squares(
         method: Literal["convering_grid", "random", "stratified", "single"],
         geo_file_path: str,
@@ -256,6 +266,8 @@ def generate_squares(
                 gee_polygon, meter_edge_size, num_points)
             squares = points.map(
                 lambda f: draw_bounding_square(f, meter_edge_size, None))
+            LOGGER.info("Downloading squares to dataframe from GEE...")
+            gdf = download_features(squares)
         case "stratified":
             points = stratified_sampling(
                 num_points,
@@ -266,6 +278,8 @@ def generate_squares(
                 strata_scale)
             squares = points.map(
                 lambda f: draw_bounding_square(f, meter_edge_size, None))
+            LOGGER.info("Downloading squares to dataframe from GEE...")
+            gdf = download_features(squares)
         case "single":
             if fraction is not None:
                 groupby = gdf.groupby(strata_columns)
@@ -278,14 +292,38 @@ def generate_squares(
             sample = sample.reset_index(drop=True)
             sample.loc[:, "geometry"] = sample.loc[:, "geometry"].to_crs(
                 epsg=4326)
-            points = ee.FeatureCollection([ee.Geometry.Polygon(
-                list(p.exterior.coords))
-                for p in sample.loc[:, "geometry"]])
-            squares = points.map(
-                lambda f: draw_bounding_square(f, meter_edge_size))
 
-    LOGGER.info("Downloading squares to dataframe from GEE...")
-    gdf = download_features(squares)
+            if (num_samples := len(sample)) > GEE_FEATURE_LIMIT:
+                # partition sample into batches. numpy array split has a deprecated warning
+                # this is done to maintain same order of samples for post processing
+                rem = num_samples % GEE_REQUEST_LIMIT
+                s = num_samples // GEE_REQUEST_LIMIT
+                b = []
+                for i in range(40):
+                    if rem > 0:
+                        rem -= 1
+                        b.append(sample.iloc[s*i:s*(i+1) + 1])
+                    else:
+                        b.append(sample.iloc[s*i:s*(i+1)])
+
+                # execute download in parallel
+                LOGGER.info(
+                    f"Downloading {num_samples} squares to dataframe from GEE using pool with batchsize {num_samples // GEE_REQUEST_LIMIT}...")
+                with ThreadPool(processes=GEE_REQUEST_LIMIT) as p:
+                    def f(b): return get_square_features(b, meter_edge_size)
+                    result = p.map(f, b)
+                    gdf = pd.concat(result, axis=0).reset_index(drop=True)
+            else:
+                points = ee.FeatureCollection([ee.Geometry.Polygon(
+                    list(p.exterior.coords))
+                    for p in sample.loc[:, "geometry"]])
+                squares = points.map(
+                    lambda f: draw_bounding_square(f, meter_edge_size))
+                LOGGER.info("Downloading squares to dataframe from GEE...")
+                gdf = download_features(squares)
+
+            # final processing check to ensure gee didn't fail
+            assert len(gdf) == len(sample)
 
     LOGGER.info("Processing dataframe columns for zarr...")
     df_out, geometry_columns = process_download(gdf, sample, strata_columns)
@@ -339,13 +377,13 @@ def train_test_split_xarr(
 def main(**kwargs):
     from settings import SAMPLER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
-    if (config_path := kwargs["config_path"]) is not None:
+    if (config_path := kwargs["config"]) is not None:
         with open(config_path, "r") as f:
             config = config | yaml.safe_load(f)
     global LOGGER
     LOGGER = get_logger(config["log_path"], config["log_name"])
 
-    start = time.time()
+    start_main = time.time()
     try:
         if config["generate_squares"]:
             LOGGER.info("Generating squares...")
@@ -362,7 +400,7 @@ def main(**kwargs):
                 "strata_map_path": config["strata_map_path"],
                 "strata_scale": config["strata_scale"],
                 "strata_columns": config["strata_columns"],
-                "fraction": config["fraction"],
+                "fraction": config["fraction"]
             }
             generate_squares(**square_config)
             end = time.time()
@@ -387,17 +425,20 @@ def main(**kwargs):
 
         if config["generate_train_test_split"]:
             LOGGER.info(
-                "Splitting sample data into training, validation, and test sets...")
+                "Splitting sample data into training, validation, test, and predict sets...")
             xarr_train, xarr_validate = train_test_split_xarr(
-                xarr_out, config["training_ratio"])
+                xarr_out, config["validate_ratio"])
             xarr_validate, xarr_test = train_test_split_xarr(
                 xarr_validate, config["test_ratio"])
+            xarr_test, xarr_predict = train_test_split_xarr(
+                xarr_test, config["predict_ratio"])
 
             LOGGER.info("Saving sample data splits to paths...")
-            xarr_list = [xarr_train, xarr_validate, xarr_test]
+            xarr_list = [xarr_train, xarr_validate, xarr_test, xarr_predict]
             paths = [config["train_sample_path"],
                      config["validate_sample_path"],
-                     config["test_sample_path"]]
+                     config["test_sample_path"],
+                     config["predict_sample_path"]]
             for xarr, path in zip(xarr_list, paths):
                 xarr.to_zarr(store=path, mode="a")
         else:
@@ -408,12 +449,12 @@ def main(**kwargs):
         raise e
     end = time.time()
     LOGGER.info(
-        f"Sample completed in: {(end - start)/60:.2} minutes")
+        f"Sample completed in: {(end - start_main)/60:.2} minutes")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Sampler Arguments')
-    parser.add_argument('--config_path',
+    parser.add_argument('--config',
                         type=str, default=None)
     return vars(parser.parse_args())
 

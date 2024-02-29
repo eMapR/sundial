@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Literal
 from zarr.errors import PathNotFoundError, GroupNotFoundError, ArrayNotFoundError
 
-from helpers import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
+from utils import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
 from logger import get_logger
-from settings import FILE_EXT_MAP
+from settings import FILE_EXT_MAP, GEE_REQUEST_LIMIT
 
 
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
@@ -74,7 +74,6 @@ class Downloader:
             meta_data_path: str,
             num_workers: int,
             retries: int,
-            request_limit: int,
             ignore_size_limit: bool,
             io_lock: bool,
             log_path: str,
@@ -95,7 +94,6 @@ class Downloader:
         self._meta_data_path = meta_data_path
         self._num_workers = num_workers
         self._retries = retries
-        self._request_limit = request_limit
         self._ignore_size_limit = ignore_size_limit
         self._io_lock = io_lock
         self._log_path = log_path
@@ -137,15 +135,17 @@ class Downloader:
         self._watcher()
 
     def _watcher(self) -> None:
+        # intialize the multiprocessing manager and queues
         manager = mp.Manager()
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
         chip_io_lock = manager.Lock()
         ann_io_lock = manager.Lock()
-        request_limiter = manager.Semaphore(self._request_limit)
+        request_limiter = manager.Semaphore(GEE_REQUEST_LIMIT)
         workers = set()
 
+        # create reporter, image generator, and consumer processes
         reporter = mp.Process(
             target=self._reporter,
             args=[report_queue],
@@ -174,6 +174,7 @@ class Downloader:
                 daemon=True)
             workers.add(image_consumer)
 
+        # start download and watch for results
         start_time = time.time()
         [w.start() for w in workers]
         report_queue.put(("INFO",
@@ -240,7 +241,7 @@ class Downloader:
                 if end_date is None:
                     end_date = self._end_date
 
-                # checking for existing files
+                # checking for existing files and skipping if file found
                 if self._file_type != "ZARR":
                     chip_data_path = os.path.join(self._chip_data_path,
                                                   f"{square_name}.{file_ext}")
@@ -367,7 +368,7 @@ class Downloader:
                         report_queue.put(
                             ("INFO", f"Retrying download for square... {square_name}"))
 
-            # write the image to disk
+            # write the image to disk if successful
             if arr is not None:
                 report_queue.put(
                     ("INFO", f"Attempting to save square to {chip_data_path}... {square_name}"))
@@ -382,23 +383,25 @@ class Downloader:
                         case "ZARR":
                             report_queue.put((
                                 "INFO", f"Reshaping square {arr.shape} to zarr... {square_name}"))
-                            xarr, xarr_ann = zarr_reshape(arr,
-                                                          self._pixel_edge_size,
-                                                          square_name,
-                                                          point_name,
-                                                          attributes,
-                                                          strata_map)
+                            xarr_chip, xarr_anno = zarr_reshape(arr,
+                                                                self._pixel_edge_size,
+                                                                square_name,
+                                                                point_name,
+                                                                attributes,
+                                                                strata_map)
 
                             # unfortunately, xarray .zmetadata file does not play well with mp so io lock is needed
                             report_queue.put(
-                                ("INFO", f"Writing square {xarr.shape} to {chip_data_path}... {square_name}"))
+                                ("INFO", f"Writing chip square {xarr_chip.shape} to {chip_data_path}... {square_name}"))
                             with chip_io_lock:
-                                xarr.to_zarr(store=chip_data_path, mode="a")
-                            if xarr_ann is not None:
+                                xarr_chip.to_zarr(
+                                    store=chip_data_path, mode="a")
+                            if xarr_anno is not None:
+                                report_queue.put(
+                                    ("INFO", f"Writing anno square {xarr_anno.shape} to {anno_data_path}... {square_name}"))
                                 with ann_io_lock:
-                                    xarr_ann.\
-                                        to_zarr(
-                                            store=anno_data_path, mode="a")
+                                    xarr_anno.to_zarr(
+                                        store=anno_data_path, mode="a")
                 except Exception as e:
                     report_queue.put(
                         ("ERROR", f"Failed to write square to {chip_data_path}: {type(e)} {e} {square_name}"))
@@ -415,7 +418,7 @@ class Downloader:
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Sampler Arguments')
-    parser.add_argument('--config_path', type=str)
+    parser.add_argument('--config', type=str)
     return vars(parser.parse_args())
 
 
@@ -424,7 +427,7 @@ def main(**kwargs):
     from settings import DOWNLOADER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
 
-    if (config_path := kwargs["config_path"]) is not None:
+    if (config_path := kwargs["config"]) is not None:
         with open(config_path, "r") as f:
             config = config | yaml.safe_load(f)
 

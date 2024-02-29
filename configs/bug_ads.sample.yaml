@@ -1,5 +1,5 @@
 ---
 method: single
-fraction: 2.0e-4
+fraction: 2.0e-2 # There are 717227 total polygons in the ads dataset
 generate_time_combinations: false
 strata_columns: ['damage', "host"]

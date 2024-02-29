@@ -1,36 +1,46 @@
 import lightning as L
-import numpy as np
 import torch
-import torchvision
 
 from torch import nn
 
 
-class PseudoHead(nn.Module):
-    def __init__(self,
-                 embed_dim: int,
-                 edge_size: int,
-                 num_class_channels: int,
-                 dropout: bool,
-                 depth: int):
+class UpscaleNeck(nn.Module):
+    def __init__(self, embed_dims: int):
         super().__init__()
-        embed_dims = [embed_dim // (4**i) for i in range(depth + 1)]
 
-        def build_block(in_ch, out_ch, idx): return nn.Sequential(
-            nn.Upsample(
-                size=(edge_size//2**(depth-idx-1))),
-            nn.Conv2d(
-                kernel_size=3,
+        def build_block(in_ch, out_ch): return nn.Sequential(
+            nn.ConvTranspose2d(
                 in_channels=in_ch,
                 out_channels=out_ch,
-                padding=1),
-            nn.Dropout() if dropout else nn.Identity(),
+                kernel_size=2,
+                stride=2),
             nn.ReLU())
 
         self.block = nn.Sequential(
-            *[build_block(embed_dims[i], embed_dims[i+1], i)
-              for i in range(depth)],
-            nn.Conv2d(kernel_size=1, in_channels=embed_dims[-1], out_channels=num_class_channels))
+            *[build_block(embed_dims[i], embed_dims[i+1])
+              for i in range(len(embed_dims) - 1)])
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class FCNHead(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super().__init__()
+        inter_channels = in_channels // 4
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels,
+                      inter_channels,
+                      kernel_size=3,
+                      padding=1,
+                      bias=False),
+            nn.BatchNorm2d(inter_channels),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Conv2d(inter_channels,
+                      out_channels,
+                      kernel_size=1),
+        )
 
     def forward(self, x):
         return self.block(x)
@@ -38,68 +48,125 @@ class PseudoHead(nn.Module):
 
 class SundialPrithvi(L.LightningModule):
     def __init__(self,
-                 weights_path: str,
                  num_classes: int,
-                 edge_size: int,
-                 learning_rate: float,
+                 view_size: int,
                  upscale_depth: int,
-                 upscale_dropout: bool,
-                 prithvi: dict):
+                 upscale_reduction_factor: int,
+                 prithvi_path: str,
+                 prithvi_params: dict):
         super().__init__()
-        self.edge_size = edge_size
-        self.learning_rate = learning_rate
-        self.mask_ratio = prithvi["train_params"]["mask_ratio"]
-        self.prithvi = prithvi
+        self.save_hyperparameters(logger=True)
+
+        self.view_size = view_size
+        self.mask_ratio = prithvi_params["train_params"]["mask_ratio"]
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         checkpoint = torch.load(
-            weights_path, map_location="gpu" if torch.cuda.is_available() else "cpu")
+            prithvi_path, map_location="gpu" if torch.cuda.is_available() else "cpu")
         del checkpoint['pos_embed']
         del checkpoint['decoder_pos_embed']
-        self.backbone = MaskedAutoencoderViT(**prithvi["model_args"])
+        self.backbone = MaskedAutoencoderViT(**prithvi_params["model_args"])
         self.backbone.eval()
         _ = self.backbone.load_state_dict(checkpoint, strict=False)
 
-        # Initializing Segmentation Psuedo-head
-        self.head = PseudoHead(
-            prithvi["model_args"]["embed_dim"]*6, edge_size, num_classes, upscale_depth, upscale_dropout)
+        # Initializing upscaling neck
+        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
+            prithvi_params["model_args"]["num_frames"]
+        embed_dims = [embed_dim // (upscale_reduction_factor**i)
+                      for i in range(upscale_depth + 1)]
+        self.neck = UpscaleNeck(embed_dims)
+
+        # Initializing FCNHead
+        self.head = FCNHead(embed_dims[-1], num_classes)
 
         # Defining loss function
         self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
-    def training_step(self, batch, *args):
-        image, annotations = batch
-        image = image.permute(0, 4, 1, 2, 3)
+    def forward(self, x):
+        # gathering features
         features, _, _ = self.backbone.forward_encoder(
-            image, mask_ratio=self.mask_ratio)
+            x, mask_ratio=self.mask_ratio)
+
+        # removeing class token and reshaping to 2D representation
         features = features[:, 1:, :]
-        features = features.view(features.shape[0], -1, 2**4, 2**4)
-        class_image = self.head(features)
-        return self.criterion(class_image, annotations)
+        features = features.view(
+            features.shape[0], -1, self.view_size, self.view_size)
 
-    def validation_step(self, batch, *args):
-        return
+        # performating segmentation
+        features = self.neck(features)
+        image = self.head(features)
 
-    def test_step(self, batch, *args):
-        return
+        return image
 
-    def predict_step(self, batch, *args):
-        return
+    def training_step(self, batch, batch_idx):
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image, annotations = batch
+        image = image.permute(0, 1, 4, 2, 3)
 
-    def configure_optimizers(self, *args):
-        optimizer = torch.optim.Adam(
-            self.head.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=1, gamma=0.1)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-                "monitor": "val_loss",
-                "strict": True,
-                "name": "adam",
-            }
-        }
+        # performating segmentation
+        class_image = self.forward(image)
+
+        # calculating loss
+        loss = self.criterion(class_image, annotations)
+
+        # logging loss
+        self.log(
+            name="train/loss",
+            value=loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image, annotations = batch
+        image = image.permute(0, 1, 4, 2, 3)
+
+        # performating segmentation
+        class_image = self.forward(image)
+
+        # calculating loss
+        loss = self.criterion(class_image, annotations)
+
+        self.log(
+            name="val/loss",
+            value=loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image, annotations = batch
+        image = image.permute(0, 1, 4, 2, 3)
+
+        # performating segmentation
+        class_image = self.forward(image)
+
+        # calculating loss
+        loss = self.criterion(class_image, annotations)
+
+        # logging loss
+        self.log(
+            name="test/loss",
+            value=loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+        return loss
+
+    def predict_step(self, batch, batch_idx):
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image, _ = batch
+        image = image.permute(0, 1, 4, 2, 3)
+        class_image = self.forward(image)
+        return class_image
