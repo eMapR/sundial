@@ -6,7 +6,7 @@ import xarray as xr
 from datetime import datetime
 from ltgee import LandTrendr
 
-from settings import MASK_LABELS, SQUARE_COLUMNS, STRATA_ATTR_NAME, STRATA_DIM_NAME
+from settings import MASK_LABELS, NO_DATA_VALUE, SQUARE_COLUMNS, STRATA_ATTR_NAME, STRATA_DIM_NAME
 
 
 def estimate_download_size(
@@ -149,7 +149,9 @@ def pad_xy_xarray(
     xarr = xarr.pad(
         x=(x_start, x_end),
         y=(y_start, y_end),
-        keep_attrs=True)
+        keep_attrs=True,
+        mode="constant",
+        constant_values=NO_DATA_VALUE)
     return xarr
 
 
