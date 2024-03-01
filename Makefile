@@ -1,8 +1,9 @@
 SHELL := /bin/bash
 
 .ONE_SHELL:
-.SILENT:
 .EXPORT_ALL_VARIABLES:
+.SILENT:
+.PHONY:
 
 ifndef SUNDIAL_BASE_PATH
 SUNDIAL_BASE_PATH := $(shell pwd)
@@ -50,14 +51,25 @@ config:
 		echo "Configs folder found. To restart experiment from scratch, use make nuke..."; \
 		exit 1; \
 	fi; \
-	echo "Generateing Sundial config files for experiment with values from sample and download..."; \
-	python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \
+	else \
+		echo "Generateing Sundial config files for experiment with values from sample and download..."; \
+		python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \
+	fi; \
 
-sample:
+
+config_check:
 	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
 		echo "No configs found. Please run make config first..."; \
 		exit 1; \
 	fi; \
+
+variable_check:
+	if [[ -z "$(SUNDIAL_EXPERIMENT_NAME)" ]]; then \
+		echo "Please provide sample name and experiment suffix to delete."; \
+		exit 1; \
+	fi; \
+
+sample: variable_check config_check
 	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
 	$(eval export SUNDIAL_METHOD=sample)
 
@@ -75,11 +87,7 @@ sample:
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/sampler.py; \
 	fi; \
 
-download:
-	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make config first..."; \
-		exit 1; \
-	fi; \
+download: variable_check config_check
 	echo "Downloading chip sample from Google Earth Engine. This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=download)
 
@@ -96,11 +104,7 @@ download:
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/downloader.py; \
 	fi; \
 
-fit:
-	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make config first..."; \
-		exit 1; \
-	fi; \
+fit: variable_check config_check
 	echo "Training model... This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=fit)
 
@@ -117,11 +121,7 @@ fit:
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-validate:
-	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make config first..."; \
-		exit 1; \
-	fi; \
+validate: variable_check config_check
 	echo "Validating model... Go ahead and hold your breath..."; \
 	$(eval export SUNDIAL_METHOD=validate)
 
@@ -138,11 +138,7 @@ validate:
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-test:
-	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make config first..."; \
-		exit 1; \
-	fi; \
+test: variable_check config_check
 	echo "Testing model... Please check $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e..."; \
 	$(eval export SUNDIAL_METHOD=test)
 
@@ -160,11 +156,7 @@ test:
 	fi; \
 
 
-predict:
-	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make config first..."; \
-		exit 1; \
-	fi; \
+predict: variable_check config_check
 	echo "Predicting image using model... Lets see if this works!"; \
 	$(eval export SUNDIAL_METHOD=predict)
 
@@ -181,20 +173,12 @@ predict:
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-clean:
-	if [[ -z $(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "Please provide sample name and experiment suffix to delete."; \
-		exit 1; \
-	fi; \
+clean: variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
-nuke:
-	if [[ -z $(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "Please provide sample name and experiment suffix to delete."; \
-		exit 1; \
-	fi; \
+nuke: variable_check
 	echo "Deleting logs, meta data, and zarr chips datasets for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
