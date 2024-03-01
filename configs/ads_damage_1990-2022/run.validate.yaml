@@ -1,0 +1,24 @@
+data:
+  class_path: ChipsDataModule
+  init_args:
+    anno_data_path: data/samples/ads_damage_1990-2022/anno_data.zarr
+    back_step: null
+    base_year: null
+    chip_data_path: data/samples/ads_damage_1990-2022/chip_data.zarr
+    chip_size: 256
+    file_type: zarr
+    predict_sample_path: data/samples/ads_damage_1990-2022/predict_sample.zarr
+    test_sample_path: data/samples/ads_damage_1990-2022/test_sample.zarr
+    train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
+    validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
+trainer:
+  callbacks:
+  - class_path: PredictionWriter
+    init_args:
+      output_dir: data/samples/ads_damage_1990-2022/predictions
+      write_interval: batch
+  logger:
+    class_path: ExperimentLogger
+    init_args:
+      name: validate
+      save_dir: logs/ads_damage_1990-2022
