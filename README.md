@@ -39,20 +39,20 @@ make
 
 Welcome to Sundial!
 
-        To run Sundial, use the following commands:
-
-    Sundial Methods:
-        sample:      Retrieves chip sample from Google Earth Engine.                                        'Alpha'
-        train:       Train Sundial model with optional config.                                              'Alpha'
-        validate:    Validate Sundial model with optional config.                                           'Alpha'
-        test:        Test Sundial model with optional config.                                               'Alpha'
-        predict:     Predict using Sundial. Must provide image path in SUNDIAL_CONFIG.                      'Alpha'
-        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.    'Alpha'
+    Methods:
+        sample:      Generates chip sample polygons using Google Earth Engine and provided shapefile.
+        download:    Downloads chip sample images from Google Earth Engine.
+        fit:         Train model using subset of data from sample and download.
+        validate:    Validate model subset of using data from sample and download.
+        test:        Test model using subset of data from sample and download.
+        predict:     Predict and image from subset of data from sample and download.
+        clean:       Removes all logs and sample data.
+        nuke:        Removes all data from run.
 
     Variables:
         SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of this file
-        SUNDIAL_SAMPLE_NAME:         Sample name. Default: 'blm_or_wa_bounds'
-        SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name to be appened to sample name. Default: ''
+        SUNDIAL_SAMPLE_NAME:         Sample name. Default: ''
+        SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name. Default: ''
         SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'
         SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'
 ```

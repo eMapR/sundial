@@ -26,19 +26,19 @@ endif
 default:
 	@echo "Welcome to Sundial!"
 	@echo
-	@echo "	To run Sundial, use the following commands:"
-	@echo
-	@echo "    Sundial Methods:"
-	@echo "        sample:      Retrieves chip sample from Google Earth Engine.                                        'Alpha'"
-	@echo "        train:       Train Sundial model with optional config.                                              'Alpha'"
-	@echo "        validate:    Validate Sundial model with optional config.                                           'Alpha'"
-	@echo "        test:        Test Sundial model with optional config.                                               'Alpha'"
-	@echo "        predict:     Predict using Sundial. Must provide image path in SUNDIAL_CONFIG.                      'Alpha'"
-	@echo "        nuke:        Removes all data from run. Must provide sample name in env var SUNDIAL_SAMPLE_NAME.    'Alpha'"
+	@echo "    Methods:"
+	@echo "        sample:      Generates chip sample polygons using Google Earth Engine and provided shapefile."
+	@echo "        download:    Downloads chip sample images from Google Earth Engine."
+	@echo "        fit:         Train model using subset of data from sample and download."
+	@echo "        validate:    Validate model subset of using data from sample and download."
+	@echo "        test:        Test model using subset of data from sample and download."
+	@echo "        predict:     Predict and image from subset of data from sample and download."
+	@echo "        clean:       Removes all logs and sample data."
+	@echo "        nuke:        Removes all data from run."
 	@echo
 	@echo "    Variables:"
 	@echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of this file"
-	@echo "        SUNDIAL_SAMPLE_NAME:         Sample name. Default: 'blm_or_wa_bounds'"
+	@echo "        SUNDIAL_SAMPLE_NAME:         Sample name. Default: ''"
 	@echo "        SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name. Default: ''"
 	@echo "        SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
 	@echo "        SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'"
@@ -180,6 +180,15 @@ predict:
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
+
+clean:
+	if [[ -z $(SUNDIAL_EXPERIMENT_NAME) ]]; then \
+		echo "Please provide sample name and experiment suffix to delete."; \
+		exit 1; \
+	fi; \
+	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
 nuke:
 	if [[ -z $(SUNDIAL_EXPERIMENT_NAME) ]]; then \
