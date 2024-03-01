@@ -1,26 +1,47 @@
 import os
-from datetime import datetime
+import yaml
 
-START_DATE_STR = "1985-06-01"
-END_DATE_STR = "2023-09-01"
-START_DATE = datetime.strptime(START_DATE_STR, "%Y-%m-%d")
-END_DATE = datetime.strptime(END_DATE_STR, "%Y-%m-%d")
+from datetime import date
+
+# config save and load functions
+
+
+def save_config(config, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        yaml.dump(config, f)
+
+
+def load_config(path):
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+
+
+# max date ranges as default
+START_DATE = date(1985, 6, 1)
+END_DATE = date(1985, 9, 1)
 
 # sample information
 SAMPLE_NAME = os.getenv("SUNDIAL_SAMPLE_NAME")
 EXPERIMENT_SUFFIX = os.getenv("SUNDIAL_EXPERIMENT_SUFFIX")
-
-if EXPERIMENT_SUFFIX is None or len(EXPERIMENT_SUFFIX) == 0:
-    EXPERIMENT_NAME = SAMPLE_NAME
-else:
-    EXPERIMENT_NAME = "_".join([SAMPLE_NAME, EXPERIMENT_SUFFIX])
+EXPERIMENT_NAME = os.getenv("SUNDIAL_EXPERIMENT_NAME")
 
 # base paths
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 DATA_PATH = os.path.join(BASE_PATH, "data")
-BASE_LOG_PATH = os.path.join(BASE_PATH, "logs", EXPERIMENT_NAME)
-SAMPLE_PATH = os.path.join(
-    DATA_PATH, "samples", EXPERIMENT_NAME)
+LOGS_PATH = os.path.join(BASE_PATH, "logs")
+SHAPES_PATH = os.path.join(DATA_PATH, "shapes")
+SAMPLES_PATH = os.path.join(DATA_PATH, "samples")
+CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
+
+# experiment paths
+LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
+SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
+CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_NAME)
+
+# config paths
+SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
+DOWNLOAD_CONFIG_PATH = os.path.join(CONFIG_PATH, "download.yaml")
 
 # sample and data paths
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
@@ -32,12 +53,9 @@ VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
 
-# pytorch lightning paths
-PREDICTIONS_PATH = os.path.join(SAMPLE_PATH, "predictions")
-PYTORCH_LOG_PATH = os.path.join(BASE_LOG_PATH, "lightning")
 
 # shapefile and source data paths
-GEO_FILE_PATH = os.path.join(DATA_PATH, "shapes", SAMPLE_NAME)
+GEO_FILE_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
 
 # image and meta data settings
 RANDOM_STATE = 42
@@ -92,9 +110,11 @@ SAMPLER = {
     "predict_sample_path": PREDICT_SAMPLE_PATH,
 
     # logging and testing
-    "log_path": BASE_LOG_PATH,
-    "log_name": "sampler",
+    "log_path": LOG_PATH,
+    "log_name": "sample",
 }
+if os.path.exists(SAMPLE_CONFIG_PATH):
+    SAMPLER = SAMPLER | load_config(DOWNLOAD_CONFIG_PATH)
 
 DOWNLOADER = {
     # downloading settings
@@ -121,13 +141,23 @@ DOWNLOADER = {
     "io_lock": True,  # whether to lock IO during download
 
     # logging and testing
-    "log_path": BASE_LOG_PATH,
-    "log_name": "downloader",
+    "log_path": LOG_PATH,
+    "log_name": "download",
 }
+if os.path.exists(DOWNLOAD_CONFIG_PATH):
+    DOWNLOADER = DOWNLOADER | load_config(DOWNLOAD_CONFIG_PATH)
+
+
+# pytorch lightning settings
+PREDICTIONS_PATH = os.path.join(SAMPLE_PATH, "predictions")
 
 DATALOADER = {
-    # name of strata column in strata_data_path
-    "strata_attr_name": STRATA_ATTR_NAME,
+    # image / chip settings
+    "chip_size": round(SAMPLER["meter_edge_size"] / DOWNLOADER["scale"]),
+    "base_year": START_DATE.year,
+    "back_step": SAMPLER["back_step"],
+
+    # path settings to load data
     "file_type": FILE_EXT_MAP[DOWNLOADER["file_type"]],
     "chip_data_path": CHIP_DATA_PATH,
     "anno_data_path": ANNO_DATA_PATH,
@@ -135,17 +165,39 @@ DATALOADER = {
     "validate_sample_path": VALIDATE_SAMPLE_PATH,
     "test_sample_path": TEST_SAMPLE_PATH,
     "predict_sample_path": PREDICT_SAMPLE_PATH,
-    "chip_size": round(SAMPLER["meter_edge_size"] / DOWNLOADER["scale"]),
-    "base_year": END_DATE.year,
-    "back_step": SAMPLER["back_step"]
 }
 
-PY_WRITER = {
+WRITER = {
     "output_dir": PREDICTIONS_PATH,
     "write_interval": "batch"
 }
 
-TENSORBOARD_LOGGER = {
-    "root_dir": PYTORCH_LOG_PATH,
-    "name": EXPERIMENT_NAME
+LOGGER = {
+    "save_dir": LOG_PATH
 }
+
+if __name__ == "__main__":
+    save_config(SAMPLER, SAMPLE_CONFIG_PATH)
+    save_config(DOWNLOADER, DOWNLOAD_CONFIG_PATH)
+    run = {
+        "data": {
+            "class_path": "ChipsDataModule",
+            "init_args": DATALOADER
+        },
+        "trainer": {
+            "logger": {
+                "class_path": "ExperimentLogger",
+                "init_args": LOGGER
+            },
+            "callbacks": [
+                {
+                    "class_path": "PredictionWriter",
+                    "init_args": WRITER
+                }
+            ]
+        }
+    }
+    for method in ["fit", "validate", "test", "predict"]:
+        run_config_path = os.path.join(CONFIG_PATH, f"run.{method}.yaml")
+        run["trainer"]["logger"]["init_args"]["name"] = method
+        save_config(run, run_config_path)

@@ -417,19 +417,13 @@ class Downloader:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Sampler Arguments')
-    parser.add_argument('--config', type=str)
+    parser = argparse.ArgumentParser(description='Downloader Arguments')
     return vars(parser.parse_args())
 
 
 def main(**kwargs):
-    # TODO: add additional kwargs checks
     from settings import DOWNLOADER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
-
-    if (config_path := kwargs["config"]) is not None:
-        with open(config_path, "r") as f:
-            config = config | yaml.safe_load(f)
 
     downloader = Downloader(**config)
     downloader.start()

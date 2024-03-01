@@ -6,4 +6,4 @@
 
 conda activate ${SUNDIAL_ENV_NAME}
 
-python ${SUNDIAL_BASE_PATH}/src/runner.py ${SUNDIAL_METHOD} --config ${SUNDIAL_CONFIG} --ckpt_path ${SUNDIAL_CKPT_PATH}
+python ${SUNDIAL_BASE_PATH}/src/runner.py

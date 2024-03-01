@@ -3,13 +3,11 @@ import torch
 
 from lightning.pytorch.callbacks import BasePredictionWriter
 
-from pipeline.settings import PY_WRITER as configs
-
 
 class PredictionWriter(BasePredictionWriter):
     def __init__(self,
-                 output_dir: str = configs["output_dir"],
-                 write_interval: str = configs["write_interval"]):
+                 output_dir: str,
+                 write_interval: str):
         super().__init__(write_interval)
         self.output_dir = output_dir
 

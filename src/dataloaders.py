@@ -7,7 +7,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from pipeline.settings import DATALOADER as config, STRATA_ATTR_NAME, STRATA_MAP_PATH
+from pipeline.settings import DATALOADER as config
 
 
 class PreprocesNormalization(nn.Module):
@@ -128,16 +128,16 @@ class ChipsDataModule(L.LightningDataModule):
         num_workers: int,
         means: list[float] | None,
         stds: list[float] | None,
-        file_type: str = config["file_type"],
-        chip_data_path: str = config["chip_data_path"],
-        anno_data_path: str = config["anno_data_path"],
-        train_sample_path: str = config["train_sample_path"],
-        validate_sample_path: str = config["validate_sample_path"],
-        test_sample_path: str = config["test_sample_path"],
-        predict_sample_path: str = config["predict_sample_path"],
-        chip_size: int = config["chip_size"],
-        base_year: int = config["base_year"],
-        back_step: int = config["back_step"],
+        chip_size: int | None,
+        base_year: int | None,
+        back_step: int | None,
+        file_type: str,
+        chip_data_path: str,
+        anno_data_path: str,
+        train_sample_path: str,
+        validate_sample_path: str,
+        test_sample_path: str,
+        predict_sample_path: str,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -145,6 +145,9 @@ class ChipsDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.means = means
         self.stds = stds
+        self.chip_size = chip_size
+        self.base_year = base_year
+        self.back_step = back_step
         self.file_type = file_type.lower()
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
@@ -152,9 +155,6 @@ class ChipsDataModule(L.LightningDataModule):
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
-        self.chip_size = chip_size
-        self.base_year = base_year
-        self.back_step = back_step
         self.normalize = None
 
         self.dataset_config = {

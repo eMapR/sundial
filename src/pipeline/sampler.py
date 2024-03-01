@@ -377,9 +377,6 @@ def train_test_split_xarr(
 def main(**kwargs):
     from settings import SAMPLER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
-    if (config_path := kwargs["config"]) is not None:
-        with open(config_path, "r") as f:
-            config = config | yaml.safe_load(f)
     global LOGGER
     LOGGER = get_logger(config["log_path"], config["log_name"])
 
@@ -454,8 +451,6 @@ def main(**kwargs):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Sampler Arguments')
-    parser.add_argument('--config',
-                        type=str, default=None)
     return vars(parser.parse_args())
 
 

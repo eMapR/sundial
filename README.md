@@ -3,13 +3,20 @@ Workflow / workstation for machine learning with data sourced from Google Earth 
 
 ## Introduction
 
-Google Earth Engine provides an API endpoint which allows you to download chips up to 48 MB +- a few MB. This is relatively small as far as spatial science goes but for machine learning it is an ideal size for training with image chips. This repo contains scripts to download chips via polygons sourced from shapefiles and run them through a neural network of your own choosing. Although google already provides powerful tools for deep learning integrated with GEE, it's nice to do things for little cost on your own machine if you already own a GPU.
+Google Earth Engine provides an API endpoint which allows you to download chips up to 48 MB +- a few MB. This is relatively small as far as spatial science goes but for machine learning it is an ideal size for training with a large number of image chips. This repo contains scripts to download chips via polygons sourced from shapefiles and run them through a neural network of your own choosing. Although google already provides powerful tools for deep learning integrated with GEE, it's nice to do things for little cost on your own machine if you already own a GPU.
 
 ## Getting Started
 
 ### Download and Install packages and dependencies
 
-- Create a conda environment from provided environment file or install as you go. Linux 64bit is required!!
+- Clone the repository and cd into it. 
+
+```
+git clone https://github.com/eMapR/sundial.git
+cd sundial
+```
+
+- Create a conda environment from provided environment file or install as you go. Linux 64bit is required! WSL will work as well.
 
 ```
 conda env create -f environment.yml -n sundial
@@ -48,23 +55,26 @@ Welcome to Sundial!
         SUNDIAL_EXPERIMENT_SUFFIX:   Sundial experiment name to be appened to sample name. Default: ''
         SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'
         SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'
-        SUNDIAL_CONFIG:              Sundial config file path. Default: 'src/settings.py'
-        SUNDIAL_CKPT_PATH:           Sundial checkpoint path. Default: 'null'
 ```
 
-- Sampling using a shapefile. The scripts will read the file name stored in data/shapes and generate train, validate,test,predict splits as well as metadata files in zarr format.
+- Generate config files for running make commands. These will automatically overwrite any default configs found in settings.py and be generated with the appropriate paths for all files that need to be created / read into each script. This must be run before any other submake.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_CONFIG=./configs/bug_ads.sample.yaml SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 sample
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 config
 ```
 
-- Downloading using the generated chip samples. Download limits apply so use your own discretion. I found the limit to be chips of shape (256 bands, 256 pixels, 256 pixels) to be the the upper limit but this may vary depending on processing, scale, etc.
+- Sampling using a shapefile. The scripts will read the file with the name in variable $(SUNDIAL_SAMPLE_NAME) stored in data/shapes and generate train, validate, test, predict splits if specified, as well as metadata files in zarr format. Features in the shapefile can also contain columns which can be used to create annotations for training using the strata_columns setting.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_CONFIG=./configs/bug_ads.download.yaml SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 download
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 sample
 ```
 
-- Train a model using the provided chips. Included is simple segmentation model built on Prithvi's foundation model using pytorch lightning. Using the CLI, you can mix and match models. See their [docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there or use one that is prebuilt in lightning. Backbones are also stored in the backbones directory in src.
+- Downloading using the generated chip samples to create GEE images. Download limits apply so use your own discretion. I found the limit to be chips of shape (256 bands, 256 pixels, 256 pixels) to be the the upper limit but this may vary depending on processing, scale, etc. The information used to download images is found in the meta data file generated from the sampler. Annotations can be saved as their own image. This may not be as storage efficient but makes for loading into Pytorch simpler for now.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_CONFIG=./configs/bug_ads.run.yaml SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 fit
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 download
+```
+
+- Train a model using the provided chips. Included in this repo is a simple segmentation model using a fully convolutional network built on Prithvi's foundation model as a backbone. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there or use one that is prebuilt in lightning. Backbones are also stored in the backbones directory in src and can be imported in a similar way.
+```Shell
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 fit
 ```
 
 ## Config files
@@ -81,5 +91,5 @@ The configs worth looking at are:
   - DOWNLOADER.file_type: File type to download ["NPY" | "NUMPY_NDARRAY" | "ZARR" | "GEO_TIFF"]
   - DOWNLOADER.scale: Scale to generate image
   - DOWNLOADER.reprojection: Reprojection string (EPSG:****)
-  - DOWNLOADER.overlap_band: Wether to include an additional band that notes wether the pixel in the generated square overlaps the original polygon
+  - DOWNLOADER.overlap_band: Whether to include an additional band that notes if the pixel in the generated square overlaps the original polygon
   - DOWNLOADER.pixel_edge_size: Edge size of chip image in pixels
