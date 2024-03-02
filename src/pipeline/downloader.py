@@ -184,7 +184,6 @@ class Downloader:
         report_queue.put(("INFO",
                           f"Starting download of {self._meta_size} points of interest..."))
         start_time = time.time()
-
         [w.start() for w in workers]
         idx = 0
         while idx < self._meta_size:
@@ -194,12 +193,12 @@ class Downloader:
                 idx += 1
                 report_queue.put(
                     ("INFO", f"{idx}/{self._meta_size} Completed. {result}"))
-        report_queue.put(None)
-        [w.join() for w in workers]
 
         end_time = time.time()
         report_queue.put(("INFO",
-                         f"Download completed in {(end_time - start_time) / 60:.2} minutes."))
+                          f"Download completed in {(end_time - start_time) / 60:.2} minutes."))
+        report_queue.put(None)
+        [w.join() for w in workers]
 
     def _reporter(self, report_queue: mp.Queue) -> None:
         logger = get_logger(self._log_path, self._log_name)
@@ -369,9 +368,9 @@ class Downloader:
         array_queue.put(None)
 
     def _writer(self,
-                        array_queue: mp.Queue,
-                        result_queue: mp.Queue,
-                        report_queue: mp.Queue) -> None:
+                array_queue: mp.Queue,
+                result_queue: mp.Queue,
+                report_queue: mp.Queue) -> None:
         with open(self._strata_map_path, "r") as f:
             strata_map = yaml.safe_load(f)
 
@@ -474,7 +473,7 @@ class Downloader:
                            anno_chip_batch: list[xr.DataArray],
                            square_name_batch: list[str],
                            batch_index: int,
-                           batch_size:int,
+                           batch_size: int,
                            chip_data_path: str,
                            anno_data_path: str,
                            report_queue: mp.Queue,
@@ -494,7 +493,6 @@ class Downloader:
         # reporting batch completion to watcher
         for name in square_name_batch:
             result_queue.put(name)
-        result_queue.put(name)
 
 
 def parse_args():
