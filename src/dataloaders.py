@@ -47,7 +47,10 @@ class ChipsDataset(Dataset):
             means, stds) if means and stds else None
 
         self.image_loader = self._zarr_loader if self.file_type == "zarr" else self._zarr_loader
-
+        self.paths = xr.open_zarr(self.sample_path)
+        if self.file_type == "zarr":
+            self.chips = xr.open_zarr(self.chip_data_path)
+        
     def clip_chip(self, xarr):
         x_diff = xarr["x"].size - self.chip_size
         y_diff = xarr["y"].size - self.chip_size
@@ -72,10 +75,9 @@ class ChipsDataset(Dataset):
 
     def __getitem__(self, idx):
         # loading image into xarr file
-        paths = xr.open_zarr(self.sample_path)
-        name = paths["square_name"].isel(index=idx).values.item()
-        year = paths["year"].isel(index=idx).values.item()
-        image = self.image_loader(self.chip_data_path, name)
+        name = self.paths["square_name"].isel(index=idx).values.item()
+        year = self.paths["year"].isel(index=idx).values.item()
+        image = self.image_loader(name)
 
         # slicing to target year if chip is larger and back_step is set
         if self.base_year is not None and self.back_step is not None:
@@ -107,12 +109,10 @@ class ChipsDataset(Dataset):
         return item
 
     def __len__(self):
-        paths = xr.open_zarr(self.sample_path)
-        return paths["index"].size
+        return self.paths["index"].size
 
-    def _zarr_loader(self, data_path: str, name: int, **kwargs):
-        image = xr.open_zarr(data_path)[name]
-        return image
+    def _zarr_loader(self, name: int, **kwargs):
+        return self.chips[name]
 
     def _tif_loader(self, data_path: str, name: int, **kwargs):
         image_path = os.path.join(data_path, f"{name}.tif")

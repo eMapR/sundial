@@ -4,7 +4,7 @@ chip_data_path: data/samples/ads_damage_1990-2022/chip_data.zarr
 end_date: null
 file_type: ZARR
 ignore_size_limit: true
-io_lock: true
+io_limit: 64
 log_name: downloader
 log_path: logs/ads_damage_1990-2022
 meta_data_path: data/samples/ads_damage_1990-2022/meta_data.zarr

@@ -2,7 +2,7 @@
 
 #SBATCH --export=ALL
 #SBATCH --job-name=sundial.download
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --cpus-per-task=32
 
 conda activate ${SUNDIAL_ENV_NAME}

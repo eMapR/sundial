@@ -69,13 +69,13 @@ class Downloader:
             overlap_band: bool,
             back_step: int,
             chip_data_path: str,
-            strata_map_path: str,
             anno_data_path: str,
+            strata_map_path: str,
             meta_data_path: str,
             num_workers: int,
             retries: int,
             ignore_size_limit: bool,
-            io_lock: bool,
+            io_limit: int,
             log_path: str,
             log_name: str,
     ) -> None:
@@ -89,13 +89,13 @@ class Downloader:
         self._overlap_band = overlap_band
         self._back_step = back_step
         self._chip_data_path = chip_data_path
-        self._strata_map_path = strata_map_path
         self._anno_data_path = anno_data_path
+        self._strata_map_path = strata_map_path
         self._meta_data_path = meta_data_path
         self._num_workers = num_workers
         self._retries = retries
         self._ignore_size_limit = ignore_size_limit
-        self._io_lock = io_lock
+        self._io_limit = io_limit
         self._log_path = log_path
         self._log_name = log_name
 
@@ -138,10 +138,9 @@ class Downloader:
         # intialize the multiprocessing manager and queues
         manager = mp.Manager()
         image_queue = manager.Queue()
+        array_queue = manager.Queue(self._io_limit*self._num_workers)
         result_queue = manager.Queue()
         report_queue = manager.Queue()
-        chip_io_lock = manager.Lock()
-        ann_io_lock = manager.Lock()
         request_limiter = manager.Semaphore(GEE_REQUEST_LIMIT)
         workers = set()
 
@@ -166,21 +165,30 @@ class Downloader:
                 target=self._image_consumer,
                 args=(
                     image_queue,
+                    array_queue,
                     result_queue,
                     report_queue,
-                    chip_io_lock,
-                    ann_io_lock,
                     request_limiter),
                 daemon=True)
             workers.add(image_consumer)
 
+        writer = mp.Process(
+            target=self._writer,
+            args=(
+                array_queue,
+                result_queue,
+                report_queue,
+            ),
+            daemon=True)
+        workers.add(writer)
+
         # start download and watch for results
-        start_time = time.time()
-        [w.start() for w in workers]
         report_queue.put(("INFO",
-                         f"Starting download of {self._meta_size} points of interest..."))
+                          f"Starting download of {self._meta_size} points of interest..."))
+        start_time = time.time()
+
+        [w.start() for w in workers]
         idx = 0
-        jdx = 0
         while idx < self._meta_size:
             # TODO: perform result checks and monitor gee processes
             result = result_queue.get()
@@ -188,16 +196,12 @@ class Downloader:
                 idx += 1
                 report_queue.put(
                     ("INFO", f"{idx}/{self._meta_size} Completed. {result}"))
-            else:
-                jdx += 1
-                report_queue.put(
-                    ("INFO", f"{jdx}/{self._num_workers} Workers terminated."))
+        report_queue.put(None)
+        [w.join() for w in workers]
+
         end_time = time.time()
         report_queue.put(("INFO",
                          f"Download completed in {(end_time - start_time) / 60:.2} minutes."))
-        report_queue.put(("INFO", "Finalizing last file writes."))
-        report_queue.put(None)
-        [w.join() for w in workers]
 
     def _reporter(self, report_queue: mp.Queue) -> None:
         logger = get_logger(self._log_path, self._log_name)
@@ -288,8 +292,6 @@ class Downloader:
                 # creating payload for each square to send to GEE
                 report_queue.put(
                     ("INFO", f"Creating image payload for square... {square_name}"))
-                report_queue.put(
-                    ("INFO", f"{geometry_coords}... {square_coords}"))
                 image = self._image_gen_callable(
                     start_date,
                     end_date,
@@ -330,31 +332,26 @@ class Downloader:
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
+                        array_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
-                        chip_io_lock: mp.Lock,
-                        ann_io_lock: mp.Lock,
                         request_limiter: mp.Semaphore) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
-        with open(self._strata_map_path, "r") as f:
-            strata_map = yaml.safe_load(f)
 
         while (image_task := image_queue.get()) is not None:
             payload, square_name, point_name, chip_data_path, anno_data_path, attributes = image_task
             attempts = 0
-            arr = None
 
             # attempt to download the image from gee
             while attempts < self._retries:
                 attempts += 1
                 try:
                     report_queue.put(("INFO",
-                                     f"Requesting Image pixels for square... {square_name}"))
+                                     f"Requesting image pixels for square... {square_name}"))
                     with request_limiter:
-                        # TODO: implement retry.Retry decorator
                         payload["expression"] = ee.deserializer.decode(
                             payload["expression"])
-                        arr = ee.data.computePixels(payload)
+                        array_chip = ee.data.computePixels(payload)
                         break
                 except Exception as e:
                     time.sleep(3)
@@ -369,51 +366,133 @@ class Downloader:
                             ("INFO", f"Retrying download for square... {square_name}"))
 
             # write the image to disk if successful
-            if arr is not None:
-                report_queue.put(
-                    ("INFO", f"Attempting to save square to {chip_data_path}... {square_name}"))
-                try:
-                    # TODO: perform reshaping along years for non zarr file types
-                    match self._file_type:
-                        case "NPY" | "GEO_TIFF":
-                            out_file = Path(chip_data_path)
-                            out_file.write_bytes(arr)
-                        case "NUMPY_NDARRAY":
-                            np.save(chip_data_path, arr)
-                        case "ZARR":
-                            report_queue.put((
-                                "INFO", f"Reshaping square {arr.shape} to zarr... {square_name}"))
-                            xarr_chip, xarr_anno = zarr_reshape(arr,
-                                                                self._pixel_edge_size,
-                                                                square_name,
-                                                                point_name,
-                                                                attributes,
-                                                                strata_map)
+            if array_chip is not None:
+                array_queue.put((array_chip, square_name, point_name,
+                                chip_data_path, anno_data_path, attributes))
 
-                            # unfortunately, xarray .zmetadata file does not play well with mp so io lock is needed
+        array_queue.put(None)
+
+    def _writer(self,
+                        array_queue: mp.Queue,
+                        result_queue: mp.Queue,
+                        report_queue: mp.Queue) -> None:
+        with open(self._strata_map_path, "r") as f:
+            strata_map = yaml.safe_load(f)
+
+        if self._file_type == "ZARR":
+            square_name_batch = []
+            xarr_chip_batch = []
+            anno_chip_batch = []
+            batch_index = 0
+
+        while (array_task := array_queue.get()) is not None:
+            array_chip, square_name, point_name, chip_data_path, anno_data_path, attributes = array_task
+            report_queue.put(
+                ("INFO", f"Processing square array to chip format {self._file_type} ... {square_name}"))
+
+            try:
+                # TODO: perform reshaping along years for non zarr file types
+                match self._file_type:
+                    case "NPY" | "GEO_TIFF":
+                        report_queue.put((
+                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {square_name}"))
+                        out_file = Path(chip_data_path)
+                        out_file.write_bytes(array_chip)
+                    case "NUMPY_NDARRAY":
+                        report_queue.put((
+                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {square_name}"))
+                        np.save(chip_data_path, array_chip)
+                    case "ZARR":
+                        report_queue.put((
+                            "INFO", f"Reshaping square {array_chip.shape} for {self._file_type}... {square_name}"))
+                        xarr_chip, xarr_anno = zarr_reshape(array_chip,
+                                                            self._pixel_edge_size,
+                                                            square_name,
+                                                            point_name,
+                                                            attributes,
+                                                            strata_map)
+
+                        # collecting dataarrays for batch writing
+                        report_queue.put(
+                            ("INFO", f"Appending xarr chip {xarr_chip.shape} to chip batch #{batch_index}... {square_name}"))
+                        xarr_chip_batch.append(xarr_chip)
+                        if xarr_anno is not None:
                             report_queue.put(
-                                ("INFO", f"Writing chip square {xarr_chip.shape} to {chip_data_path}... {square_name}"))
-                            with chip_io_lock:
-                                xarr_chip.to_zarr(
-                                    store=chip_data_path, mode="a")
-                            if xarr_anno is not None:
-                                report_queue.put(
-                                    ("INFO", f"Writing anno square {xarr_anno.shape} to {anno_data_path}... {square_name}"))
-                                with ann_io_lock:
-                                    xarr_anno.to_zarr(
-                                        store=anno_data_path, mode="a")
-                except Exception as e:
-                    report_queue.put(
-                        ("ERROR", f"Failed to write square to {chip_data_path}: {type(e)} {e} {square_name}"))
-                    if self._file_type == "NPY":
-                        try:
-                            out_file.unlink(missing_ok=True)
-                        except Exception as e:
-                            report_queue.put(
-                                ("ERROR", f"Failed to clean file square in {chip_data_path}: {type(e)} {e} {square_name}"))
-            result_queue.put(square_name)
+                                ("INFO", f"Appending xarr anno {xarr_anno.shape} to anno batch #{batch_index}... {square_name}"))
+                            anno_chip_batch.append(xarr_anno)
+                        square_name_batch.append(square_name)
+                        current_batch_size = len(xarr_chip_batch)
+                        report_queue.put(
+                            ("INFO", f"Current batch #{batch_index} contains {current_batch_size} chips..."))
+
+                        # attempt to merge batch of dataarrays and write to disk
+                        if current_batch_size == self._io_limit:
+                            self._write_xarray_batch(
+                                xarr_chip_batch,
+                                anno_chip_batch,
+                                square_name_batch,
+                                batch_index,
+                                chip_data_path,
+                                anno_data_path,
+                                report_queue,
+                                result_queue)
+
+                            # resetting batch
+                            square_name_batch.clear()
+                            xarr_chip_batch.clear()
+                            anno_chip_batch.clear()
+                            batch_index += 1
+
+            except Exception as e:
+                report_queue.put(
+                    ("ERROR", f"Failed to write chip to {chip_data_path}: {type(e)} {e} {square_name}"))
+                if self._file_type == "NPY":
+                    try:
+                        out_file.unlink(missing_ok=True)
+                    except Exception as e:
+                        report_queue.put(
+                            ("ERROR", f"Failed to clean chip file in {chip_data_path}: {type(e)} {e} {square_name}"))
+
+        if self._file_type == "ZARR" and len(xarr_chip_batch) > 0:
+            self._write_array_batch(
+                xarr_chip_batch,
+                anno_chip_batch,
+                square_name_batch,
+                batch_index,
+                chip_data_path,
+                anno_data_path,
+                report_queue,
+                result_queue)
 
         result_queue.put(None)
+
+    def _write_xarray_batch(self,
+                           xarr_chip_batch: list[xr.DataArray],
+                           anno_chip_batch: list[xr.DataArray],
+                           square_name_batch: list[str],
+                           batch_index: int,
+                           chip_data_path: str,
+                           anno_data_path: str,
+                           report_queue: mp.Queue,
+                           result_queue: mp.Queue) -> None:
+        # attempt to merge batch of dataarrays and write to disk
+        if (current_batch_size := len(xarr_chip_batch)) == self._io_limit:
+            xarr_chip_batch = xr.merge(xarr_chip_batch)
+            report_queue.put(
+                ("INFO", f"Writing chip batch #{batch_index} of size {current_batch_size} to {chip_data_path}..."))
+            xarr_chip_batch.to_zarr(
+                store=chip_data_path, mode="a")
+            if anno_chip_batch[0] is not None:
+                xarr_anno_batch = xr.merge(anno_chip_batch)
+                report_queue.put(
+                    ("INFO", f"Writing anno batch #{batch_index} of size {current_batch_size} to {anno_data_path}..."))
+                xarr_anno_batch.to_zarr(
+                    store=anno_data_path, mode="a")
+
+            # reporting batch completion to watcher
+            for name in square_name_batch:
+                result_queue.put(name)
+            result_queue.put(name)
 
 
 def parse_args():

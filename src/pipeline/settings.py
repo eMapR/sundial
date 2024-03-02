@@ -115,7 +115,7 @@ SAMPLER = {
     "log_name": "sample",
 }
 if os.path.exists(SAMPLE_CONFIG_PATH):
-    SAMPLER = SAMPLER | load_config(DOWNLOAD_CONFIG_PATH)
+    SAMPLER = SAMPLER | load_config(SAMPLE_CONFIG_PATH)
 
 DOWNLOADER = {
     # downloading settings
@@ -131,15 +131,15 @@ DOWNLOADER = {
 
     # paths
     "chip_data_path": CHIP_DATA_PATH,  # path to store actual images
-    "strata_map_path": STRATA_MAP_PATH,  # path to load strata map
     "anno_data_path": ANNO_DATA_PATH,  # path to load strata image
+    "strata_map_path": STRATA_MAP_PATH,  # path to load strata map
     "meta_data_path": META_DATA_PATH,  # path to store meta data of images
 
-    # GEE specific settings
-    "num_workers": 64,  # number of parallel workers to use for download and post processing
+    # MP and GEE specific settings
+    "num_workers": GEE_REQUEST_LIMIT,  # number of parallel workers to use for download and post processing
     "retries": 1,  # number of retries to use for download attempts
     "ignore_size_limit": True,  # whether to ignore the size limit for download
-    "io_lock": True,  # whether to lock IO during download
+    "io_limit": 64,  # number of chips to download before locking IO and writing
 
     # logging and testing
     "log_path": LOG_PATH,

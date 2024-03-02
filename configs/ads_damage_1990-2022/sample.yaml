@@ -1,6 +1,6 @@
 back_step: 5
 end_date: null
-fraction: 2.0e-2
+fraction: 2.0e-3
 generate_squares: true
 generate_time_combinations: false
 generate_train_test_split: true
