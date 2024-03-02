@@ -83,10 +83,13 @@ class SundialPrithvi(L.LightningModule):
         # Defining loss function
         self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
-    def forward(self, x):
+    def forward(self, chip):
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image = chip.permute(0, 1, 4, 2, 3)
+
         # gathering features
         features, _, _ = self.backbone.forward_encoder(
-            x, mask_ratio=self.mask_ratio)
+            image, mask_ratio=self.mask_ratio)
 
         # removeing class token and reshaping to 2D representation
         features = features[:, 1:, :]
@@ -95,22 +98,15 @@ class SundialPrithvi(L.LightningModule):
 
         # performating segmentation
         features = self.neck(features)
-        image = self.head(features)
+        logits = self.head(features)
 
-        return image
+        return logits
 
-    def training_step(self, batch, batch_idx):
-        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image, annotations = batch
-        image = image.permute(0, 1, 4, 2, 3)
+    def training_step(self, batch):
+        chip, annotations = batch
+        logits = self(chip)
+        loss = self.criterion(logits, annotations)
 
-        # performating segmentation
-        class_image = self.forward(image)
-
-        # calculating loss
-        loss = self.criterion(class_image, annotations)
-
-        # logging loss
         self.log(
             name="train/loss",
             value=loss,
@@ -121,16 +117,10 @@ class SundialPrithvi(L.LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image, annotations = batch
-        image = image.permute(0, 1, 4, 2, 3)
-
-        # performating segmentation
-        class_image = self.forward(image)
-
-        # calculating loss
-        loss = self.criterion(class_image, annotations)
+    def validation_step(self, batch):
+        chip, annotations = batch
+        logits = self(chip)
+        loss = self.criterion(logits, annotations)
 
         self.log(
             name="val/loss",
@@ -142,18 +132,11 @@ class SundialPrithvi(L.LightningModule):
 
         return loss
 
-    def test_step(self, batch, batch_idx):
-        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image, annotations = batch
-        image = image.permute(0, 1, 4, 2, 3)
+    def test_step(self, batch):
+        chip, annotations = batch
+        logits = self(chip)
+        loss = self.criterion(logits, annotations)
 
-        # performating segmentation
-        class_image = self.forward(image)
-
-        # calculating loss
-        loss = self.criterion(class_image, annotations)
-
-        # logging loss
         self.log(
             name="test/loss",
             value=loss,
@@ -164,7 +147,7 @@ class SundialPrithvi(L.LightningModule):
 
         return loss
 
-    def predict_step(self, batch, batch_idx):
+    def predict_step(self, batch):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image, _ = batch
         image = image.permute(0, 1, 4, 2, 3)

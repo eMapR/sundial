@@ -5,7 +5,7 @@ generate_squares: true
 generate_time_combinations: false
 generate_train_test_split: true
 geo_file_path: data/shapes/ads_damage_1990-2022
-log_name: sampler
+log_name: sample
 log_path: logs/ads_damage_1990-2022
 meta_data_path: data/samples/ads_damage_1990-2022/meta_data.zarr
 meter_edge_size: 7680

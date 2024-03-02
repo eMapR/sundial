@@ -136,10 +136,8 @@ DOWNLOADER = {
     "meta_data_path": META_DATA_PATH,  # path to store meta data of images
 
     # MP and GEE specific settings
-    "num_workers": GEE_REQUEST_LIMIT,  # number of parallel workers to use for download and post processing
-    "retries": 1,  # number of retries to use for download attempts
-    "ignore_size_limit": True,  # whether to ignore the size limit for download
-    "io_limit": 64,  # number of chips to download before locking IO and writing
+    "num_workers": GEE_REQUEST_LIMIT,  # number of parallel workers to use for download
+    "io_limit": 32,  # number of chips to download before locking IO and writing
 
     # logging and testing
     "log_path": LOG_PATH,
@@ -201,4 +199,10 @@ if __name__ == "__main__":
     for method in ["fit", "validate", "test", "predict"]:
         run_config_path = os.path.join(CONFIG_PATH, f"run.{method}.yaml")
         run["trainer"]["logger"]["init_args"]["name"] = method
+        match method:
+            case "fit":
+                run["trainer"]["inference_mode"] = True
+            case "validate" | "predict" | "test":
+                run["trainer"]["inference_mode"] = False
+
         save_config(run, run_config_path)

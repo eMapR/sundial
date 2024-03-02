@@ -46,11 +46,18 @@ class ChipsDataset(Dataset):
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
 
-        self.image_loader = self._zarr_loader if self.file_type == "zarr" else self._zarr_loader
         self.paths = xr.open_zarr(self.sample_path)
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
-        
+            self.annos = xr.open_zarr(self.anno_data_path)
+            self.chip_loader = lambda name: self._zarr_loader(self.chips, name)
+            self.anno_loader = lambda name: self._zarr_loader(self.annos, name)
+        if self.file_type == "tif":
+            self.chip_loader = lambda name: \
+                self._tif_loader(self.chip_data_path, name)
+            self.anno_loader = lambda name: \
+                self._tif_loader(self.anno_data_path, name)
+
     def clip_chip(self, xarr):
         x_diff = xarr["x"].size - self.chip_size
         y_diff = xarr["y"].size - self.chip_size
@@ -63,7 +70,7 @@ class ChipsDataset(Dataset):
         return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
 
     def get_strata(self, name):
-        strata = self.image_loader(self.anno_data_path, name)
+        strata = self.anno_loader(name)
         if self.chip_size < max(strata["x"].size, strata["y"].size):
             strata = self.clip_chip(strata)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
@@ -77,13 +84,11 @@ class ChipsDataset(Dataset):
         # loading image into xarr file
         name = self.paths["square_name"].isel(index=idx).values.item()
         year = self.paths["year"].isel(index=idx).values.item()
-        image = self.image_loader(name)
+        chip = self.chip_loader(name)
 
         # slicing to target year if chip is larger and back_step is set
         if self.base_year is not None and self.back_step is not None:
-            chip = self.slice_year(image, year)
-        else:
-            chip = image
+            chip = self.slice_year(chip, year)
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
@@ -91,7 +96,6 @@ class ChipsDataset(Dataset):
 
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
-        item = [chip]
 
         # normalizing chip to precalculated means and stds
         if self.normalize is not None:
@@ -100,19 +104,15 @@ class ChipsDataset(Dataset):
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
             strata = self.get_strata(name)
-            item.append(strata)
-
-        # including name if include_names is set
-        if self.include_names:
-            item.append(name)
-
-        return item
+            return chip, strata
+        else:
+            return chip
 
     def __len__(self):
         return self.paths["index"].size
 
-    def _zarr_loader(self, name: int, **kwargs):
-        return self.chips[name]
+    def _zarr_loader(self, xarr: xr.Dataset, name: int, **kwargs):
+        return xarr[name]
 
     def _tif_loader(self, data_path: str, name: int, **kwargs):
         image_path = os.path.join(data_path, f"{name}.tif")

@@ -28,14 +28,17 @@ default:
 	@echo "Welcome to Sundial!"
 	@echo
 	@echo "    Methods:"
-	@echo "        sample:      Generates chip sample polygons using Google Earth Engine and provided shapefile."
-	@echo "        download:    Downloads chip sample images from Google Earth Engine."
-	@echo "        fit:         Train model using subset of data from sample and download."
-	@echo "        validate:    Validate model subset of using data from sample and download."
-	@echo "        test:        Test model using subset of data from sample and download."
-	@echo "        predict:     Predict and image from subset of data from sample and download."
-	@echo "        clean:       Removes all logs and sample data."
-	@echo "        nuke:        Removes all data from run."
+	@echo "        sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile."
+	@echo "        download:       Downloads chip sample images from Google Earth Engine."
+	@echo "        fit:            Train model using subset of data from sample and download."
+	@echo "        validate:       Validate model subset of using data from sample and download."
+	@echo "        test:           Test model using subset of data from sample and download."
+	@echo "        predict:        Predict and image from subset of data from sample and download."
+	@echo "        clean:          Removes all logs and sample data."
+	@echo "        clean_logs:     Removes all logs."
+	@echo "        clean_sample:   Removes all sample data."
+	@echo "        clean_download: Removes all chip and anno data."
+	@echo "        nuke:           Removes all data from run."
 	@echo
 	@echo "    Variables:"
 	@echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of this file"
@@ -177,6 +180,19 @@ clean: variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
+
+clean_logs: variable_check
+	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
+
+clean_sample: variable_check
+	echo "Cleaning up all sample data including images for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
+
+clean_download: variable_check
+	echo "Cleaning up chip data and anno data for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*; \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*; \
 
 nuke: variable_check
 	echo "Deleting logs, logs, and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \

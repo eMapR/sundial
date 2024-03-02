@@ -12,13 +12,14 @@ data:
     train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
     validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
 trainer:
-  callbacks:
-  - class_path: PredictionWriter
-    init_args:
-      output_dir: data/samples/ads_damage_1990-2022/predictions
-      write_interval: batch
-  logger:
-    class_path: ExperimentLogger
-    init_args:
-      name: validate
-      save_dir: logs/ads_damage_1990-2022
+    inference_mode: false
+    callbacks:
+    - class_path: PredictionWriter
+        init_args:
+        output_dir: data/samples/ads_damage_1990-2022/predictions
+        write_interval: batch
+    logger:
+        class_path: ExperimentLogger
+        init_args:
+        name: validate
+        save_dir: logs/ads_damage_1990-2022

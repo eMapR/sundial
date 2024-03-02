@@ -1,7 +1,7 @@
 model:
     class_path: SundialPrithvi
     init_args:
-        num_classes: 19
+        num_classes: 37
         view_size: 16
         upscale_depth: 4
         upscale_reduction_factor: 2
@@ -52,6 +52,7 @@ data:
         validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
 trainer:
     max_epochs: 1024
+    inference_mode: true
     log_every_n_steps: 64
     callbacks:
       - class_path: PredictionWriter
