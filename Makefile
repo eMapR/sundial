@@ -96,8 +96,8 @@ download: variable_check config_check
 
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/downloade.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/downloade.e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/download.o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/download.e \
 			--partition=$(X86_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
