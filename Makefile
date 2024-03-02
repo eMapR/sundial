@@ -173,7 +173,7 @@ predict: variable_check config_check
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-clean_sample: variable_check
+clean: variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
