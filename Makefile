@@ -173,13 +173,13 @@ predict: variable_check config_check
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-clean: variable_check
+clean_sample: variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
 nuke: variable_check
-	echo "Deleting logs, meta data, and zarr chips datasets for $(SUNDIAL_EXPERIMENT_NAME)."; \
-	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
+	echo "Deleting logs, logs, and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
+	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME); \

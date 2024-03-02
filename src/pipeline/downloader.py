@@ -16,7 +16,7 @@ from zarr.errors import PathNotFoundError, GroupNotFoundError, ArrayNotFoundErro
 
 from utils import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
 from logger import get_logger
-from settings import FILE_EXT_MAP, GEE_REQUEST_LIMIT
+from settings import FILE_EXT_MAP
 
 
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
@@ -141,7 +141,6 @@ class Downloader:
         array_queue = manager.Queue(self._io_limit*self._num_workers)
         result_queue = manager.Queue()
         report_queue = manager.Queue()
-        request_limiter = manager.Semaphore(GEE_REQUEST_LIMIT)
         workers = set()
 
         # create reporter, image generator, and consumer processes
@@ -167,8 +166,7 @@ class Downloader:
                     image_queue,
                     array_queue,
                     result_queue,
-                    report_queue,
-                    request_limiter),
+                    report_queue),
                 daemon=True)
             workers.add(image_consumer)
 
@@ -334,8 +332,7 @@ class Downloader:
                         image_queue: mp.Queue,
                         array_queue: mp.Queue,
                         result_queue: mp.Queue,
-                        report_queue: mp.Queue,
-                        request_limiter: mp.Semaphore) -> None:
+                        report_queue: mp.Queue) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
 
         while (image_task := image_queue.get()) is not None:
@@ -348,11 +345,10 @@ class Downloader:
                 try:
                     report_queue.put(("INFO",
                                      f"Requesting image pixels for square... {square_name}"))
-                    with request_limiter:
-                        payload["expression"] = ee.deserializer.decode(
-                            payload["expression"])
-                        array_chip = ee.data.computePixels(payload)
-                        break
+                    payload["expression"] = ee.deserializer.decode(
+                        payload["expression"])
+                    array_chip = ee.data.computePixels(payload)
+                    break
                 except Exception as e:
                     time.sleep(3)
                     report_queue.put(
@@ -365,7 +361,7 @@ class Downloader:
                         report_queue.put(
                             ("INFO", f"Retrying download for square... {square_name}"))
 
-            # write the image to disk if successful
+            # send array to writer if successful
             if array_chip is not None:
                 array_queue.put((array_chip, square_name, point_name,
                                 chip_data_path, anno_data_path, attributes))
@@ -385,7 +381,12 @@ class Downloader:
             anno_chip_batch = []
             batch_index = 0
 
-        while (array_task := array_queue.get()) is not None:
+        completed_consumers = 0
+        while completed_consumers < self._num_workers:
+            array_task = array_queue.get()
+            if array_task is None:
+                completed_consumers += 1
+                continue
             array_chip, square_name, point_name, chip_data_path, anno_data_path, attributes = array_task
             report_queue.put(
                 ("INFO", f"Processing square array to chip format {self._file_type} ... {square_name}"))
@@ -421,17 +422,18 @@ class Downloader:
                                 ("INFO", f"Appending xarr anno {xarr_anno.shape} to anno batch #{batch_index}... {square_name}"))
                             anno_chip_batch.append(xarr_anno)
                         square_name_batch.append(square_name)
-                        current_batch_size = len(xarr_chip_batch)
+                        batch_size = len(xarr_chip_batch)
                         report_queue.put(
-                            ("INFO", f"Current batch #{batch_index} contains {current_batch_size} chips..."))
+                            ("INFO", f"Current batch #{batch_index} contains {batch_size} chips..."))
 
                         # attempt to merge batch of dataarrays and write to disk
-                        if current_batch_size == self._io_limit:
-                            self._write_xarray_batch(
+                        if batch_size == self._io_limit:
+                            self._write_array_batch(
                                 xarr_chip_batch,
                                 anno_chip_batch,
                                 square_name_batch,
                                 batch_index,
+                                batch_size,
                                 chip_data_path,
                                 anno_data_path,
                                 report_queue,
@@ -459,6 +461,7 @@ class Downloader:
                 anno_chip_batch,
                 square_name_batch,
                 batch_index,
+                batch_size,
                 chip_data_path,
                 anno_data_path,
                 report_queue,
@@ -466,33 +469,32 @@ class Downloader:
 
         result_queue.put(None)
 
-    def _write_xarray_batch(self,
+    def _write_array_batch(self,
                            xarr_chip_batch: list[xr.DataArray],
                            anno_chip_batch: list[xr.DataArray],
                            square_name_batch: list[str],
                            batch_index: int,
+                           batch_size:int,
                            chip_data_path: str,
                            anno_data_path: str,
                            report_queue: mp.Queue,
                            result_queue: mp.Queue) -> None:
-        # attempt to merge batch of dataarrays and write to disk
-        if (current_batch_size := len(xarr_chip_batch)) == self._io_limit:
-            xarr_chip_batch = xr.merge(xarr_chip_batch)
+        xarr_chip_batch = xr.merge(xarr_chip_batch)
+        report_queue.put(
+            ("INFO", f"Writing chip batch #{batch_index} of size {batch_size} to {chip_data_path}..."))
+        xarr_chip_batch.to_zarr(
+            store=chip_data_path, mode="a")
+        if anno_chip_batch[0] is not None:
+            xarr_anno_batch = xr.merge(anno_chip_batch)
             report_queue.put(
-                ("INFO", f"Writing chip batch #{batch_index} of size {current_batch_size} to {chip_data_path}..."))
-            xarr_chip_batch.to_zarr(
-                store=chip_data_path, mode="a")
-            if anno_chip_batch[0] is not None:
-                xarr_anno_batch = xr.merge(anno_chip_batch)
-                report_queue.put(
-                    ("INFO", f"Writing anno batch #{batch_index} of size {current_batch_size} to {anno_data_path}..."))
-                xarr_anno_batch.to_zarr(
-                    store=anno_data_path, mode="a")
+                ("INFO", f"Writing anno batch #{batch_index} of size {batch_size} to {anno_data_path}..."))
+            xarr_anno_batch.to_zarr(
+                store=anno_data_path, mode="a")
 
-            # reporting batch completion to watcher
-            for name in square_name_batch:
-                result_queue.put(name)
+        # reporting batch completion to watcher
+        for name in square_name_batch:
             result_queue.put(name)
+        result_queue.put(name)
 
 
 def parse_args():
