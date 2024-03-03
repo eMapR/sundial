@@ -19,7 +19,11 @@ cd sundial
 - Create a conda environment from provided environment file or install as you go. Linux 64bit is required! WSL will work as well.
 
 ```
-conda env create -f environment.yml -n sundial
+conda create --name sundial --file --file spec-file-{ARCH}.txt
+
+or
+
+conda env create --prefix {PREFIX} --file environment.yaml
 ```
 
 ### Authenticate on Google Earth Engine

@@ -164,7 +164,7 @@ class Downloader:
             else:
                 consumers_completed += 1
                 report_queue.put(
-                    ("INFO", f"{consumers_completed}/{self._meta_size} Consumers exited. {result}"))
+                    ("INFO", f"{consumers_completed}/{self._num_workers} Consumers completed. {result}"))
 
         end_time = time.time()
         report_queue.put(("INFO",
@@ -316,6 +316,7 @@ class Downloader:
             xarr_chip_batch = []
             anno_chip_batch = []
             batch_index = 0
+            batch_size = 0
 
         while (image_task := image_queue.get()) is not None:
             payload, square_name, point_name, chip_data_path, anno_data_path, attributes = image_task
@@ -368,7 +369,7 @@ class Downloader:
                                 ("INFO", f"Appending xarr anno {xarr_anno.shape} to consumer {consumer_index} anno batch {batch_index}... {square_name}"))
                             anno_chip_batch.append(xarr_anno)
                         square_name_batch.append(square_name)
-                        batch_size = len(square_name_batch)
+                        batch_size += 1
                         report_queue.put(
                             ("INFO", f"Consumer {consumer_index} batch {batch_index} contains {batch_size} chips..."))
 
@@ -392,6 +393,7 @@ class Downloader:
                             xarr_chip_batch.clear()
                             anno_chip_batch.clear()
                             batch_index += 1
+                            batch_size = 0
 
             except Exception as e:
                 report_queue.put(
@@ -412,6 +414,7 @@ class Downloader:
                     square_name_batch.clear()
                     xarr_chip_batch.clear()
                     anno_chip_batch.clear()
+                    batch_size = 0
 
         # writing any remaining data in batch lists to disk
         with io_lock:
@@ -429,7 +432,7 @@ class Downloader:
                     result_queue)
 
         report_queue.put(
-            "INFO", f"Consumer {consumer_index} completed. exiting...")
+            ("INFO", f"Consumer {consumer_index} completed. exiting..."))
         result_queue.put(None)
 
     def _write_array_batch(self,
