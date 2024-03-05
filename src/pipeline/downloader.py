@@ -331,7 +331,8 @@ class Downloader:
             except Exception as e:
                 report_queue.put(
                     ("ERROR", f"Failed to download square: {type(e)} {e} {square_name}"))
-
+                continue
+                
             report_queue.put(
                 ("INFO", f"Processing square array for chip format {self._file_type} ... {square_name}"))
             try:
