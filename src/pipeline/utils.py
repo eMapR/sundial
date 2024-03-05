@@ -126,12 +126,28 @@ def zarr_reshape(
         xarr = pad_xy_xarray(xarr, pixel_edge_size)
         if xarr_ann is not None:
             xarr_ann = pad_xy_xarray(xarr_ann, pixel_edge_size)
+    elif pixel_edge_size < max(xarr["x"].shape[0],  xarr["y"].shape[0]):
+        xarr = clip_xy_xarray(xarr, pixel_edge_size)
+        if xarr_ann is not None:
+            xarr_ann = clip_xy_xarray(xarr_ann, pixel_edge_size)
 
     xarr = xarr.chunk(chunks={"year": 1})
     if xarr_ann is not None:
         xarr_ann = xarr_ann.chunk(chunks={STRATA_DIM_NAME: 1})
 
     return xarr, xarr_ann
+
+def clip_xy_xarray(xarr: xr.DataArray,
+                   pixel_edge_size: int) -> xr.DataArray:
+    x_diff = xarr["x"].size - pixel_edge_size
+    y_diff = xarr["y"].size - pixel_edge_size
+
+    x_start = x_diff // 2
+    x_end = x_diff - x_start
+
+    y_start = y_diff // 2
+    y_end = y_diff - y_start
+    return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
 
 
 def pad_xy_xarray(

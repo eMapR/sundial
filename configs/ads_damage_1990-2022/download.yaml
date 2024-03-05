@@ -3,7 +3,7 @@ back_step: 5
 chip_data_path: data/samples/ads_damage_1990-2022/chip_data.zarr
 end_date: null
 file_type: ZARR
-io_limit: 4
+io_limit: 32
 log_name: download
 log_path: logs/ads_damage_1990-2022
 meta_data_path: data/samples/ads_damage_1990-2022/meta_data.zarr

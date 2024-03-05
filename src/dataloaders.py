@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
 from pipeline.settings import DATALOADER as config
-
+from utils import clip_xr_array, pad_xr_array
 
 class PreprocesNormalization(nn.Module):
     def __init__(self, means, stds):
@@ -43,10 +43,11 @@ class ChipsDataset(Dataset):
         self.base_year = base_year
         self.back_step = back_step
         self.include_names = include_names
+
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
+        self.meta_data = xr.open_zarr(self.sample_path)
 
-        self.paths = xr.open_zarr(self.sample_path)
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
             self.annos = xr.open_zarr(self.anno_data_path)
@@ -58,21 +59,10 @@ class ChipsDataset(Dataset):
             self.anno_loader = lambda name: \
                 self._tif_loader(self.anno_data_path, name)
 
-    def clip_chip(self, xarr):
-        x_diff = xarr["x"].size - self.chip_size
-        y_diff = xarr["y"].size - self.chip_size
-
-        x_start = x_diff // 2
-        x_end = x_diff - x_start
-
-        y_start = y_diff // 2
-        y_end = y_diff - y_start
-        return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
-
     def get_strata(self, name):
         strata = self.anno_loader(name)
         if self.chip_size < max(strata["x"].size, strata["y"].size):
-            strata = self.clip_chip(strata)
+            strata = clip_xr_array(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
     def slice_year(self, xarr: xr.Dataset, year: int):
@@ -82,8 +72,8 @@ class ChipsDataset(Dataset):
 
     def __getitem__(self, idx):
         # loading image into xarr file
-        name = self.paths["square_name"].isel(index=idx).values.item()
-        year = self.paths["year"].isel(index=idx).values.item()
+        name = self.meta_data["square_name"].isel(index=idx).values.item()
+        year = self.meta_data["year"].isel(index=idx).values.item()
         chip = self.chip_loader(name)
 
         # slicing to target year if chip is larger and back_step is set
@@ -92,7 +82,7 @@ class ChipsDataset(Dataset):
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
-            chip = self.clip_chip(chip)
+            chip = clip_xr_array(chip, self.chip_size)
 
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
@@ -109,7 +99,7 @@ class ChipsDataset(Dataset):
             return chip
 
     def __len__(self):
-        return self.paths["index"].size
+        return self.meta_data["index"].size
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int, **kwargs):
         return xarr[name]
@@ -155,17 +145,16 @@ class ChipsDataModule(L.LightningDataModule):
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
-        self.normalize = None
 
         self.dataset_config = {
             "means": self.means,
             "stds": self.stds,
-            "file_type": self.file_type,
-            "chip_data_path": self.chip_data_path,
-            "anno_data_path": self.anno_data_path,
             "chip_size": self.chip_size,
             "base_year": self.base_year,
             "back_step": self.back_step,
+            "file_type": self.file_type,
+            "chip_data_path": self.chip_data_path,
+            "anno_data_path": self.anno_data_path,
         }
 
         self.dataloader_config = {

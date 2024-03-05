@@ -51,13 +51,14 @@ data:
         train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
         validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
 trainer:
+    accelerator: gpu
     max_epochs: 1024
     inference_mode: true
     log_every_n_steps: 64
     callbacks:
       - class_path: PredictionWriter
         init_args:
-            output_dir: data/samples/ads_damage_1990-2022/predictions
+            output_dir: logs/ads_damage_1990-2022/predictions
             write_interval: batch
     logger:
         class_path: ExperimentLogger

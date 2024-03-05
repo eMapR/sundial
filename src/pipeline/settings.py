@@ -148,8 +148,6 @@ if os.path.exists(DOWNLOAD_CONFIG_PATH):
 
 
 # pytorch lightning settings
-PREDICTIONS_PATH = os.path.join(SAMPLE_PATH, "predictions")
-
 DATALOADER = {
     # image / chip settings
     "chip_size": round(SAMPLER["meter_edge_size"] / DOWNLOADER["scale"]),
@@ -165,6 +163,7 @@ DATALOADER = {
     "test_sample_path": TEST_SAMPLE_PATH,
     "predict_sample_path": PREDICT_SAMPLE_PATH,
 }
+PREDICTIONS_PATH = os.path.join(LOG_PATH, "predictions")
 
 WRITER = {
     "output_dir": PREDICTIONS_PATH,
@@ -184,16 +183,17 @@ if __name__ == "__main__":
             "init_args": DATALOADER
         },
         "trainer": {
-            "logger": {
-                "class_path": "ExperimentLogger",
-                "init_args": LOGGER
-            },
+            "accelerator": "gpu",
             "callbacks": [
                 {
                     "class_path": "PredictionWriter",
                     "init_args": WRITER
                 }
-            ]
+            ],
+            "logger": {
+                "class_path": "ExperimentLogger",
+                "init_args": LOGGER
+            },
         }
     }
     for method in ["fit", "validate", "test", "predict"]:

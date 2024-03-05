@@ -30,4 +30,6 @@ class PredictionWriter(BasePredictionWriter):
             orig_image = batch[0][i]
             image_name = batch[1][i]
             torch.save(pred_image,
-                       os.path.join(out_path, f"{image_name}.pt"))
+                       os.path.join(out_path, f"{image_name}.pred.pt"))
+            torch.save(orig_image,
+                       os.path.join(out_path, f"{image_name}.orig.pt"))

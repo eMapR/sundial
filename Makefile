@@ -176,6 +176,10 @@ predict: variable_check config_check
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
+package: variable_check
+	echo "Compressing logs for  $(SUNDIAL_EXPERIMENT_NAME) to tar. Tar file will be saved in home directory and overwrite already existing archives."; \
+	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tar.gz $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \ 
+
 clean: variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
@@ -186,7 +190,7 @@ clean_logs: variable_check
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 
 clean_sample: variable_check
-	echo "Cleaning up all sample data including images for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	echo "Cleaning up all sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
 clean_download: variable_check
@@ -194,8 +198,12 @@ clean_download: variable_check
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*; \
 
+clean_predict: variable_check
+	echo "Cleaning up predictions generated for  $(SUNDIAL_EXPERIMENT_NAME)."; \
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/predictions
+
 nuke: variable_check
-	echo "Deleting logs, logs, and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	echo "Deleting logs, sample data, and configs for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME); \

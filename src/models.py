@@ -148,8 +148,6 @@ class SundialPrithvi(L.LightningModule):
         return loss
 
     def predict_step(self, batch):
-        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image, _ = batch
-        image = image.permute(0, 1, 4, 2, 3)
-        class_image = self.forward(image)
-        return class_image
+        chip, _ = batch
+        logits = self(chip)
+        return logits

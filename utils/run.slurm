@@ -1,9 +1,9 @@
 #!/bin/bash -l
 
-#SBATCH --export=ALL
 #SBATCH --job-name=sundial.run
-#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:gh200_480gb:1
 
 conda activate ${SUNDIAL_ENV_NAME}
 
-python ${SUNDIAL_BASE_PATH}/src/runner.py
+srun python ${SUNDIAL_BASE_PATH}/src/runner.py
+
