@@ -7,12 +7,10 @@ import time
 import utm
 import xarray as xr
 import yaml
-import zarr
 
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
-from zarr.errors import PathNotFoundError, GroupNotFoundError, ArrayNotFoundError
 
 from utils import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
 from logger import get_logger
@@ -232,27 +230,14 @@ class Downloader:
                     anno_data_path = self._anno_data_path
                     if not self._overwrite:
                         try:
-                            # opening with read only mode to check for existing zarr groups
-                            zarr.open(
-                                store=chip_data_path,
-                                mode="r")[square_name]
-                            zarr.open(
-                                store=anno_data_path,
-                                mode="r")[square_name]
-                            report_queue.put(("INFO",
-                                              f"Polygon already exists at path. Skipping... {square_name}"))
-                            continue
-
-                        except (PathNotFoundError,
-                                GroupNotFoundError,
-                                ArrayNotFoundError,
-                                KeyError,
-                                FileNotFoundError) as e:
-                            # capturing valid exceptions and passing to next step
-                            report_queue.put(
-                                ("INFO", f"Valid exception captured for square: {type(e)}... {square_name}"))
-                            pass
-
+                            if Path(os.path.join(chip_data_path, square_name)).exists():
+                                report_queue.put(("INFO",
+                                                  f"Chip already exists at {chip_data_path}. Skipping... {square_name}"))
+                                continue
+                            if Path(os.path.join(anno_data_path, square_name)).exists():
+                                report_queue.put(("INFO",
+                                                  f"Annotation already exists at {anno_data_path}. Skipping... {square_name}"))
+                                continue
                         except Exception as e:
                             # capturing fatal exceptions and skipping to next square
                             report_queue.put(
@@ -373,7 +358,7 @@ class Downloader:
                         xarr_chip_batch.append(xarr_chip)
                         if xarr_anno is not None:
                             report_queue.put(
-                                ("INFO", f"Appending xarr anno {xarr_anno.shape} to consumer {consumer_index} anno batch {batch_index}... {square_name}"))
+                                ("INFO", f"Appending xarr annotations {xarr_anno.shape} to consumer {consumer_index} anno batch {batch_index}... {square_name}"))
                             anno_chip_batch.append(xarr_anno)
                         report_queue.put(
                             ("INFO", f"Consumer {consumer_index} batch {batch_index} contains {batch_size} chips..."))
@@ -467,7 +452,7 @@ class Downloader:
         # merging and writing or appending anno batch as dataset to zarr if not empty
         if anno_chip_batch[0] is not None:
             report_queue.put(
-                ("INFO", f"Merging and writing consumer {consumer_index} anno batch {batch_index} of size {batch_size} to {anno_data_path}..."))
+                ("INFO", f"Merging and writing consumer {consumer_index} annotation batch {batch_index} of size {batch_size} to {anno_data_path}..."))
             xarr_anno_batch = xr.merge(anno_chip_batch)
             with anno_lock:
                 xarr_anno_batch.to_zarr(
