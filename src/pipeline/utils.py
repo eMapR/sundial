@@ -1,6 +1,5 @@
 import ee
 import numpy as np
-import os
 import xarray as xr
 
 from datetime import datetime
