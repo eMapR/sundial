@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from utils import parse_meta_data, estimate_download_size, lt_image_generator, zarr_reshape
+from utils import parse_meta_data, lt_image_generator, zarr_reshape
 from logger import get_logger
 from settings import FILE_EXT_MAP
 
@@ -100,10 +100,6 @@ class Downloader:
         self._meta_data = xr.open_zarr(self._meta_data_path)
         self._meta_size = self._meta_data["index"].size
 
-        # loading in file list is quicker than os.path.exists
-        if not self._overwrite:
-            self._existing_chips = set(os.listdir(self._chip_data_path))
-
     def start(self) -> None:
         """
         Starts the parallel download process and performs the necessary checks.
@@ -125,19 +121,29 @@ class Downloader:
             target=self._reporter,
             args=[report_queue],
             daemon=True)
+        reporter.start()
         workers.add(reporter)
 
-        # initializing image generator to create GEE images
-        image_generator = mp.Process(
-            target=self._image_generator,
-            args=(
+        # filling image queue with GEE image payloads
+        report_queue.put(
+            ("INFO", f"Starting image payload generation of {self._meta_size}..."))
+        start_time = time.time()
+        with mp.Pool(self._num_workers) as p:
+            p.map(lambda idx: self._image_generator(
                 image_queue,
                 result_queue,
-                report_queue),
-            daemon=True)
-        workers.add(image_generator)
+                report_queue,
+                idx),
+                range(self._meta_size))
+        end_time = time.time()
+        report_queue.put(("INFO",
+                          f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
+        [image_queue.put(None) for _ in range(self._num_workers)]
 
         # initializing number of parallel downloads
+        report_queue.put(("INFO",
+                          f"Starting download of {self._meta_size} points of interest..."))
+        start_time = time.time()
         for consumer_index in range(self._num_workers):
             image_consumer = mp.Process(
                 target=self._image_consumer,
@@ -149,13 +155,9 @@ class Downloader:
                     anno_lock,
                     consumer_index),
                 daemon=True)
+            image_consumer.start()
             workers.add(image_consumer)
 
-        # start download and watch for results
-        report_queue.put(("INFO",
-                          f"Starting download of {self._meta_size} points of interest..."))
-        start_time = time.time()
-        [w.start() for w in workers]
         downloads_completed = 0
         consumers_completed = 0
         while consumers_completed < self._num_workers:
@@ -197,90 +199,91 @@ class Downloader:
     def _image_generator(self,
                          image_queue: mp.Queue,
                          result_queue: mp.Queue,
-                         report_queue: mp.Queue
+                         report_queue: mp.Queue,
+                         index: int,
                          ) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         file_ext = FILE_EXT_MAP[self._file_type]
-        for idx in range(self._meta_size):
-            try:
-                # reading meta data from xarray
-                geometry_coords, \
-                    point_coords, \
-                    point_name, \
-                    square_coords, \
-                    square_name, \
-                    start_date, \
-                    end_date, \
-                    attributes \
-                    = parse_meta_data(self._meta_data, idx, self._back_step)
-                if start_date is None:
-                    start_date = self._start_date
-                if end_date is None:
-                    end_date = self._end_date
+        try:
+            # reading meta data from xarray
+            geometry_coords, \
+                point_coords, \
+                point_name, \
+                square_coords, \
+                square_name, \
+                start_date, \
+                end_date, \
+                attributes \
+                = parse_meta_data(self._meta_data, index, self._back_step)
+            if start_date is None:
+                start_date = self._start_date
+            if end_date is None:
+                end_date = self._end_date
 
-                # checking for existing files and skipping if file found
-                if self._file_type != "ZARR":
-                    chip_file_name = f"{square_name}.{file_ext}"
-                    chip_data_path = os.path.join(
-                        self._chip_data_path, chip_file_name)
-                    if self._overlap_band:
-                        anno_file_name = f"{square_name}.{file_ext}"
-                        anno_data_path = os.path.join(
-                            self._anno_data_path, anno_file_name)
-                else:
-                    chip_file_name = square_name
-                    chip_data_path = self._chip_data_path
-                    if self._overlap_band:
-                        anno_data_path = self._anno_data_path
-                if not self._overwrite:
-                    if chip_file_name in self._existing_chips:
-                        report_queue.put(("INFO",
-                                          f"Files already exists. Skipping... {square_name}"))
-                        result_queue.put(square_name)
-                        continue
+            # checking for existing files and skipping if file found
+            if self._file_type != "ZARR":
+                chip_file_name = f"{square_name}.{file_ext}"
+                chip_data_path = os.path.join(
+                    self._chip_data_path, chip_file_name)
+                anno_file_name = f"{square_name}.{file_ext}"
+                anno_data_path = os.path.join(
+                    self._anno_data_path, anno_file_name)
+                if not self._overwrite and os.path.exists(chip_data_path):
+                    report_queue.put(("INFO",
+                                      f"Files already exists. Skipping... {square_name}"))
+                    result_queue.put(square_name)
+                    return
+            else:
+                chip_data_path = self._chip_data_path
+                anno_data_path = self._anno_data_path
+                chip_var_path = os.path.join(chip_data_path, square_name)
+                if not self._overwrite and os.path.exists(chip_var_path):
+                    report_queue.put(("INFO",
+                                      f"Files already exists. Skipping... {square_name}"))
+                    result_queue.put(square_name)
+                    return
 
-                # creating payload for each square to send to GEE
+            # creating payload for each square to send to GEE
+            report_queue.put(
+                ("INFO", f"Creating image payload for square... {square_name}"))
+            image = self._image_gen_callable(
+                start_date,
+                end_date,
+                square_coords,
+                self._scale,
+                self._overlap_band,
+                geometry_coords)
+
+            # getting utm zone and epsg code for reprojection
+            match self._reprojection:
+                case "UTM":
+                    revserse_point = reversed(point_coords)
+                    utm_zone = utm.from_latlon(*revserse_point)[-2:]
+                    epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
+                    epsg_code = f"{epsg_prefix}{utm_zone[0]}"
+                case _:
+                    epsg_code = self._reprojection
+
+            # reprojecting the image if necessary
+            if epsg_code is not None:
                 report_queue.put(
-                    ("INFO", f"Creating image payload for square... {square_name}"))
-                image = self._image_gen_callable(
-                    start_date,
-                    end_date,
-                    square_coords,
-                    self._scale,
-                    self._overlap_band,
-                    geometry_coords)
+                    ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
+                image = image.reproject(
+                    crs=epsg_code, scale=self._scale)
 
-                # getting utm zone and epsg code for reprojection
-                match self._reprojection:
-                    case "UTM":
-                        revserse_point = reversed(point_coords)
-                        utm_zone = utm.from_latlon(*revserse_point)[-2:]
-                        epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
-                        epsg_code = f"{epsg_prefix}{utm_zone[0]}"
-                    case _:
-                        epsg_code = self._reprojection
+            # encoding the image for the image consumer
+            payload = {
+                "expression": ee.serializer.encode(image),
+                "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
+            }
 
-                # reprojecting the image if necessary
-                if epsg_code is not None:
-                    report_queue.put(
-                        ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
-                    image = image.reproject(
-                        crs=epsg_code, scale=self._scale)
-
-                # encoding the image for the image consumer
-                payload = {
-                    "expression": ee.serializer.encode(image),
-                    "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
-                }
-
-                # sending expression payload to the image consumer
-                image_queue.put(
-                    (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
-            except Exception as e:
-                report_queue.put(
-                    ("CRITICAL", f"Failed to create image payload for square skipping: {type(e)} {e} {square_name}"))
-                result_queue.put(square_name)
-        [image_queue.put(None) for _ in range(self._num_workers)]
+            # sending expression payload to the image consumer
+            image_queue.put(
+                (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
+        except Exception as e:
+            report_queue.put(
+                ("CRITICAL", f"Failed to create image payload for square skipping: {type(e)} {e} {square_name}"))
+            result_queue.put(square_name)
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
@@ -344,7 +347,8 @@ class Downloader:
                                                             square_name,
                                                             point_name,
                                                             attributes,
-                                                            strata_map)
+                                                            strata_map,
+                                                            self._overlap_band)
 
                         # collecting xr data arrays into list for batch writing
                         report_queue.put(

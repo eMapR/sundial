@@ -83,7 +83,8 @@ def zarr_reshape(
         square_name: str,
         point_name: str,
         attributes: dict | None,
-        strata_map: dict | None) -> xr.DataArray:
+        strata_map: dict | None,
+        overlap_band: bool) -> xr.DataArray:
 
     # unflattening the array to shape (year, x, y, band)
     years, bands = zip(*[b.split('_')
@@ -104,7 +105,7 @@ def zarr_reshape(
     xarr.attrs.update(**new_attrs)
 
     xarr_ann = None
-    if "overlap" in arr.dtype.names and STRATA_ATTR_NAME in xarr.attrs.keys():
+    if overlap_band and "overlap" in arr.dtype.names and STRATA_ATTR_NAME in xarr.attrs.keys():
         overlap = xr.DataArray(arr["overlap"], dims=['x', 'y'])
         stratum = xarr.attrs[STRATA_ATTR_NAME]
         xarr.assign_coords({stratum: overlap})
