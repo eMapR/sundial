@@ -125,16 +125,18 @@ class Downloader:
         workers.add(reporter)
 
         # filling image queue with GEE image payloads
+        def f(idx):
+            self._image_generator(
+                image_queue,
+                result_queue,
+                report_queue,
+                idx)
+
         report_queue.put(
             ("INFO", f"Starting image payload generation of {self._meta_size}..."))
         start_time = time.time()
         with mp.Pool(self._num_workers) as p:
-            p.map(lambda idx: self._image_generator(
-                image_queue,
-                result_queue,
-                report_queue,
-                idx),
-                range(self._meta_size))
+            p.map(f), range(self._meta_size)
         end_time = time.time()
         report_queue.put(("INFO",
                           f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
