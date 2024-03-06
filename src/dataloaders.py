@@ -7,7 +7,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from pipeline.pipeline_utils import clip_xy_xarray
+from .pipeline.utils import clip_xy_xarray
 
 
 class PreprocesNormalization(nn.Module):
