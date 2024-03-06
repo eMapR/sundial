@@ -212,7 +212,7 @@ def parse_meta_data(
         end_date = None
 
     data_vars = meta_data.iloc[index].to_dict()
-    attributes = {k: v for k, v in data_vars
+    attributes = {k: v for k, v in data_vars.items()
                   if all([s not in k for s in ["geometry", "square", "point"]])}
     return geometry, \
         point_coords, \

@@ -177,7 +177,7 @@ class Downloader:
             else:
                 consumers_completed += 1
                 report_queue.put(
-                    ("INFO", f"{consumers_completed}/{self._num_workers} Consumers completed. {result}"))
+                    ("INFO", f"{consumers_completed}/{self._num_workers} Consumers completed."))
 
         end_time = time.time()
         report_queue.put(("INFO",
