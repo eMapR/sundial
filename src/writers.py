@@ -25,11 +25,7 @@ class PredictionWriter(BasePredictionWriter):
                                 pl_module.__class__.__name__)
         os.makedirs(out_path, exist_ok=True)
 
-        for i in range(len(prediction)):
-            pred_image = prediction[i]
-            orig_image = batch[0][i]
-            image_name = batch[1][i]
-            torch.save(pred_image,
-                       os.path.join(out_path, f"{image_name}.pred.pt"))
-            torch.save(orig_image,
-                       os.path.join(out_path, f"{image_name}.orig.pt"))
+        torch.save(prediction,
+                   os.path.join(out_path, f"{batch_idx}.pred.pt"))
+        torch.save(batch,
+                   os.path.join(out_path, f"{batch_idx}.orig.pt"))

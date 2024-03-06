@@ -11,7 +11,7 @@ from pipeline.settings import RANDOM_STATE, CONFIG_PATH
 
 
 def main(args: ArgsType = None):
-    cli = LightningCLI(
+    LightningCLI(
         seed_everything_default=RANDOM_STATE,
         args=args,
     )
@@ -20,4 +20,12 @@ def main(args: ArgsType = None):
 if __name__ == "__main__":
     method = os.getenv("SUNDIAL_METHOD")
     run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
-    main([method, f"--config={run_config_path}"])
+    match method:
+        case "sample":
+            from pipeline.sampler import main
+            main()
+        case "download":
+            from pipeline.downloader import main
+            main()
+        case "fit" | "validate" | "test" | "predict":
+            main([method, f"--config={run_config_path}"])

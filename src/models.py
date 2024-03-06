@@ -60,9 +60,6 @@ class SundialPrithvi(L.LightningModule):
         self.view_size = view_size
         self.mask_ratio = prithvi_params["train_params"]["mask_ratio"]
 
-        # recommended setting for gh200
-        torch.set_float32_matmul_precision("high")
-
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         checkpoint = torch.load(prithvi_path)
@@ -150,6 +147,8 @@ class SundialPrithvi(L.LightningModule):
         return loss
 
     def predict_step(self, batch):
-        chip, _ = batch
-        logits = self(chip)
-        return logits
+        # reshaping gee data (N D H W C) to pytorch format (N C D H W)
+        image, _ = batch
+        image = image.permute(0, 1, 4, 2, 3)
+        class_image = self.forward(image)
+        return class_image

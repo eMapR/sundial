@@ -7,7 +7,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from .pipeline.utils import clip_xy_xarray
+from pipeline.utils import clip_xy_xarray
 
 
 class PreprocesNormalization(nn.Module):
@@ -32,7 +32,7 @@ class ChipsDataset(Dataset):
                  chip_size: int,
                  base_year: int | None,
                  back_step: int | None,
-                 include_names: bool = False,
+                 drop_duplicates: bool = list[str] | None,
                  **kwargs):
         super().__init__(**kwargs)
         self.file_type = file_type
@@ -42,19 +42,12 @@ class ChipsDataset(Dataset):
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
-        self.include_names = include_names
+        self.drop_duplicates = drop_duplicates
 
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
         self.meta_data = xr.open_zarr(self.sample_path).to_dataframe()
-        if self.base_year is not None and self.back_step is not None:
-            self.meta_data = self.meta_data[["square_name", "year"]]
-        else:
-            self.meta_data = self.meta_data[["square_name"]]
-
-        self.meta_data = self.meta_data\
-            .drop_duplicates(subset="square_name", keep=False)\
-            .reset_index()
+        self.meta_data = self.meta_data[["square_name", "year"]]
 
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
@@ -66,6 +59,10 @@ class ChipsDataset(Dataset):
                 self._tif_loader(self.chip_data_path, name)
             self.anno_loader = lambda name: \
                 self._tif_loader(self.anno_data_path, name)
+
+        if drop_duplicates is not None:
+            self.meta_data = self.meta_data\
+                .drop_duplicates(subset=drop_duplicates, keep=False)
 
     def get_strata(self, name):
         strata = self.anno_loader(name)
@@ -81,11 +78,11 @@ class ChipsDataset(Dataset):
     def __getitem__(self, idx):
         # loading image into xarr file
         name = self.meta_data.iloc[idx].loc["square_name"]
+        year = self.meta_data.iloc[idx].loc["year"]
         chip = self.chip_loader(name)
 
         # slicing to target year if chip is larger and back_step is set
         if self.base_year is not None and self.back_step is not None:
-            year = self.meta_data.iloc[idx].loc["year"]
             chip = self.slice_year(chip, year)
 
         # clipping chip if larger than chip_size
@@ -109,10 +106,10 @@ class ChipsDataset(Dataset):
     def __len__(self):
         return len(self.meta_data)
 
-    def _zarr_loader(self, xarr: xr.Dataset, name: int, **kwargs):
+    def _zarr_loader(self, xarr: xr.Dataset, name: int):
         return xarr[name]
 
-    def _tif_loader(self, data_path: str, name: int, **kwargs):
+    def _tif_loader(self, data_path: str, name: int):
         image_path = os.path.join(data_path, f"{name}.tif")
         image = xr.open_rasterio(image_path)
         # TODO: convert to tensor

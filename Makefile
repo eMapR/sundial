@@ -74,102 +74,43 @@ variable_check:
 sample: variable_check config_check
 	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
 	$(eval export SUNDIAL_METHOD=sample)
-
-	if [[ $(SUNDIAL_PROCESSING) == hpc ]]; then \
-		echo "Submitting job to HPC..."; \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/sample.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/sample.e \
-			--partition=$(X86_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/sample.slurm; \
-	else\
-		echo "Running on local machine..."; \
-		python $(SUNDIAL_BASE_PATH)/src/pipeline/sampler.py; \
-	fi; \
+	$(eval export SUNDIAL_PARTITION=$(X86_PARTITION))
+	$(MAKE) -s _run
 
 download: variable_check config_check
 	echo "Downloading chip sample from Google Earth Engine. This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=download)
-
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/download.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/download.e \
-			--partition=$(X86_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/download.slurm; \
-	else\
-		echo "Running on local machine..."; \
-		python $(SUNDIAL_BASE_PATH)/src/pipeline/downloader.py; \
-	fi; \
+	$(eval export SUNDIAL_PARTITION=$(X86_PARTITION))
+	$(MAKE) -s _run
 
 fit: variable_check config_check
 	echo "Training model... This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=fit)
-
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/fit.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/fit.e \
-			--partition=$(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
-	else \
-		echo "Running on local machine..."; \
-		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
-	fi; \
+	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
+	$(MAKE) -s _run
 
 validate: variable_check config_check
 	echo "Validating model... Go ahead and hold your breath..."; \
 	$(eval export SUNDIAL_METHOD=validate)
-
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/validate.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/validate.e \
-			--partition=$(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
-	else \
-		echo "Running on local machine..."; \
-		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
-	fi; \
+	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
+	$(MAKE) -s _run
 
 test: variable_check config_check
 	echo "Testing model... Please check $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e..."; \
 	$(eval export SUNDIAL_METHOD=test)
-
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/test.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/test.e \
-			--partition=$(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
-	else \
-		echo "Running on local machine..."; \
-		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
-	fi; \
-
+	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
+	$(MAKE) -s _run
 
 predict: variable_check config_check
 	echo "Predicting image using model... Lets see if this works!"; \
 	$(eval export SUNDIAL_METHOD=predict)
+	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
+	$(MAKE) -s _run
 
+_run:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		sbatch \
-			--output=$(SUNDIAL_BASE_PATH)/logs/predict.o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/predict.e \
-			--partition=$(A64_PARTITION) \
-			--chdir=$(SUNDIAL_BASE_PATH) \
-			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/utils/run.slurm; \
+		echo "Running on HPC..."; \
+		sbatch $(SUNDIAL_BASE_PATH)/utils/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \

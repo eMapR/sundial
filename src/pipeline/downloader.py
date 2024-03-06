@@ -466,13 +466,8 @@ class Downloader:
             result_queue.put(name)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Downloader Arguments')
-    return vars(parser.parse_args())
-
-
-def main(**kwargs):
-    from settings import DOWNLOADER as config, SAMPLE_PATH
+def main():
+    from .settings import DOWNLOADER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
 
     downloader = Downloader(**config)
@@ -480,4 +475,4 @@ def main(**kwargs):
 
 
 if __name__ == "__main__":
-    main(**parse_args())
+    main()

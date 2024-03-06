@@ -371,12 +371,17 @@ def train_test_split_xarr(
     np.random.shuffle(indices)
     split_idx = int(len(indices) * (1-test_ratio))
     train_indices, test_indices = indices[:split_idx], indices[split_idx:]
-    return xarr.isel(index=train_indices).drop_encoding(), xarr.isel(index=test_indices).drop_encoding()
+
+    train = xarr.isel(index=train_indices).drop_encoding()
+    test = xarr.isel(index=test_indices).drop_encoding()
+
+    return train, test
 
 
 def main(**kwargs):
-    from settings import SAMPLER as config, SAMPLE_PATH
+    from .settings import SAMPLER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
+
     global LOGGER
     LOGGER = get_logger(config["log_path"], config["log_name"])
 
@@ -449,10 +454,5 @@ def main(**kwargs):
         f"Sample completed in: {(end - start_main)/60:.2} minutes")
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Sampler Arguments')
-    return vars(parser.parse_args())
-
-
 if __name__ == '__main__':
-    main(**parse_args())
+    main()
