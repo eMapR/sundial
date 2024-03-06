@@ -10,6 +10,7 @@ from typing import Literal
 from pipeline.settings import DATALOADER as config
 from utils import clip_xr_array, pad_xr_array
 
+
 class PreprocesNormalization(nn.Module):
     def __init__(self, means, stds):
         super().__init__()
@@ -46,7 +47,7 @@ class ChipsDataset(Dataset):
 
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
-        self.meta_data = xr.open_zarr(self.sample_path)
+        self.meta_data = xr.open_zarr(self.sample_path).to_dataframe()
 
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
@@ -72,8 +73,8 @@ class ChipsDataset(Dataset):
 
     def __getitem__(self, idx):
         # loading image into xarr file
-        name = self.meta_data["square_name"].isel(index=idx).values.item()
-        year = self.meta_data["year"].isel(index=idx).values.item()
+        name = self.meta_data.iloc[idx].loc["square_name"]
+        year = self.meta_data.iloc[idx].loc["year"]
         chip = self.chip_loader(name)
 
         # slicing to target year if chip is larger and back_step is set

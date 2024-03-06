@@ -97,8 +97,8 @@ class Downloader:
         self._image_gen_callable = lt_image_generator
 
         # TODO: Perform attribute checks for meta_data files
-        self._meta_data = xr.open_zarr(self._meta_data_path)
-        self._meta_size = self._meta_data["index"].size
+        self._meta_data = xr.open_zarr(self._meta_data_path).to_dataframe()
+        self._meta_size = len(self._meta_data)
 
     def start(self) -> None:
         """
@@ -126,7 +126,7 @@ class Downloader:
         # filling image queue with GEE image payloads
         generators = set()
         report_queue.put(
-            ("INFO", f"Starting image payload generation of {self._meta_size}..."))
+            ("INFO", f"Starting generation of {self._meta_size} image payload..."))
         start_time = time.time()
         [payload_queue.put(i) for i in range(self._meta_size)]
         [payload_queue.put(None) for _ in range(self._num_workers)]
@@ -145,7 +145,7 @@ class Downloader:
         report_queue.put(("INFO",
                           f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
 
-        # initializing number of parallel downloads
+        # initialize and start parallel downloads
         consumers = set()
         report_queue.put(("INFO",
                           f"Starting download of {self._meta_size} points of interest..."))
@@ -161,8 +161,10 @@ class Downloader:
                     anno_lock,
                     consumer_index),
                 daemon=True)
+            image_consumer.start()
             consumers.add(image_consumer)
 
+        # watch for results from consumers
         downloads_completed = 0
         consumers_completed = 0
         while consumers_completed < self._num_workers:

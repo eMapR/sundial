@@ -1,4 +1,5 @@
 import ee
+import pandas as pd
 import numpy as np
 import xarray as xr
 
@@ -137,6 +138,7 @@ def zarr_reshape(
 
     return xarr, xarr_ann
 
+
 def clip_xy_xarray(xarr: xr.DataArray,
                    pixel_edge_size: int) -> xr.DataArray:
     x_diff = xarr["x"].size - pixel_edge_size
@@ -180,7 +182,7 @@ def generate_coords_name(coords: tuple[float]) -> str:
 
 
 def parse_meta_data(
-        meta_data: xr.Dataset,
+        meta_data: pd.DataFrame,
         index: int,
         back_step: int) -> tuple[list[tuple[float, float]],
                                  str,
@@ -190,33 +192,27 @@ def parse_meta_data(
                                  datetime | None,
                                  dict]:
     # this is a bit of a hack to get around the fact that return multiple types in one go is a bit of a pain
-    geometry_columns = [k for k in meta_data.keys() if "geometry_" in k]
-    geometry_values = meta_data[geometry_columns].isel(
-        index=index).to_dataarray().values.tolist()
+    geometry_columns = [k for k in meta_data.columns if "geometry_" in k]
+    geometry_values = meta_data.iloc[index].loc[geometry_columns].tolist()
     geometry = [p for p in geometry_values if all(c == c for c in p)]
 
     # pulling directly to preserve order for polygon unamibguity
-    point_coords = meta_data["point_coords"].isel(
-        index=index).values.item()
-    point_name = meta_data["point_name"].isel(
-        index=index).values.item()
-    square_coords = meta_data[SQUARE_COLUMNS].isel(
-        index=index).to_dataarray().values.tolist()
-    square_name = meta_data["square_name"].isel(
-        index=index).values.item()
+    point_coords = meta_data.iloc[index].loc["point_coords"]
+    point_name = meta_data.iloc[index].loc["point_name"]
+    square_coords = meta_data.iloc[index].loc[SQUARE_COLUMNS].tolist()
+    square_name = meta_data.iloc[index].loc["square_name"]
 
     # generating start and end date from year attribute and back step
-    if "year" in meta_data.variables.keys():
-        end_year = meta_data["year"].isel(
-            index=index).values.item()
+    if "year" in meta_data.columns:
+        end_year = meta_data.iloc[index].loc["year"]
         end_date = datetime(end_year, 9, 1)
         start_date = datetime(end_year - back_step, 6, 1)
     else:
         start_date = None
         end_date = None
 
-    data_vars = meta_data.isel(index=index).to_dict()["data_vars"].items()
-    attributes = {k: v["data"] for k, v in data_vars
+    data_vars = meta_data.iloc[index].to_dict()
+    attributes = {k: v for k, v in data_vars
                   if all([s not in k for s in ["geometry", "square", "point"]])}
     return geometry, \
         point_coords, \
