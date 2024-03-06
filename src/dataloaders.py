@@ -48,6 +48,14 @@ class ChipsDataset(Dataset):
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
         self.meta_data = xr.open_zarr(self.sample_path).to_dataframe()
+        if self.base_year is not None and self.back_step is not None:
+            self.meta_data = self.meta_data[["square_name", "year"]]
+        else:
+            self.meta_data = self.meta_data[["square_name"]]
+
+        self.meta_data = self.meta_data\
+            .drop_duplicates(subset="square_name", keep=False)\
+            .reset_index()
 
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
@@ -74,11 +82,11 @@ class ChipsDataset(Dataset):
     def __getitem__(self, idx):
         # loading image into xarr file
         name = self.meta_data.iloc[idx].loc["square_name"]
-        year = self.meta_data.iloc[idx].loc["year"]
         chip = self.chip_loader(name)
 
         # slicing to target year if chip is larger and back_step is set
         if self.base_year is not None and self.back_step is not None:
+            year = self.meta_data.iloc[idx].loc["year"]
             chip = self.slice_year(chip, year)
 
         # clipping chip if larger than chip_size
