@@ -102,7 +102,8 @@ class Downloader:
 
         if not self._overwrite:
             self._existing_chips = os.listdir(self._chip_data_path)
-            self._existing_annos = os.listdir(self._anno_data_path)
+            if self._overlap_band:
+                self._existing_annos = os.listdir(self._anno_data_path)
 
     def start(self) -> None:
         """
@@ -221,25 +222,24 @@ class Downloader:
                 # checking for existing files and skipping if file found
                 if self._file_type != "ZARR":
                     chip_file_name = f"{square_name}.{file_ext}"
-                    anno_file_name = f"{square_name}.{file_ext}"
                     chip_data_path = os.path.join(
                         self._chip_data_path, chip_file_name)
-                    anno_data_path = os.path.join(
-                        self._anno_data_path, anno_file_name)
-                    if not self._overwrite:
-                        if chip_file_name in self._existing_chips or anno_file_name in self._existing_annos:
-                            report_queue.put(
-                                "INFO", f"Files already exists. Skipping... {square_name}")
-                            result_queue.put(square_name)
-                            continue
+                    if self._overlap_band:
+                        anno_file_name = f"{square_name}.{file_ext}"
+                        anno_data_path = os.path.join(
+                            self._anno_data_path, anno_file_name)
                 else:
+                    chip_file_name = square_name
                     chip_data_path = self._chip_data_path
-                    anno_data_path = self._anno_data_path
-                    if not self._overwrite:
-                        if square_name in self._existing_chips or square_name in self._existing_annos:
-                            report_queue.put(("INFO",
-                                              f"Files already exists. Skipping... {square_name}"))
-                            continue
+                    if self._overlap_band:
+                        anno_file_name = square_name
+                        anno_data_path = self._anno_data_path
+                if not self._overwrite:
+                    if chip_file_name in self._existing_chips:
+                        report_queue.put(("INFO",
+                                          f"Files already exists. Skipping... {square_name}"))
+                        result_queue.put(square_name)
+                        continue
 
                 # creating payload for each square to send to GEE
                 report_queue.put(
