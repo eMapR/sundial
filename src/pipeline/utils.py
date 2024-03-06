@@ -6,7 +6,7 @@ import xarray as xr
 from datetime import datetime
 from ltgee import LandTrendr
 
-from settings import MASK_LABELS, NO_DATA_VALUE, SQUARE_COLUMNS, STRATA_ATTR_NAME, STRATA_DIM_NAME
+from .settings import MASK_LABELS, NO_DATA_VALUE, SQUARE_COLUMNS, STRATA_ATTR_NAME, STRATA_DIM_NAME
 
 
 def estimate_download_size(
