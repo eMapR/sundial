@@ -103,8 +103,6 @@ class Downloader:
         # loading in file list is quicker than os.path.exists
         if not self._overwrite:
             self._existing_chips = set(os.listdir(self._chip_data_path))
-            if self._overlap_band:
-                self._existing_annos = set(os.listdir(self._anno_data_path))
 
     def start(self) -> None:
         """
@@ -233,7 +231,6 @@ class Downloader:
                     chip_file_name = square_name
                     chip_data_path = self._chip_data_path
                     if self._overlap_band:
-                        anno_file_name = square_name
                         anno_data_path = self._anno_data_path
                 if not self._overwrite:
                     if chip_file_name in self._existing_chips:
@@ -241,7 +238,6 @@ class Downloader:
                                           f"Files already exists. Skipping... {square_name}"))
                         result_queue.put(square_name)
                         self._existing_chips.remove(chip_file_name)
-                        self._existing_annos.remove(anno_file_name)
                         continue
 
                 # creating payload for each square to send to GEE
