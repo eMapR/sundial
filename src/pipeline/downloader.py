@@ -100,10 +100,11 @@ class Downloader:
         self._meta_data = xr.open_zarr(self._meta_data_path)
         self._meta_size = self._meta_data["index"].size
 
+        # loading in file list is quicker than os.path.exists
         if not self._overwrite:
-            self._existing_chips = os.listdir(self._chip_data_path)
+            self._existing_chips = set(os.listdir(self._chip_data_path))
             if self._overlap_band:
-                self._existing_annos = os.listdir(self._anno_data_path)
+                self._existing_annos = set(os.listdir(self._anno_data_path))
 
     def start(self) -> None:
         """
