@@ -100,6 +100,10 @@ class Downloader:
         self._meta_data = xr.open_zarr(self._meta_data_path)
         self._meta_size = self._meta_data["index"].size
 
+        if not self._overwrite:
+            self._existing_chips = os.listdir(self._chip_data_path)
+            self._existing_annos = os.listdir(self._anno_data_path)
+
     def start(self) -> None:
         """
         Starts the parallel download process and performs the necessary checks.
@@ -216,33 +220,25 @@ class Downloader:
 
                 # checking for existing files and skipping if file found
                 if self._file_type != "ZARR":
-                    chip_data_path = os.path.join(self._chip_data_path,
-                                                  f"{square_name}.{file_ext}")
-                    anno_data_path = os.path.join(self._anno_data_path,
-                                                  f"{square_name}.{file_ext}")
-                    if not self._overwrite and Path(chip_data_path).exists() and Path(anno_data_path).exists():
-                        report_queue.put(
-                            "INFO", f"File {chip_data_path} already exists. Skipping...")
-                        result_queue.put(square_name)
-                        continue
+                    chip_file_name = f"{square_name}.{file_ext}"
+                    anno_file_name = f"{square_name}.{file_ext}"
+                    chip_data_path = os.path.join(
+                        self._chip_data_path, chip_file_name)
+                    anno_data_path = os.path.join(
+                        self._anno_data_path, anno_file_name)
+                    if not self._overwrite:
+                        if chip_file_name in self._existing_chips or anno_file_name in self._existing_annos:
+                            report_queue.put(
+                                "INFO", f"Files already exists. Skipping... {square_name}")
+                            result_queue.put(square_name)
+                            continue
                 else:
                     chip_data_path = self._chip_data_path
                     anno_data_path = self._anno_data_path
                     if not self._overwrite:
-                        try:
-                            if Path(os.path.join(chip_data_path, square_name)).exists():
-                                report_queue.put(("INFO",
-                                                  f"Chip already exists at {chip_data_path}. Skipping... {square_name}"))
-                                continue
-                            if Path(os.path.join(anno_data_path, square_name)).exists():
-                                report_queue.put(("INFO",
-                                                  f"Annotation already exists at {anno_data_path}. Skipping... {square_name}"))
-                                continue
-                        except Exception as e:
-                            # capturing fatal exceptions and skipping to next square
-                            report_queue.put(
-                                ("CRITICAL", f"Failed to read zarr path {chip_data_path}, zarr group {point_name}, or zarr variable {square_name} skipping: {type(e)} {e}"))
-                            result_queue.put(square_name)
+                        if square_name in self._existing_chips or square_name in self._existing_annos:
+                            report_queue.put(("INFO",
+                                              f"Files already exists. Skipping... {square_name}"))
                             continue
 
                 # creating payload for each square to send to GEE
