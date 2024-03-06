@@ -346,7 +346,7 @@ class Downloader:
 
                         # reshaping from (D*C, H, W) to (D, H, W, D)
                         report_queue.put((
-                            "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pizel size {self._pixel_edge_size}... {square_name}"))
+                            "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {square_name}"))
                         xarr_chip, xarr_anno = zarr_reshape(array_chip,
                                                             self._pixel_edge_size,
                                                             square_name,

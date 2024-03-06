@@ -123,11 +123,11 @@ def zarr_reshape(
         xarr_ann.name = square_name
 
     # padding the xarray to the edge size to maintain consistent image size in zarr
-    if pixel_edge_size > min(xarr["x"].shape[0],  xarr["y"].shape[0]):
+    if pixel_edge_size > min(xarr["x"].size,  xarr["y"].size):
         xarr = pad_xy_xarray(xarr, pixel_edge_size)
         if xarr_ann is not None:
             xarr_ann = pad_xy_xarray(xarr_ann, pixel_edge_size)
-    elif pixel_edge_size < max(xarr["x"].shape[0],  xarr["y"].shape[0]):
+    if pixel_edge_size < max(xarr["x"].size,  xarr["y"].size):
         xarr = clip_xy_xarray(xarr, pixel_edge_size)
         if xarr_ann is not None:
             xarr_ann = clip_xy_xarray(xarr_ann, pixel_edge_size)
@@ -158,11 +158,11 @@ def pad_xy_xarray(
     x_diff = pixel_edge_size - xarr["x"].size
     y_diff = pixel_edge_size - xarr["y"].size
 
-    x_start = x_diff // 2
-    x_end = x_diff - x_start
+    x_start = x_diff // 2 if x_diff > 0 else 0
+    x_end = x_diff - x_start if x_diff > 0 else 0
 
-    y_start = y_diff // 2
-    y_end = y_diff - y_start
+    y_start = y_diff // 2 if x_diff > 0 else 0
+    y_end = y_diff - y_start if x_diff > 0 else 0
 
     xarr = xarr.pad(
         x=(x_start, x_end),
