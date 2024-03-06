@@ -183,7 +183,7 @@ if __name__ == "__main__":
             "init_args": DATALOADER
         },
         "trainer": {
-            "accelerator": "gpu",
+            "accelerator": "cuda",
             "callbacks": [
                 {
                     "class_path": "PredictionWriter",
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         }
     }
     for method in ["fit", "validate", "test", "predict"]:
-        run_config_path = os.path.join(CONFIG_PATH, f"run.{method}.yaml")
+        run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
         run["trainer"]["logger"]["init_args"]["name"] = method
         match method:
             case "fit":

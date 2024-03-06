@@ -107,7 +107,7 @@ class ChipsDataset(Dataset):
             return chip
 
     def __len__(self):
-        return self.meta_data["index"].size
+        return len(self.meta_data)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int, **kwargs):
         return xarr[name]

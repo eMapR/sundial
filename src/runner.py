@@ -19,5 +19,5 @@ def main(args: ArgsType = None):
 
 if __name__ == "__main__":
     method = os.getenv("SUNDIAL_METHOD")
-    run_config_path = os.path.join(CONFIG_PATH, f"run.{method}.yaml")
+    run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
     main([method, f"--config={run_config_path}"])

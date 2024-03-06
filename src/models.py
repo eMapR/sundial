@@ -60,10 +60,12 @@ class SundialPrithvi(L.LightningModule):
         self.view_size = view_size
         self.mask_ratio = prithvi_params["train_params"]["mask_ratio"]
 
+        # recommended setting for gh200
+        torch.set_float32_matmul_precision("high")
+
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        checkpoint = torch.load(
-            prithvi_path, map_location="gpu" if torch.cuda.is_available() else "cpu")
+        checkpoint = torch.load(prithvi_path)
         del checkpoint['pos_embed']
         del checkpoint['decoder_pos_embed']
         self.backbone = MaskedAutoencoderViT(**prithvi_params["model_args"])

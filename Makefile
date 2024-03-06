@@ -53,7 +53,6 @@ config:
 	if [[ -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
 		echo "Configs folder found. To restart experiment from scratch, use make nuke..."; \
 		exit 1; \
-	fi; \
 	else \
 		echo "Generateing Sundial config files for experiment with values from sample and download..."; \
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \

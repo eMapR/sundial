@@ -1,7 +1,7 @@
 model:
     class_path: SundialPrithvi
     init_args:
-        num_classes: 37
+        num_classes: 61 
         view_size: 16
         upscale_depth: 4
         upscale_reduction_factor: 2
@@ -24,8 +24,8 @@ model:
 data:
     class_path: ChipsDataModule
     init_args:
-        batch_size: 64
-        num_workers: 4
+        batch_size: 32
+        num_workers: 0
         means:
             - 775.2290211032589
             - 1080.992780391705
@@ -51,20 +51,20 @@ data:
         train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
         validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
 trainer:
-    accelerator: gpu
-    max_epochs: 1024
-    inference_mode: true
-    log_every_n_steps: 64
+    accelerator: cuda 
     callbacks:
       - class_path: PredictionWriter
         init_args:
             output_dir: logs/ads_damage_1990-2022/predictions
             write_interval: batch
+    inference_mode: true
+    log_every_n_steps: 16
     logger:
         class_path: ExperimentLogger
         init_args:
             name: fit
             save_dir: logs/ads_damage_1990-2022
+    max_epochs: 1024
 optimizer:
     class_path: torch.optim.AdamW
     init_args:
@@ -74,4 +74,4 @@ optimizer:
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.StepLR
     init_args:
-        step_size: 64
+        step_size: 128
