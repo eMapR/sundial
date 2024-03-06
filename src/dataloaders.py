@@ -7,8 +7,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from pipeline.settings import DATALOADER as config
-from utils import clip_xr_array, pad_xr_array
+from pipeline.utils import clip_xr_array
 
 
 class PreprocesNormalization(nn.Module):
