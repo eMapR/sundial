@@ -112,10 +112,6 @@ def zarr_reshape(
         xarr.assign_coords({stratum: overlap})
         stratum_idx = strata_map[stratum]
 
-        # Ideally, we want a probability for each class
-        # it is much easier to get a number per class
-        # if each strata has it's own tensor
-        # TODO: move this to tensor initialization to not store 0 values
         xarr_ann_list = [xr.DataArray(np.zeros(overlap.shape), dims=['x', 'y'], name=stratum)
                          for _ in strata_map]
         xarr_ann = xr.concat(xarr_ann_list, dim=STRATA_DIM_NAME)
@@ -144,12 +140,13 @@ def clip_xy_xarray(xarr: xr.DataArray,
     x_diff = xarr["x"].size - pixel_edge_size
     y_diff = xarr["y"].size - pixel_edge_size
 
-    x_start = x_diff // 2
-    x_end = x_diff - x_start
+    x_start = x_diff // 2 if x_diff > 0 else 0
+    x_end = x_diff - x_start if x_diff > 0 else 0
 
-    y_start = y_diff // 2
-    y_end = y_diff - y_start
-    return xarr.sel(x=slice(x_start, -x_end), y=slice(y_start, -y_end))
+    y_start = y_diff // 2 if y_diff > 0 else 0
+    y_end = y_diff - y_start if y_diff > 0 else 0
+
+    return xarr.sel(x=slice(x_start, xarr["x"].size-x_end), y=slice(y_start, xarr["y"].size-y_end))
 
 
 def pad_xy_xarray(
@@ -161,8 +158,8 @@ def pad_xy_xarray(
     x_start = x_diff // 2 if x_diff > 0 else 0
     x_end = x_diff - x_start if x_diff > 0 else 0
 
-    y_start = y_diff // 2 if x_diff > 0 else 0
-    y_end = y_diff - y_start if x_diff > 0 else 0
+    y_start = y_diff // 2 if y_diff > 0 else 0
+    y_end = y_diff - y_start if y_diff > 0 else 0
 
     xarr = xarr.pad(
         x=(x_start, x_end),
