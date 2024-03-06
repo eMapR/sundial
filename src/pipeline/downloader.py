@@ -240,6 +240,8 @@ class Downloader:
                         report_queue.put(("INFO",
                                           f"Files already exists. Skipping... {square_name}"))
                         result_queue.put(square_name)
+                        self._existing_chips.remove(chip_file_name)
+                        self._existing_annos.remove(anno_file_name)
                         continue
 
                 # creating payload for each square to send to GEE
