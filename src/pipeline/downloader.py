@@ -109,12 +109,12 @@ class Downloader:
     def _watcher(self) -> None:
         # intialize the multiprocessing manager and queues
         manager = mp.Manager()
+        payload_queue = manager.Queue()
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
         chip_lock = manager.Lock() if self._file_type == "ZARR" else None
         anno_lock = manager.Lock() if self._file_type == "ZARR" else None
-        workers = set()
 
         # create reporter to aggregate logs
         reporter = mp.Process(
@@ -122,27 +122,31 @@ class Downloader:
             args=[report_queue],
             daemon=True)
         reporter.start()
-        workers.add(reporter)
 
         # filling image queue with GEE image payloads
-        def f(idx):
-            self._image_generator(
-                image_queue,
-                result_queue,
-                report_queue,
-                idx)
-
+        generators = set()
         report_queue.put(
             ("INFO", f"Starting image payload generation of {self._meta_size}..."))
+        [payload_queue.put(i) for i in range(self._meta_size)]
+        [payload_queue.put(None) for _ in range(self._num_workers)]
         start_time = time.time()
-        with mp.Pool(self._num_workers) as p:
-            p.map(f), range(self._meta_size)
+        for _ in range(self._num_workers):
+            image_generator = mp.Process(
+                target=self._image_generator,
+                args=(payload_queue,
+                      image_queue,
+                      report_queue),
+                daemon=True)
+            image_generator.start()
+            generators.add(image_generator)
         end_time = time.time()
         report_queue.put(("INFO",
                           f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
+        [g.join() for g in generators]
         [image_queue.put(None) for _ in range(self._num_workers)]
 
         # initializing number of parallel downloads
+        consumers = set()
         report_queue.put(("INFO",
                           f"Starting download of {self._meta_size} points of interest..."))
         start_time = time.time()
@@ -157,8 +161,7 @@ class Downloader:
                     anno_lock,
                     consumer_index),
                 daemon=True)
-            image_consumer.start()
-            workers.add(image_consumer)
+            consumers.add(image_consumer)
 
         downloads_completed = 0
         consumers_completed = 0
@@ -176,9 +179,10 @@ class Downloader:
 
         end_time = time.time()
         report_queue.put(("INFO",
-                          f"Download completed in {(end_time - start_time) / 60:.2} minutes."))
+                          f"Downloads completed in {(end_time - start_time) / 60:.2} minutes."))
         report_queue.put(None)
-        [w.join() for w in workers]
+        [c.join() for c in consumers]
+        reporter.join()
 
     def _reporter(self, report_queue: mp.Queue) -> None:
         logger = get_logger(self._log_path, self._log_name)
@@ -199,93 +203,90 @@ class Downloader:
                     return
 
     def _image_generator(self,
+                         payload_queue: mp.Queue,
                          image_queue: mp.Queue,
-                         result_queue: mp.Queue,
                          report_queue: mp.Queue,
-                         index: int,
                          ) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         file_ext = FILE_EXT_MAP[self._file_type]
-        try:
-            # reading meta data from xarray
-            geometry_coords, \
-                point_coords, \
-                point_name, \
-                square_coords, \
-                square_name, \
-                start_date, \
-                end_date, \
-                attributes \
-                = parse_meta_data(self._meta_data, index, self._back_step)
-            if start_date is None:
-                start_date = self._start_date
-            if end_date is None:
-                end_date = self._end_date
+        while (index := payload_queue.get()) is not None:
+            try:
+                # reading meta data from xarray
+                geometry_coords, \
+                    point_coords, \
+                    point_name, \
+                    square_coords, \
+                    square_name, \
+                    start_date, \
+                    end_date, \
+                    attributes \
+                    = parse_meta_data(self._meta_data, index, self._back_step)
+                if start_date is None:
+                    start_date = self._start_date
+                if end_date is None:
+                    end_date = self._end_date
 
-            # checking for existing files and skipping if file found
-            if self._file_type != "ZARR":
-                chip_file_name = f"{square_name}.{file_ext}"
-                chip_data_path = os.path.join(
-                    self._chip_data_path, chip_file_name)
-                anno_file_name = f"{square_name}.{file_ext}"
-                anno_data_path = os.path.join(
-                    self._anno_data_path, anno_file_name)
-                if not self._overwrite and os.path.exists(chip_data_path):
-                    report_queue.put(("INFO",
-                                      f"Files already exists. Skipping... {square_name}"))
-                    result_queue.put(square_name)
-                    return
-            else:
-                chip_data_path = self._chip_data_path
-                anno_data_path = self._anno_data_path
-                chip_var_path = os.path.join(chip_data_path, square_name)
-                if not self._overwrite and os.path.exists(chip_var_path):
-                    report_queue.put(("INFO",
-                                      f"Files already exists. Skipping... {square_name}"))
-                    result_queue.put(square_name)
-                    return
+                # checking for existing files and skipping if file found
+                if self._file_type != "ZARR":
+                    chip_file_name = f"{square_name}.{file_ext}"
+                    chip_data_path = os.path.join(
+                        self._chip_data_path, chip_file_name)
+                    anno_file_name = f"{square_name}.{file_ext}"
+                    anno_data_path = os.path.join(
+                        self._anno_data_path, anno_file_name)
+                    if not self._overwrite and os.path.exists(chip_data_path):
+                        report_queue.put(("INFO",
+                                          f"Files for index {index} already exists. Skipping... {square_name}"))
+                        continue
+                else:
+                    chip_data_path = self._chip_data_path
+                    anno_data_path = self._anno_data_path
+                    chip_var_path = os.path.join(chip_data_path, square_name)
+                    if not self._overwrite and os.path.exists(chip_var_path):
+                        report_queue.put(("INFO",
+                                          f"Files for index {index} already exists. Skipping... {square_name}"))
+                        continue
 
-            # creating payload for each square to send to GEE
-            report_queue.put(
-                ("INFO", f"Creating image payload for square... {square_name}"))
-            image = self._image_gen_callable(
-                start_date,
-                end_date,
-                square_coords,
-                self._scale,
-                self._overlap_band,
-                geometry_coords)
-
-            # getting utm zone and epsg code for reprojection
-            match self._reprojection:
-                case "UTM":
-                    revserse_point = reversed(point_coords)
-                    utm_zone = utm.from_latlon(*revserse_point)[-2:]
-                    epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
-                    epsg_code = f"{epsg_prefix}{utm_zone[0]}"
-                case _:
-                    epsg_code = self._reprojection
-
-            # reprojecting the image if necessary
-            if epsg_code is not None:
+                # creating payload for each square to send to GEE
                 report_queue.put(
-                    ("INFO", f"Reprojecting image payload square to {epsg_code}... {square_name}"))
-                image = image.reproject(
-                    crs=epsg_code, scale=self._scale)
+                    ("INFO", f"Creating image payload for square {index}... {square_name}"))
+                image = self._image_gen_callable(
+                    start_date,
+                    end_date,
+                    square_coords,
+                    self._scale,
+                    self._overlap_band,
+                    geometry_coords)
 
-            # encoding the image for the image consumer
-            payload = {
-                "expression": ee.serializer.encode(image),
-                "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
-            }
+                # getting utm zone and epsg code for reprojection
+                match self._reprojection:
+                    case "UTM":
+                        revserse_point = reversed(point_coords)
+                        utm_zone = utm.from_latlon(*revserse_point)[-2:]
+                        epsg_prefix = "EPSG:326" if point_coords[1] > 0 else "EPSG:327"
+                        epsg_code = f"{epsg_prefix}{utm_zone[0]}"
+                    case _:
+                        epsg_code = self._reprojection
 
-            # sending expression payload to the image consumer
-            image_queue.put(
-                (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
-        except Exception as e:
-            report_queue.put(
-                ("CRITICAL", f"Failed to create image payload for square skipping: {type(e)} {e} {square_name}"))
-            result_queue.put(square_name)
+                # reprojecting the image if necessary
+                if epsg_code is not None:
+                    report_queue.put(
+                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {square_name}"))
+                    image = image.reproject(
+                        crs=epsg_code, scale=self._scale)
+
+                # encoding the image for the image consumer
+                payload = {
+                    "expression": ee.serializer.encode(image),
+                    "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
+                }
+
+                # sending expression payload to the image consumer
+                image_queue.put(
+                    (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
+            except Exception as e:
+                report_queue.put(
+                    ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {square_name}"))
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
