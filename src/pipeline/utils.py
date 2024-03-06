@@ -185,8 +185,9 @@ def parse_meta_data(
         meta_data: pd.DataFrame,
         index: int,
         back_step: int) -> tuple[list[tuple[float, float]],
-                                 str,
                                  tuple[float, float],
+                                 str,
+                                 list[tuple[float, float]],
                                  str,
                                  datetime | None,
                                  datetime | None,
@@ -194,12 +195,13 @@ def parse_meta_data(
     # this is a bit of a hack to get around the fact that return multiple types in one go is a bit of a pain
     geometry_columns = [k for k in meta_data.columns if "geometry_" in k]
     geometry_values = meta_data.iloc[index].loc[geometry_columns].tolist()
-    geometry = [p for p in geometry_values if all(c == c for c in p)]
+    geometry = [tuple(p) for p in geometry_values if all(c == c for c in p)]
 
     # pulling directly to preserve order for polygon unamibguity
-    point_coords = meta_data.iloc[index].loc["point_coords"]
+    point_coords = tuple(meta_data.iloc[index].loc["point_coords"])
     point_name = meta_data.iloc[index].loc["point_name"]
-    square_coords = meta_data.iloc[index].loc[SQUARE_COLUMNS].tolist()
+    square_coords = meta_data.iloc[index].loc[SQUARE_COLUMNS]\
+        .apply(tuple).tolist()
     square_name = meta_data.iloc[index].loc["square_name"]
 
     # generating start and end date from year attribute and back step
