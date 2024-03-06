@@ -307,9 +307,9 @@ class Downloader:
                         image_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
-                        chip_lock: mp.Lock | None,
-                        anno_lock: mp.Lock | None,
-                        consumer_index) -> None:
+                        chip_lock: mp.Lock,
+                        anno_lock: mp.Lock,
+                        consumer_index: int) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         with open(self._strata_map_path, "r") as f:
             strata_map = yaml.safe_load(f)
