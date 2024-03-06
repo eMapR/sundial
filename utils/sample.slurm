@@ -5,5 +5,5 @@
 
 conda activate ${SUNDIAL_ENV_NAME}
 
-srun python ${SUNDIAL_BASE_PATH}/src/pipeline/sampler.py
+python ${SUNDIAL_BASE_PATH}/src/pipeline/sampler.py
 

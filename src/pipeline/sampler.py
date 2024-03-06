@@ -14,9 +14,9 @@ from multiprocessing.pool import ThreadPool
 from typing import Literal
 from shapely.ops import unary_union
 
-from utils import parse_meta_data, generate_coords_name
-from logger import get_logger
-from settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME, GEE_REQUEST_LIMIT, GEE_FEATURE_LIMIT
+from .utils import parse_meta_data, generate_coords_name
+from .logger import get_logger
+from .settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME, GEE_REQUEST_LIMIT, GEE_FEATURE_LIMIT
 
 
 def get_elevation_image(

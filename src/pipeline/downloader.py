@@ -12,9 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from utils import parse_meta_data, lt_image_generator, zarr_reshape
-from logger import get_logger
-from settings import FILE_EXT_MAP
+from .utils import parse_meta_data, lt_image_generator, zarr_reshape
+from .logger import get_logger
+from .settings import FILE_EXT_MAP
 
 
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'

@@ -7,7 +7,7 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
 
-from pipeline.utils import clip_xr_array
+from pipeline.utils import clip_xy_xarray
 
 
 class PreprocesNormalization(nn.Module):
@@ -70,7 +70,7 @@ class ChipsDataset(Dataset):
     def get_strata(self, name):
         strata = self.anno_loader(name)
         if self.chip_size < max(strata["x"].size, strata["y"].size):
-            strata = clip_xr_array(strata, self.chip_size)
+            strata = clip_xy_xarray(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
     def slice_year(self, xarr: xr.Dataset, year: int):
@@ -90,7 +90,7 @@ class ChipsDataset(Dataset):
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
-            chip = clip_xr_array(chip, self.chip_size)
+            chip = clip_xy_xarray(chip, self.chip_size)
 
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
