@@ -127,9 +127,9 @@ class Downloader:
         generators = set()
         report_queue.put(
             ("INFO", f"Starting image payload generation of {self._meta_size}..."))
+        start_time = time.time()
         [payload_queue.put(i) for i in range(self._meta_size)]
         [payload_queue.put(None) for _ in range(self._num_workers)]
-        start_time = time.time()
         for _ in range(self._num_workers):
             image_generator = mp.Process(
                 target=self._image_generator,
@@ -139,11 +139,11 @@ class Downloader:
                 daemon=True)
             image_generator.start()
             generators.add(image_generator)
+        [g.join() for g in generators]
+        [image_queue.put(None) for _ in range(self._num_workers)]
         end_time = time.time()
         report_queue.put(("INFO",
                           f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
-        [g.join() for g in generators]
-        [image_queue.put(None) for _ in range(self._num_workers)]
 
         # initializing number of parallel downloads
         consumers = set()
