@@ -114,7 +114,8 @@ class Downloader:
         image_queue = manager.Queue()
         result_queue = manager.Queue()
         report_queue = manager.Queue()
-        io_lock = manager.Lock()
+        chip_lock = manager.Lock() if self._file_type == "ZARR" else None
+        anno_lock = manager.Lock() if self._file_type == "ZARR" else None
         workers = set()
 
         # create reporter to aggregate logs
@@ -142,7 +143,8 @@ class Downloader:
                     image_queue,
                     result_queue,
                     report_queue,
-                    io_lock,
+                    chip_lock,
+                    anno_lock,
                     consumer_index),
                 daemon=True)
             workers.add(image_consumer)
@@ -305,7 +307,8 @@ class Downloader:
                         image_queue: mp.Queue,
                         result_queue: mp.Queue,
                         report_queue: mp.Queue,
-                        io_lock: mp.Lock,
+                        chip_lock: mp.Lock | None,
+                        anno_lock: mp.Lock | None,
                         consumer_index) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         with open(self._strata_map_path, "r") as f:
@@ -332,7 +335,7 @@ class Downloader:
                 report_queue.put(
                     ("ERROR", f"Failed to download square: {type(e)} {e} {square_name}"))
                 continue
-                
+
             report_queue.put(
                 ("INFO", f"Processing square array for chip format {self._file_type} ... {square_name}"))
             try:
@@ -353,7 +356,7 @@ class Downloader:
                     case "ZARR":
                         square_name_batch.append(square_name)
                         batch_size += 1
-                        
+
                         # reshaping from (D*C, H, W) to (D, H, W, D)
                         report_queue.put((
                             "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pizel size {self._pixel_edge_size}... {square_name}"))
@@ -377,18 +380,19 @@ class Downloader:
 
                         # attempt to merge batch of dataarrays and write to disk
                         if batch_size == self._io_limit:
-                            with io_lock:
-                                self._write_array_batch(
-                                    xarr_chip_batch,
-                                    anno_chip_batch,
-                                    square_name_batch,
-                                    consumer_index,
-                                    batch_index,
-                                    batch_size,
-                                    chip_data_path,
-                                    anno_data_path,
-                                    report_queue,
-                                    result_queue)
+                            self._write_array_batch(
+                                xarr_chip_batch,
+                                anno_chip_batch,
+                                square_name_batch,
+                                batch_index,
+                                batch_size,
+                                chip_data_path,
+                                anno_data_path,
+                                report_queue,
+                                result_queue,
+                                chip_lock,
+                                anno_lock,
+                                consumer_index,)
 
                             # resetting batch
                             square_name_batch.clear()
@@ -421,18 +425,19 @@ class Downloader:
 
         # writing any remaining data in batch lists to disk
         if self._file_type == "ZARR" and batch_size > 0:
-            with io_lock:
-                self._write_array_batch(
-                    xarr_chip_batch,
-                    anno_chip_batch,
-                    square_name_batch,
-                    consumer_index,
-                    batch_index,
-                    batch_size,
-                    chip_data_path,
-                    anno_data_path,
-                    report_queue,
-                    result_queue)
+            self._write_array_batch(
+                xarr_chip_batch,
+                anno_chip_batch,
+                square_name_batch,
+                batch_index,
+                batch_size,
+                chip_data_path,
+                anno_data_path,
+                report_queue,
+                result_queue,
+                chip_lock,
+                anno_lock,
+                consumer_index)
 
         report_queue.put(
             ("INFO", f"Consumer {consumer_index} completed. exiting..."))
@@ -442,27 +447,31 @@ class Downloader:
                            xarr_chip_batch: list[xr.DataArray],
                            anno_chip_batch: list[xr.DataArray],
                            square_name_batch: list[str],
-                           consumer_index: int,
                            batch_index: int,
                            batch_size: int,
                            chip_data_path: str,
                            anno_data_path: str,
                            report_queue: mp.Queue,
-                           result_queue: mp.Queue) -> None:
+                           result_queue: mp.Queue,
+                           chip_lock: mp.Queue,
+                           anno_lock: mp.Queue,
+                           consumer_index: int) -> None:
         # merging and writing or appending chip batch as dataset to zarr
         report_queue.put(
             ("INFO", f"Merging and writing consumer {consumer_index} chip batch {batch_index} of size {batch_size} to {chip_data_path}..."))
         xarr_chip_batch = xr.merge(xarr_chip_batch)
-        xarr_chip_batch.to_zarr(
-            store=chip_data_path, mode="a")
+        with chip_lock:
+            xarr_chip_batch.to_zarr(
+                store=chip_data_path, mode="a")
 
         # merging and writing or appending anno batch as dataset to zarr if not empty
         if anno_chip_batch[0] is not None:
             report_queue.put(
                 ("INFO", f"Merging and writing consumer {consumer_index} anno batch {batch_index} of size {batch_size} to {anno_data_path}..."))
             xarr_anno_batch = xr.merge(anno_chip_batch)
-            xarr_anno_batch.to_zarr(
-                store=anno_data_path, mode="a")
+            with anno_lock:
+                xarr_anno_batch.to_zarr(
+                    store=anno_data_path, mode="a")
 
         # reporting batch completion to watcher
         for name in square_name_batch:
