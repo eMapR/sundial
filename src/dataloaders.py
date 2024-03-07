@@ -55,14 +55,17 @@ class ChipsDataset(Dataset):
 
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
-            self.annos = xr.open_zarr(self.anno_data_path)
             self.chip_loader = lambda name: self._zarr_loader(self.chips, name)
-            self.anno_loader = lambda name: self._zarr_loader(self.annos, name)
+            if self.anno_data_path is not None:
+                self.annos = xr.open_zarr(self.anno_data_path)
+                self.anno_loader = lambda name: self._zarr_loader(
+                    self.annos, name)
         if self.file_type == "tif":
             self.chip_loader = lambda name: \
                 self._tif_loader(self.chip_data_path, name)
-            self.anno_loader = lambda name: \
-                self._tif_loader(self.anno_data_path, name)
+            if self.anno_data_path is not None:
+                self.anno_loader = lambda name: \
+                    self._tif_loader(self.anno_data_path, name)
 
         if drop_duplicates is not None:
             self.meta_data = self.meta_data\
