@@ -112,8 +112,8 @@ _run:
 		echo "Running on HPC..."; \
 		sbatch \
 			--job-name=$(SUNDIAL_METHOD).$(SUNDIAL_EXPERIMENT_NAME) \
-			--output=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).o \
-			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).e \
+			--output=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).e \
 			--partition=$(SUNDIAL_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
