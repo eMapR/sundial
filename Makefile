@@ -117,7 +117,7 @@ _run:
 			--partition=$(SUNDIAL_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/run.slurm \
+			$(SUNDIAL_BASE_PATH)/run.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
