@@ -110,18 +110,14 @@ predict: variable_check config_check
 _run:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Running on HPC..."; \
-		sbatch 
-			--job-name=sundial.${SUNDIAL_METHOD} \
-			--output=${SUNDIAL_BASE_PATH}/logs/${SUNDIAL_METHOD}.o \
-			--error=${SUNDIAL_BASE_PATH}/logs/${SUNDIAL_METHOD}.e \
-			--partition=${SUNDIAL_PARTITION} \
-			--chdir=${SUNDIAL_BASE_PATH} \
+		sbatch \
+			--job-name=sundial.$(SUNDIAL_METHOD) \
+			--output=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).o \
+			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).e \
+			--partition=$(SUNDIAL_PARTITION) \
+			--chdir=$(SUNDIAL_BASE_PATH) \
 			--export=ALL \
-			<< EOT
-				#!/bin/bash -l
-				conda activate ${SUNDIAL_ENV_NAME}
-				python ${SUNDIAL_BASE_PATH}/src/runner.py
-			EOT; \
+			$(SUNDIAL_BASE_PATH)/run.slurm \
 	else \
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
