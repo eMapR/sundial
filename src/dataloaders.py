@@ -204,12 +204,11 @@ class ChipsDataModule(L.LightningDataModule):
                     **self.dataset_config)
 
             case "predict":
-                self.predict_ds = ChipsDataset(
-                    sample_path=self.predict_sample_path,
-                    **self.dataset_config | {
-                        "anno_data_path": None,
-                        "include_names": True,
-                    })
+                predict_config = self.dataset_config | {
+                    "anno_data_path": None,
+                    "sample_path": self.predict_sample_path,
+                }
+                self.predict_ds = ChipsDataset(**predict_config)
 
     def train_dataloader(self):
         return DataLoader(
