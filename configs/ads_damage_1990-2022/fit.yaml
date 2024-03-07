@@ -62,7 +62,7 @@ trainer:
         init_args:
             auto_insert_metric_name: false
             dirpath: checkpoints/ads_damage_1990-2022
-            'every_n_epochs ': 2
+            every_n_epochs: 2
             filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-
             monitor: val_loss
             save_top_k: 4
