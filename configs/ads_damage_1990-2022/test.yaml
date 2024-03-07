@@ -53,10 +53,6 @@ data:
 trainer:
     accelerator: cuda
     callbacks:
-    - class_path: PredictionWriter
-        init_args:
-            output_dir: predictions/ads_damage_1990-2022
-            write_interval: batch
     - class_path: ModelCheckpoint
         init_args:
             auto_insert_metric_name: false
