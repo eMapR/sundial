@@ -31,14 +31,12 @@ BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
 SHAPES_PATH = os.path.join(BASE_PATH, "shapes")
 SAMPLES_PATH = os.path.join(BASE_PATH, "samples")
-PREDICTIONS_PATH = os.path.join(BASE_PATH, "predictions")
 CHECKPOINTS_PATH = os.path.join(BASE_PATH, "checkpoints")
 LOGS_PATH = os.path.join(BASE_PATH, "logs")
 
 # experiment paths
 CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_NAME)
 SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
-PREDICTION_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_NAME)
 CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_NAME)
 LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
 
@@ -166,14 +164,8 @@ DATALOADER = {
     "test_sample_path": TEST_SAMPLE_PATH,
     "predict_sample_path": PREDICT_SAMPLE_PATH,
 }
-PREDICTIONS_PATH = os.path.join(LOG_PATH, "predictions")
 
-PREDICTION_WRITER = {
-    "output_dir": PREDICTION_PATH,
-    "write_interval": "batch"
-}
-
-CHECKPOINT_WRITER = {
+CHECKPOINT = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-",
     "monitor": "val_loss",
@@ -187,8 +179,11 @@ LOGGER = {
 }
 
 if __name__ == "__main__":
+    # saving sampler and download configs
     save_config(SAMPLER, SAMPLE_CONFIG_PATH)
     save_config(DOWNLOADER, DOWNLOAD_CONFIG_PATH)
+    
+    # generating and saving run configs for fit, validate, test and predict
     run = {
         "data": {
             "class_path": "ChipsDataModule",
@@ -198,12 +193,8 @@ if __name__ == "__main__":
             "accelerator": "cuda",
             "callbacks": [
                 {
-                    "class_path": "PredictionWriter",
-                    "init_args": PREDICTION_WRITER
-                },
-                {
                     "class_path": "ModelCheckpoint",
-                    "init_args": CHECKPOINT_WRITER
+                    "init_args": CHECKPOINT
                 }
             ],
             "logger": {

@@ -38,6 +38,8 @@ default:
 	@echo "        clean_logs:     Removes all logs."
 	@echo "        clean_sample:   Removes all sample data."
 	@echo "        clean_download: Removes all chip and anno data."
+	@echo "        clean_predict:  Removes all predictions."
+	@echo "        package:        Compresses experiment to tar."
 	@echo "        nuke:           Removes all data from run."
 	@echo
 	@echo "    Variables:"
@@ -59,49 +61,49 @@ config:
 	fi; \
 
 
-config_check:
+_config_check:
 	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
 		echo "No configs found. Please run make config first..."; \
 		exit 1; \
 	fi; \
 
-variable_check:
+_variable_check:
 	if [[ -z "$(SUNDIAL_EXPERIMENT_NAME)" ]]; then \
 		echo "Please provide sample name and experiment suffix to delete."; \
 		exit 1; \
 	fi; \
 
-sample: variable_check config_check
+sample: _variable_check _config_check
 	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
 	$(eval export SUNDIAL_METHOD=sample)
 	$(eval export SUNDIAL_PARTITION=$(X86_PARTITION))
 	$(MAKE) -s _run
 
-download: variable_check config_check
+download: _variable_check _config_check
 	echo "Downloading chip sample from Google Earth Engine. This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=download)
 	$(eval export SUNDIAL_PARTITION=$(X86_PARTITION))
 	$(MAKE) -s _run
 
-fit: variable_check config_check
+fit: _variable_check _config_check
 	echo "Training model... This may take a while..."; \
 	$(eval export SUNDIAL_METHOD=fit)
 	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
 	$(MAKE) -s _run
 
-validate: variable_check config_check
+validate: _variable_check _config_check
 	echo "Validating model... Go ahead and hold your breath..."; \
 	$(eval export SUNDIAL_METHOD=validate)
 	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
 	$(MAKE) -s _run
 
-test: variable_check config_check
+test: _variable_check _config_check
 	echo "Testing model... Please check $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e..."; \
 	$(eval export SUNDIAL_METHOD=test)
 	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
 	$(MAKE) -s _run
 
-predict: variable_check config_check
+predict: _variable_check _config_check
 	echo "Predicting image using model... Lets see if this works!"; \
 	$(eval export SUNDIAL_METHOD=predict)
 	$(eval export SUNDIAL_PARTITION=$(A64_PARTITION))
@@ -123,33 +125,34 @@ _run:
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi; \
 
-package: variable_check
+package: _variable_check
 	echo "Compressing logs for  $(SUNDIAL_EXPERIMENT_NAME) to tar. Tar file will be saved in home directory and overwrite already existing archives."; \
-	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tar.gz $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \ 
+	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tblog.tar.gz $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \ 
+	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).ckpts.tar.gz $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME); \ 
 
-clean: variable_check
+clean: _variable_check
 	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
-clean_logs: variable_check
+clean_logs: _variable_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 
-clean_sample: variable_check
+clean_sample: _variable_check
 	echo "Cleaning up all sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
-clean_download: variable_check
+clean_download: _variable_check
 	echo "Cleaning up chip data and anno data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*; \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*; \
 
-clean_predict: variable_check
+clean_predict: _variable_check
 	echo "Cleaning up predictions generated for  $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/predictions
 
-nuke: variable_check
+nuke: _variable_check
 	echo "Deleting logs, sample data, and configs for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/data/samples/$(SUNDIAL_EXPERIMENT_NAME); \
