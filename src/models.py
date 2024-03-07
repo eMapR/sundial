@@ -156,7 +156,10 @@ class SundialPrithvi(L.LightningModule):
         return loss
 
     def predict_step(self, batch):
-        chip, annotations = batch
+        if isinstance(batch, list):
+            chip, annotations = batch
+        else:
+            chip, annotations = batch, None
 
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = chip.permute(0, 1, 4, 2, 3)
@@ -169,17 +172,19 @@ class SundialPrithvi(L.LightningModule):
             global_step=self.global_step,
             fps=1,
         )
-        if annotations != 0:
+        if annotations is not None:
             self.logger.experiment.add_images(
                 tag="annotations",
                 img_tensor=annotations,
                 global_step=self.global_step,
+                dataformats="NCHW",
             )
 
         self.logger.experiment.add_images(
             tag="predictions",
             img_tensor=logits,
             global_step=self.global_step,
+            dataformats="NCHW",
         )
 
         return logits
