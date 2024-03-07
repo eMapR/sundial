@@ -108,7 +108,7 @@ class ChipsDataset(Dataset):
             strata = self.get_strata(name)
             return chip, strata
         else:
-            return chip
+            return chip, 0
 
     def __len__(self):
         return len(self.meta_data)
