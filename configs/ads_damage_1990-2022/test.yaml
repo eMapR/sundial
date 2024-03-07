@@ -1,7 +1,7 @@
 model:
     class_path: SundialPrithvi
     init_args:
-        num_classes: 37
+        num_classes: 61 
         view_size: 16
         upscale_depth: 4
         upscale_reduction_factor: 2
@@ -25,7 +25,7 @@ data:
     class_path: ChipsDataModule
     init_args:
         batch_size: 64
-        num_workers: 4
+        num_workers: 0
         means:
             - 775.2290211032589
             - 1080.992780391705
@@ -50,6 +50,7 @@ data:
         test_sample_path: samples/ads_damage_1990-2022/test_sample.zarr
         train_sample_path: samples/ads_damage_1990-2022/train_sample.zarr
         validate_sample_path: samples/ads_damage_1990-2022/validate_sample.zarr
+        drop_duplicates: ["square_name"]
 trainer:
     accelerator: cuda
     callbacks:

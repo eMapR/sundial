@@ -5,7 +5,6 @@ from lightning.pytorch.cli import ArgsType, LightningCLI
 
 from models import *
 from dataloaders import *
-from writers import *
 from pipeline.settings import RANDOM_STATE, CONFIG_PATH
 
 
