@@ -147,7 +147,7 @@ class SundialPrithvi(L.LightningModule):
         return loss
 
     def predict_step(self, batch):
-        chip, annotations = batch
+        chip = batch
         logits = self.forward(chip)
 
         self.logger.experiment.add_video(
@@ -155,13 +155,6 @@ class SundialPrithvi(L.LightningModule):
             img_tensor=chip,
             global_step=self.global_step,
             dataformats="NTHWC",
-        )
-
-        self.logger.experiment.add_images(
-            tag="annotations",
-            img_tensor=annotations,
-            global_step=self.global_step,
-            dataformats="NCHW",
         )
 
         self.logger.experiment.add_images(
