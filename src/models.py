@@ -157,7 +157,7 @@ class SundialPrithvi(L.LightningModule):
 
         self.logger.experiment.add_video(
             tag="chips",
-            img_tensor=chip,
+            vid_tensor =chip,
             global_step=self.global_step,
             dataformats="NTHWC",
         )
