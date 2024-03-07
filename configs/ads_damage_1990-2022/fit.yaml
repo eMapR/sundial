@@ -23,7 +23,6 @@ model:
                 mask_ratio: 0.0
 data:
     class_path: ChipsDataModule
-    drop_duplicates: ["square_name"]
     init_args:
         batch_size: 32
         num_workers: 0
@@ -51,6 +50,7 @@ data:
         test_sample_path: data/samples/ads_damage_1990-2022/test_sample.zarr
         train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
         validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
+        drop_duplicates: ["square_name"]
 trainer:
     accelerator: cuda 
     callbacks:

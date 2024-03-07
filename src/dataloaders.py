@@ -25,23 +25,27 @@ class ChipsDataset(Dataset):
     def __init__(self,
                  means: list[float] | None,
                  stds: list[float] | None,
-                 file_type: str,
-                 chip_data_path: str,
-                 anno_data_path: str,
-                 sample_path: str,
+
                  chip_size: int,
                  base_year: int | None,
                  back_step: int | None,
+                 file_type: str,
+
+                 chip_data_path: str,
+                 anno_data_path: str,
+                 sample_path: str,
+
                  drop_duplicates: bool = list[str] | None,
                  **kwargs):
         super().__init__(**kwargs)
-        self.file_type = file_type
-        self.chip_data_path = chip_data_path
-        self.anno_data_path = anno_data_path
-        self.sample_path = sample_path
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
+        self.file_type = file_type
+
+        self.chip_data_path = chip_data_path
+        self.anno_data_path = anno_data_path
+        self.sample_path = sample_path
         self.drop_duplicates = drop_duplicates
 
         self.normalize = PreprocesNormalization(
@@ -123,9 +127,11 @@ class ChipsDataModule(L.LightningDataModule):
         num_workers: int,
         means: list[float] | None,
         stds: list[float] | None,
+
         chip_size: int | None,
         base_year: int | None,
         back_step: int | None,
+
         file_type: str,
         chip_data_path: str,
         anno_data_path: str,
@@ -133,6 +139,8 @@ class ChipsDataModule(L.LightningDataModule):
         validate_sample_path: str,
         test_sample_path: str,
         predict_sample_path: str,
+
+        drop_duplicates: list[str] | None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -140,9 +148,11 @@ class ChipsDataModule(L.LightningDataModule):
         self.num_workers = num_workers
         self.means = means
         self.stds = stds
+
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
+
         self.file_type = file_type.lower()
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
@@ -150,6 +160,8 @@ class ChipsDataModule(L.LightningDataModule):
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
+
+        self.drop_duplicates = drop_duplicates
 
         self.dataset_config = {
             "means": self.means,
@@ -160,6 +172,7 @@ class ChipsDataModule(L.LightningDataModule):
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
+            "drop_duplicates": self.drop_duplicates,
         }
 
         self.dataloader_config = {

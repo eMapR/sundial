@@ -111,7 +111,7 @@ _run:
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		echo "Running on HPC..."; \
 		sbatch \
-			--job-name=sundial.$(SUNDIAL_METHOD) \
+			--job-name=$(SUNDIAL_METHOD).$(SUNDIAL_EXPERIMENT_NAME) \
 			--output=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).o \
 			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_METHOD).e \
 			--partition=$(SUNDIAL_PARTITION) \
