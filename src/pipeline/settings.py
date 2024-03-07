@@ -179,7 +179,7 @@ CHECKPOINT_WRITER = {
     "monitor": "val_loss",
     "save_top_k": 4,
     "auto_insert_metric_name": False,
-    "every_n_epochs ": 2,
+    "every_n_epochs": 2,
 }
 
 LOGGER = {
