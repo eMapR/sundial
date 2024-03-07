@@ -159,21 +159,18 @@ class SundialPrithvi(L.LightningModule):
             tag="chips",
             vid_tensor =chip,
             global_step=self.global_step,
-            dataformats="NTHWC",
         )
         if annotations is not None:
             self.logger.experiment.add_images(
                 tag="annotations",
                 img_tensor=annotations,
                 global_step=self.global_step,
-                dataformats="NCHW",
             )
 
         self.logger.experiment.add_images(
             tag="predictions",
             img_tensor=logits,
             global_step=self.global_step,
-            dataformats="NCHW",
         )
 
         return logits
