@@ -107,7 +107,7 @@ class SundialPrithvi(L.LightningModule):
         loss = self.criterion(logits, annotations)
 
         self.log(
-            name="train/loss",
+            name="train_loss",
             value=loss,
             on_step=True,
             on_epoch=True,
@@ -122,7 +122,7 @@ class SundialPrithvi(L.LightningModule):
         loss = self.criterion(logits, annotations)
 
         self.log(
-            name="val/loss",
+            name="val_loss",
             value=loss,
             on_step=True,
             on_epoch=True,
@@ -137,7 +137,7 @@ class SundialPrithvi(L.LightningModule):
         loss = self.criterion(logits, annotations)
 
         self.log(
-            name="test/loss",
+            name="test_loss",
             value=loss,
             on_step=True,
             on_epoch=True,

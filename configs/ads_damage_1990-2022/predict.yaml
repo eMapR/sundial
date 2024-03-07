@@ -1,25 +1,35 @@
 data:
   class_path: ChipsDataModule
   init_args:
-    anno_data_path: data/samples/ads_damage_1990-2022/anno_data.zarr
+    anno_data_path: samples/ads_damage_1990-2022/anno_data.zarr
     back_step: null
     base_year: null
-    chip_data_path: data/samples/ads_damage_1990-2022/chip_data.zarr
+    chip_data_path: samples/ads_damage_1990-2022/chip_data.zarr
     chip_size: 256
     file_type: zarr
-    predict_sample_path: data/samples/ads_damage_1990-2022/predict_sample.zarr
-    test_sample_path: data/samples/ads_damage_1990-2022/test_sample.zarr
-    train_sample_path: data/samples/ads_damage_1990-2022/train_sample.zarr
-    validate_sample_path: data/samples/ads_damage_1990-2022/validate_sample.zarr
+    predict_sample_path: samples/ads_damage_1990-2022/predict_sample.zarr
+    test_sample_path: samples/ads_damage_1990-2022/test_sample.zarr
+    train_sample_path: samples/ads_damage_1990-2022/train_sample.zarr
+    validate_sample_path: samples/ads_damage_1990-2022/validate_sample.zarr
 trainer:
-inference_mode: false
+  accelerator: cuda
   callbacks:
   - class_path: PredictionWriter
     init_args:
-        output_dir: logs/ads_damage_1990-2022/predictions
-        write_interval: batch
-  logger:
-    class_path: ExperimentLogger
+      output_dir: predictions/ads_damage_1990-2022
+      write_interval: batch
+  - class_path: ModelCheckpoint
     init_args:
-        name: predict
-        save_dir: logs/ads_damage_1990-2022
+      auto_insert_metric_name: false
+      dirpath: checkpoints/ads_damage_1990-2022
+      'every_n_epochs ': 2
+      filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-
+      monitor: val_loss
+      save_top_k: 4
+  inference_mode: false
+  logger:
+    class_path: TensorBoardLogger
+    init_args:
+      name: predict
+      save_dir: logs/ads_damage_1990-2022
+

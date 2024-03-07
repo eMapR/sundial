@@ -114,10 +114,10 @@ _run:
 			--job-name=$(SUNDIAL_METHOD).$(SUNDIAL_EXPERIMENT_NAME) \
 			--output=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).o \
 			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).e \
-			--partition=$(SUNDIAL_PARTITION) \
 			--chdir=$(SUNDIAL_BASE_PATH) \
+			--partition=$(SUNDIAL_PARTITION) \
 			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/run.slurm; \
+			$(SUNDIAL_BASE_PATH)/slurm/$(SUNDIAL_METHOD).slurm; \
 	else \
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \

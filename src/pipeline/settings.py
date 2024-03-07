@@ -28,16 +28,19 @@ EXPERIMENT_NAME = os.getenv("SUNDIAL_EXPERIMENT_NAME")
 
 # base paths
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
-DATA_PATH = os.path.join(BASE_PATH, "data")
-LOGS_PATH = os.path.join(BASE_PATH, "logs")
-SHAPES_PATH = os.path.join(DATA_PATH, "shapes")
-SAMPLES_PATH = os.path.join(DATA_PATH, "samples")
 CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
+SHAPES_PATH = os.path.join(BASE_PATH, "shapes")
+SAMPLES_PATH = os.path.join(BASE_PATH, "samples")
+PREDICTIONS_PATH = os.path.join(BASE_PATH, "predictions")
+CHECKPOINTS_PATH = os.path.join(BASE_PATH, "checkpoints")
+LOGS_PATH = os.path.join(BASE_PATH, "logs")
 
 # experiment paths
-LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
-SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
 CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_NAME)
+SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
+PREDICTION_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_NAME)
+CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_NAME)
+LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
 
 # config paths
 SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
@@ -165,9 +168,18 @@ DATALOADER = {
 }
 PREDICTIONS_PATH = os.path.join(LOG_PATH, "predictions")
 
-WRITER = {
-    "output_dir": PREDICTIONS_PATH,
+PREDICTION_WRITER = {
+    "output_dir": PREDICTION_PATH,
     "write_interval": "batch"
+}
+
+CHECKPOINT_WRITER = {
+    "dirpath": CHECKPOINT_PATH,
+    "filename": "epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-",
+    "monitor": "val_loss",
+    "save_top_k": 4,
+    "auto_insert_metric_name": False,
+    "every_n_epochs ": 2,
 }
 
 LOGGER = {
@@ -187,11 +199,15 @@ if __name__ == "__main__":
             "callbacks": [
                 {
                     "class_path": "PredictionWriter",
-                    "init_args": WRITER
+                    "init_args": PREDICTION_WRITER
+                },
+                {
+                    "class_path": "ModelCheckpoint",
+                    "init_args": CHECKPOINT_WRITER
                 }
             ],
             "logger": {
-                "class_path": "ExperimentLogger",
+                "class_path": "TensorBoardLogger",
                 "init_args": LOGGER
             },
         }
