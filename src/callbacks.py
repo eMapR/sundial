@@ -4,11 +4,11 @@ import torch
 
 class SundialPrithviCallback(L.Callback):
     def on_train_batch_end(self,
-                           trainer,
-                           pl_module,
-                           outputs,
-                           batch,
-                           batch_idx):
+                           trainer: L.pytorch.trainer.trainer,
+                           pl_module: L.LightningModule,
+                           outputs: torch.Tensor,
+                           batch: torch.Tensor,
+                           batch_idx: int,):
         pl_module.log(
             name="train_loss",
             value=outputs,
@@ -16,24 +16,24 @@ class SundialPrithviCallback(L.Callback):
         )
 
     def on_validation_batch_end(self,
-                                trainer,
-                                pl_module,
-                                outputs,
-                                batch,
-                                batch_idx,
-                                dataloader_idx):
+                                trainer: L.pytorch.trainer.trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: torch.Tensor,
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
         pl_module.log(
             name="val_loss",
             value=outputs,
         )
 
     def on_test_batch_end(self,
-                          trainer,
-                          pl_module,
-                          outputs,
-                          batch,
-                          batch_idx,
-                          dataloader_idx):
+                          trainer: L.pytorch.trainer.trainer,
+                          pl_module: L.LightningModule,
+                          outputs: torch.Tensor,
+                          batch: torch.Tensor,
+                          batch_idx: int,
+                          dataloader_idx: int = 0):
         _, annotations = batch
         loss, image, logits = outputs
 
