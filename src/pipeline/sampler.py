@@ -396,7 +396,7 @@ def main(**kwargs):
             num_samples = generate_squares(**square_config)
             end = time.time()
             LOGGER.info(
-                f"Square generation completed in: {(end - start)/60:.2} minutes")
+                f"Square generation completed in: {(end - start)/60:.2f} minutes")
 
         if num_samples is None:
             num_samples = xr.open_zarr(config["meta_data_path"]).sizes["index"]
@@ -414,7 +414,7 @@ def main(**kwargs):
                 num_samples, **time_sample_config)
             end = time.time()
             LOGGER.info(
-                f"Time sample generation completed in: {(end - start)/60:.2} minutes")
+                f"Time sample generation completed in: {(end - start)/60:.2f} minutes")
 
         if config["generate_train_test_split"]:
             LOGGER.info(
@@ -443,7 +443,7 @@ def main(**kwargs):
         raise e
     end = time.time()
     LOGGER.info(
-        f"Sample completed in: {(end - start_main)/60:.2} minutes")
+        f"Sample completed in: {(end - start_main)/60:.2f} minutes")
 
 
 if __name__ == '__main__':

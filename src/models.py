@@ -154,7 +154,6 @@ class SundialPrithvi(L.LightningModule):
                 fps=1,
             )
 
-        for i in range(annotations.shape[0]):
             pred, _ = torch.max(annotations[i], dim=0, keepdim=True)
             self.logger.experiment.add_image(
                 tag="annotations",
@@ -163,8 +162,6 @@ class SundialPrithvi(L.LightningModule):
                 dataformats="CHW"
             )
 
-        for i in range(logits.shape[0]):
-            print(i)
             logt = logits[i].unsqueeze(1)
             self.logger.experiment.add_images(
                 tag="predictions",

@@ -126,7 +126,7 @@ class Downloader:
         # filling image queue with GEE image payloads
         generators = set()
         report_queue.put(
-            ("INFO", f"Starting generation of {self._meta_size} image payload..."))
+            ("INFO", f"Starting generation of {self._meta_size} image payloads..."))
         start_time = time.time()
         [payload_queue.put(i) for i in range(self._meta_size)]
         [payload_queue.put(None) for _ in range(self._num_workers)]
@@ -143,12 +143,13 @@ class Downloader:
         [image_queue.put(None) for _ in range(self._num_workers)]
         end_time = time.time()
         report_queue.put(("INFO",
-                          f"Payload generation completed in {(end_time - start_time) / 60:.2} minutes."))
+                          f"Payload generation completed in {(end_time - start_time) / 60:.2f} minutes."))
 
         # initialize and start parallel downloads
         consumers = set()
+        downloads = image_queue.qsize()
         report_queue.put(("INFO",
-                          f"Starting download of {self._meta_size} points of interest..."))
+                          f"Starting download of {downloads} points of interest..."))
         start_time = time.time()
         for consumer_index in range(self._num_workers):
             image_consumer = mp.Process(
@@ -181,7 +182,7 @@ class Downloader:
 
         end_time = time.time()
         report_queue.put(("INFO",
-                          f"Downloads completed in {(end_time - start_time) / 60:.2} minutes."))
+                          f"Download completed in {(end_time - start_time) / 60:.2f} minutes."))
         report_queue.put(None)
         [c.join() for c in consumers]
         reporter.join()
