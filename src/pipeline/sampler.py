@@ -365,9 +365,9 @@ def generate_time_combinations(
 
 
 def train_test_split_xarr(
-        xarr: xr.Dataset,
+        indices: np.array,
         test_ratio: float) -> tuple[xr.Dataset, xr.Dataset]:
-    indices = np.arange(xarr['index'].size)
+    indices = np.arange(indices.size)
     np.random.shuffle(indices)
     split_idx = int(len(indices) * (1-test_ratio))
     train_indices, test_indices = indices[:split_idx], indices[split_idx:]

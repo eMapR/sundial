@@ -162,7 +162,9 @@ class SundialPrithvi(L.LightningModule):
                 global_step=self.global_step,
                 dataformats="CHW"
             )
+
         for i in range(logits.shape[0]):
+            print(i)
             logt = logits[i].unsqueeze(1)
             self.logger.experiment.add_images(
                 tag="predictions",
@@ -171,13 +173,13 @@ class SundialPrithvi(L.LightningModule):
                 dataformats="NCHW"
             )
 
-        self.log(
-            name="test_loss",
-            value=loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
+#        self.log(
+#            name="test_loss",
+#            value=loss,
+#            on_step=False,
+#            on_epoch=True,
+#            prog_bar=True,
+#        )
 
         return loss
 

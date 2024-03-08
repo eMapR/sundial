@@ -285,7 +285,7 @@ class Downloader:
 
                 # sending expression payload to the image consumer
                 image_queue.put(
-                    (payload, square_name, point_name, chip_data_path, anno_data_path, attributes))
+                    (payload, index, square_name, point_name, chip_data_path, anno_data_path, attributes))
             except Exception as e:
                 report_queue.put(
                     ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {square_name}"))
@@ -309,7 +309,7 @@ class Downloader:
             batch_size = 0
 
         while (image_task := image_queue.get()) is not None:
-            payload, square_name, point_name, chip_data_path, anno_data_path, attributes = image_task
+            payload, index, square_name, point_name, chip_data_path, anno_data_path, attributes = image_task
             try:
                 # google will internally retry the request if it fails
                 report_queue.put(("INFO",
@@ -348,6 +348,7 @@ class Downloader:
                         report_queue.put((
                             "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {square_name}"))
                         xarr_chip, xarr_anno = zarr_reshape(array_chip,
+                                                            index,
                                                             self._pixel_edge_size,
                                                             square_name,
                                                             point_name,

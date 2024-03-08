@@ -80,6 +80,7 @@ def lt_image_generator(
 
 def zarr_reshape(
         arr: np.ndarray,
+        index: str,
         pixel_edge_size: int,
         square_name: str,
         point_name: str,
@@ -101,8 +102,8 @@ def zarr_reshape(
     xarr = xr.concat(xr_list, dim="year")
 
     # adding strata data as attributes
-    xarr.name = square_name
-    new_attrs = attributes | {"point": point_name}
+    xarr.name = index
+    new_attrs = attributes | {"point": point_name, "square": square_name}
     xarr.attrs.update(**new_attrs)
 
     xarr_ann = None
@@ -116,7 +117,7 @@ def zarr_reshape(
                          for _ in strata_map]
         xarr_ann = xr.concat(xarr_ann_list, dim=STRATA_DIM_NAME)
         xarr_ann[stratum_idx:stratum_idx+1, :, :] = overlap
-        xarr_ann.name = square_name
+        xarr_ann.name = index
 
     # padding the xarray to the edge size to maintain consistent image size in zarr
     if pixel_edge_size > min(xarr["x"].size,  xarr["y"].size):
