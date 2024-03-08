@@ -8,7 +8,7 @@ class SundialPrithviCallback(L.Callback):
         in_chans = pl_module.prithvi_params["model_args"]["in_chans"]
         num_frames = pl_module.prithvi_params["model_args"]["num_frames"]
         sample_img = torch.rand(
-            (1, num_frames, img_size, img_size, in_chans))
+            (1, in_chans, num_frames, img_size, img_size))
         pl_module.logger.experiment.add_graph(pl_module, sample_img)
 
     def on_train_batch_end(self,

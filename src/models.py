@@ -107,7 +107,7 @@ class SundialPrithvi(L.LightningModule):
         chip, annotations = batch
 
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image = chip.permute(0, 1, 4, 2, 3)
+        image = chip.permute(0, 4, 1, 2, 3)
 
         # forward pass
         logits = self(image)
@@ -119,7 +119,7 @@ class SundialPrithvi(L.LightningModule):
         chip, annotations = batch
 
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image = chip.permute(0, 1, 4, 2, 3)
+        image = chip.permute(0, 4, 1, 2, 3)
 
         # forward pass
         logits = self(image)
@@ -131,8 +131,8 @@ class SundialPrithvi(L.LightningModule):
         chip, annotations = batch
 
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image = chip.permute(0, 1, 4, 2, 3)
-
+        image = chip.permute(0, 4, 1, 2, 3)
+        
         # forward pass
         logits = self(image)
         loss = self.criterion(logits, annotations)
@@ -141,7 +141,7 @@ class SundialPrithvi(L.LightningModule):
 
     def predict_step(self, batch):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image = batch.permute(0, 1, 4, 2, 3)
+        image = batch.permute(0, 4, 1, 2, 3)
 
         # forward pass
         logits = self(image)
