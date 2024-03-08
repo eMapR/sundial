@@ -191,7 +191,7 @@ if __name__ == "__main__":
         },
         "trainer": {
             "accelerator": "cuda",
-            "callbacks": [{"class_path": "SundialPrithviCallbacks"}],
+            "callbacks": [{"class_path": "SundialPrithviCallback"}],
             "logger": {
                 "class_path": "TensorBoardLogger",
                 "init_args": LOGGER

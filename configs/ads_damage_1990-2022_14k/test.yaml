@@ -54,6 +54,8 @@ data:
 ckpt_path: checkpoints/ads_damage_1990-2022_14k/epoch-00_val_loss-2.50_v-.ckpt
 trainer:
     accelerator: cuda
+    callbacks:
+      - class_path: SundialPrithviCallback
     inference_mode: false
     logger:
         class_path: TensorBoardLogger

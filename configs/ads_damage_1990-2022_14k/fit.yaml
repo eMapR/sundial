@@ -62,6 +62,7 @@ trainer:
             filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}
             monitor: val_loss
             save_top_k: 4
+      - class_path: SundialPrithviCallback
     inference_mode: true
     log_every_n_steps: 16
     logger:

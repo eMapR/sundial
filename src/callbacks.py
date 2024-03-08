@@ -2,7 +2,7 @@ import lightning as L
 import torch
 
 
-class SundialPrithviCallbacks(L.LightningCallbacks):
+class SundialPrithviCallback(L.Callback):
     def on_train_batch_end(self,
                            trainer,
                            pl_module,
