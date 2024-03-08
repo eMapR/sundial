@@ -111,7 +111,7 @@ class SundialPrithvi(L.LightningModule):
         logits = self(image)
         loss = self.criterion(logits, annotations)
 
-        return loss
+        return {"loss": loss}
 
     def validation_step(self, batch):
         chip, annotations = batch
@@ -123,7 +123,7 @@ class SundialPrithvi(L.LightningModule):
         logits = self(image)
         loss = self.criterion(logits, annotations)
 
-        return loss
+        return {"loss": loss}
 
     def test_step(self, batch):
         chip, annotations = batch
@@ -135,7 +135,7 @@ class SundialPrithvi(L.LightningModule):
         logits = self(image)
         loss = self.criterion(logits, annotations)
 
-        return loss, image, logits
+        return {"loss": loss, "image": image, "logits": logits}
 
     def predict_step(self, batch):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
@@ -145,4 +145,4 @@ class SundialPrithvi(L.LightningModule):
         logits = self(image)
         classes = self.activation(logits)
 
-        return classes
+        return {"classes": classes}
