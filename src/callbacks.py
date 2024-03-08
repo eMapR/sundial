@@ -3,6 +3,14 @@ import torch
 
 
 class SundialPrithviCallback(L.Callback):
+    def on_train_start(self, trainer, pl_module):
+        img_size = pl_module["prithvi_params"]["img_size"]
+        in_channels = pl_module["prithvi_params"]["in_channels"]
+        num_frames = pl_module["prithvi_params"]["num_frames"]
+        sample_img = torch.rand(
+            (1, num_frames, img_size, img_size, in_channels))
+        pl_module.logger.experiment.add_graph(pl_module, sample_img)
+
     def on_train_batch_end(self,
                            trainer: L.pytorch.trainer.trainer,
                            pl_module: L.LightningModule,
@@ -11,7 +19,7 @@ class SundialPrithviCallback(L.Callback):
                            batch_idx: int,):
         pl_module.log(
             name="train_loss",
-            value=outputs,
+            value=outputs["loss"],
             prog_bar=True,
         )
 
@@ -24,7 +32,7 @@ class SundialPrithviCallback(L.Callback):
                                 dataloader_idx: int = 0):
         pl_module.log(
             name="val_loss",
-            value=outputs,
+            value=outputs["loss"],
         )
 
     def on_test_batch_end(self,
@@ -35,7 +43,9 @@ class SundialPrithviCallback(L.Callback):
                           batch_idx: int,
                           dataloader_idx: int = 0):
         _, annotations = batch
-        loss, image, logits = outputs
+        loss = outputs["loss"]
+        image = outputs["image"]
+        logits = outputs["logits"]
 
         pl_module.log(
             name="test_loss",
