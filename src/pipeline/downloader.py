@@ -238,7 +238,7 @@ class Downloader:
                         self._anno_data_path, anno_file_name)
                     if not self._overwrite and os.path.exists(chip_data_path):
                         report_queue.put(("INFO",
-                                          f"Files for index {index} already exists. Skipping... {square_name}"))
+                                          f"Files for index {index} already exists. Skipping... {index} {square_name}"))
                         continue
                 else:
                     chip_data_path = self._chip_data_path
@@ -246,7 +246,7 @@ class Downloader:
                     chip_var_path = os.path.join(chip_data_path, square_name)
                     if not self._overwrite and os.path.exists(chip_var_path):
                         report_queue.put(("INFO",
-                                          f"Files for index {index} already exists. Skipping... {square_name}"))
+                                          f"Files for index {index} already exists. Skipping... {index} {square_name}"))
                         continue
 
                 # creating payload for each square to send to GEE
@@ -273,7 +273,7 @@ class Downloader:
                 # reprojecting the image if necessary
                 if epsg_code is not None:
                     report_queue.put(
-                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {square_name}"))
+                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {index} {square_name}"))
                     image = image.reproject(
                         crs=epsg_code, scale=self._scale)
 
@@ -288,7 +288,7 @@ class Downloader:
                     (payload, index, square_name, point_name, chip_data_path, anno_data_path, attributes))
             except Exception as e:
                 report_queue.put(
-                    ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {square_name}"))
+                    ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {index} {square_name}"))
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
@@ -313,7 +313,7 @@ class Downloader:
             try:
                 # google will internally retry the request if it fails
                 report_queue.put(("INFO",
-                                  f"Requesting image pixels for square... {square_name}"))
+                                  f"Requesting image pixels for square... {index} {square_name}"))
 
                 payload["expression"] = ee.deserializer.decode(
                     payload["expression"])
@@ -324,20 +324,20 @@ class Downloader:
                 continue
 
             report_queue.put(
-                ("INFO", f"Processing square array for chip format {self._file_type} ... {square_name}"))
+                ("INFO", f"Processing square array for chip format {self._file_type} ... {index} {square_name}"))
             try:
                 match self._file_type:
                     case "NPY" | "GEO_TIFF":
                         # TODO: perform reshaping along years for non zarr file types
                         report_queue.put((
-                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {square_name}"))
+                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {index} {square_name}"))
                         out_file = Path(chip_data_path)
                         out_file.write_bytes(array_chip)
 
                     case "NUMPY_NDARRAY":
                         # TODO: perform reshaping along years for non zarr file types
                         report_queue.put((
-                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {square_name}"))
+                            "INFO", f"Writing chip {array_chip.shape} to {self._file_type} file... {index} {square_name}"))
                         np.save(chip_data_path, array_chip)
 
                     case "ZARR":
@@ -346,7 +346,7 @@ class Downloader:
 
                         # reshaping from (D*C, H, W) to (D, H, W, D)
                         report_queue.put((
-                            "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {square_name}"))
+                            "INFO", f"Reshaping square {array_chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {index} {square_name}"))
                         xarr_chip, xarr_anno = zarr_reshape(array_chip,
                                                             index,
                                                             self._pixel_edge_size,
@@ -358,11 +358,11 @@ class Downloader:
 
                         # collecting xr data arrays into list for batch writing
                         report_queue.put(
-                            ("INFO", f"Appending xarr chip {xarr_chip.shape} to consumer {consumer_index} chip batch {batch_index}... {square_name}"))
+                            ("INFO", f"Appending xarr chip {xarr_chip.shape} to consumer {consumer_index} chip batch {batch_index}... {index} {square_name}"))
                         xarr_chip_batch.append(xarr_chip)
                         if xarr_anno is not None:
                             report_queue.put(
-                                ("INFO", f"Appending xarr annotations {xarr_anno.shape} to consumer {consumer_index} anno batch {batch_index}... {square_name}"))
+                                ("INFO", f"Appending xarr annotations {xarr_anno.shape} to consumer {consumer_index} anno batch {batch_index}... {index} {square_name}"))
                             anno_chip_batch.append(xarr_anno)
                         report_queue.put(
                             ("INFO", f"Consumer {consumer_index} batch {batch_index} contains {batch_size} chips..."))
@@ -392,7 +392,7 @@ class Downloader:
 
             except Exception as e:
                 report_queue.put(
-                    ("ERROR", f"Failed to process chips(s) for path {chip_data_path}: {type(e)} {e} {square_name}"))
+                    ("ERROR", f"Failed to process chips(s) for path {chip_data_path}: {type(e)} {e} {index} {square_name}"))
 
                 # reporting failure to watcher and skipping entire batch
                 for name in square_name_batch:
@@ -404,7 +404,7 @@ class Downloader:
                         out_file.unlink(missing_ok=True)
                     except Exception as e:
                         report_queue.put(
-                            ("ERROR", f"Failed to clean chip file in {chip_data_path}: {type(e)} {e} {square_name}"))
+                            ("ERROR", f"Failed to clean chip file in {chip_data_path}: {type(e)} {e} {index} {square_name}"))
                 # TODO: clear potential writes to zarr
                 if self._file_type == "ZARR":
                     square_name_batch.clear()

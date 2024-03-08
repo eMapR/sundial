@@ -59,22 +59,22 @@ Welcome to Sundial!
 
 - Generate config files for running make commands. These will be generated with the appropriate paths for all files that need to be created / read into each script and automatically overwrite any default configs found in settings.py when used. This must be run before any other submake.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 config
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022_14k config
 ```
 
 - Sampling using a shapefile. The scripts will read the file with the name in variable $(SUNDIAL_SAMPLE_NAME) stored in data/shapes and generate train, validate, test, predict splits if specified, as well as metadata files in zarr format. Features in the shapefile can also contain columns which can be used to create annotations for training using the SAMPLER.strata_columns setting.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 sample
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022_14k sample
 ```
 
 - Downloading using the generated chip samples to create GEE images. Download limits apply so use your own discretion. I found the limit to be chips of shape (256 bands, 256 pixels, 256 pixels) to be the the upper limit but this may vary depending on processing, scale, etc. The information used to download images is found in the meta data file generated from the sampler. Annotations can be saved as their own image. This may not be as storage efficient but makes for loading into Pytorch simpler for now.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 download
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022_14k download
 ```
 
 - Train a model using the downloaded chips. Included in this repo is a simple segmentation model using a fully convolutional network built on Prithvi's foundation model as a backbone. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there or use one that is prebuilt in lightning. Backbones are also stored in the backbones directory in src and can be imported in a similar way.
 ```Shell
-make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 fit
+make SUNDIAL_PROCESSING=local SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022_14k fit
 ```
 
 ## Config files

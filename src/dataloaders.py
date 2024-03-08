@@ -1,4 +1,5 @@
 import lightning as L
+import numpy as np
 import os
 import torch
 import xarray as xr
@@ -50,8 +51,7 @@ class ChipsDataset(Dataset):
 
         self.normalize = PreprocesNormalization(
             means, stds) if means and stds else None
-        self.meta_data = xr.open_zarr(self.sample_path).to_dataframe()
-        self.meta_data = self.meta_data[["square_name", "year"]]
+        self.samples = np.load(self.sample_path)
 
         if self.file_type == "zarr":
             self.chips = xr.open_zarr(self.chip_data_path)
@@ -67,12 +67,8 @@ class ChipsDataset(Dataset):
                 self.anno_loader = lambda name: \
                     self._tif_loader(self.anno_data_path, name)
 
-        if drop_duplicates is not None:
-            self.meta_data = self.meta_data\
-                .drop_duplicates(subset=drop_duplicates, keep=False)
-
-    def get_strata(self, name):
-        strata = self.anno_loader(name)
+    def get_strata(self, idx):
+        strata = self.anno_loader(str(self.samples[idx]))
         if self.chip_size < max(strata["x"].size, strata["y"].size):
             strata = clip_xy_xarray(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
@@ -84,13 +80,7 @@ class ChipsDataset(Dataset):
 
     def __getitem__(self, idx):
         # loading image into xarr file
-        name = self.meta_data.iloc[idx].loc["square_name"]
-        year = self.meta_data.iloc[idx].loc["year"]
-        chip = self.chip_loader(name)
-
-        # slicing to target year if chip is larger and back_step is set
-        if self.base_year is not None and self.back_step is not None:
-            chip = self.slice_year(chip, year)
+        chip = self.chip_loader(str(self.samples[idx]))
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
@@ -105,13 +95,13 @@ class ChipsDataset(Dataset):
 
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
-            strata = self.get_strata(name)
+            strata = self.get_strata(idx)
             return chip, strata
         else:
             return chip
 
     def __len__(self):
-        return len(self.meta_data)
+        return len(self.samples)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
         return xarr[name]
@@ -143,7 +133,6 @@ class ChipsDataModule(L.LightningDataModule):
         test_sample_path: str,
         predict_sample_path: str,
 
-        drop_duplicates: list[str] | None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -164,8 +153,6 @@ class ChipsDataModule(L.LightningDataModule):
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
 
-        self.drop_duplicates = drop_duplicates
-
         self.dataset_config = {
             "means": self.means,
             "stds": self.stds,
@@ -175,7 +162,6 @@ class ChipsDataModule(L.LightningDataModule):
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
-            "drop_duplicates": self.drop_duplicates,
         }
 
         self.dataloader_config = {

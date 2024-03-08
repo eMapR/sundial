@@ -49,10 +49,10 @@ META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
 STRATA_MAP_PATH = os.path.join(SAMPLE_PATH, "strata_map.yaml")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
 ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data.zarr")
-TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.zarr")
-VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.zarr")
-PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.zarr")
-TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.zarr")
+TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.npy")
+VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.npy")
+PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
+TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
 
 
 # shapefile and source data paths

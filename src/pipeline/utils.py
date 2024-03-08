@@ -102,7 +102,7 @@ def zarr_reshape(
     xarr = xr.concat(xr_list, dim="year")
 
     # adding strata data as attributes
-    xarr.name = index
+    xarr.name = str(index)
     new_attrs = attributes | {"point": point_name, "square": square_name}
     xarr.attrs.update(**new_attrs)
 
@@ -117,7 +117,7 @@ def zarr_reshape(
                          for _ in strata_map]
         xarr_ann = xr.concat(xarr_ann_list, dim=STRATA_DIM_NAME)
         xarr_ann[stratum_idx:stratum_idx+1, :, :] = overlap
-        xarr_ann.name = index
+        xarr_ann.name = str(index)
 
     # padding the xarray to the edge size to maintain consistent image size in zarr
     if pixel_edge_size > min(xarr["x"].size,  xarr["y"].size):

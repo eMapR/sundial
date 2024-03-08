@@ -12,6 +12,7 @@ import xarray as xr
 from datetime import datetime
 from multiprocessing.pool import ThreadPool
 from typing import Literal
+from sklearn.model_selection import train_test_split
 from shapely.ops import unary_union
 
 from .utils import parse_meta_data, generate_coords_name
@@ -246,7 +247,7 @@ def generate_squares(
         strata_map_path: str | None,
         strata_scale: int | None,
         strata_columns: list[str] | None,
-        fraction: float | None) -> None:
+        fraction: float | None) -> int:
     ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
     LOGGER.info("Loading geo file into GeoDataFrame...")
@@ -339,43 +340,30 @@ def generate_squares(
     xarr[coord_columns] = xarr[coord_columns].astype(
         [("x", float), ("y", float)])
     xarr.to_zarr(store=meta_data_path, mode="a")
+    return xarr.sizes["index"]
 
 
 def generate_time_combinations(
+        num_samples: list[int],
         start_year: int,
         end_year: int,
         back_step: int,
-        meta_data_path: str) -> xr.Dataset:
-    meta_data = xr.open_zarr(meta_data_path)
+        meta_data_path: str) -> int:
     years = range(end_year, start_year + back_step, -1)
     df_years = pd.DataFrame(years, columns=["year"])
 
     df_list = []
-    for idx in range(meta_data.sizes["index"]):
-        _, _, point_name, _, square_name, _, _, _ = parse_meta_data(
-            meta_data, idx, back_step)
+    for idx in range(num_samples):
         new_df = df_years.copy()
-        new_df.loc[:, "point_name"] = point_name
-        new_df.loc[:, "square_name"] = square_name
+        new_df.loc[:, "index"] = idx
         df_list.append(new_df)
     df_time = pd.concat(df_list, axis=0)
     df_time = df_time.reset_index(drop=True)
 
-    return df_time.to_xarray().drop_vars("index")
+    xarr = df_time.to_xarray().drop_vars("index")
+    xarr.to_zarr(store=meta_data_path, mode="a")
 
-
-def train_test_split_xarr(
-        indices: np.array,
-        test_ratio: float) -> tuple[xr.Dataset, xr.Dataset]:
-    indices = np.arange(indices.size)
-    np.random.shuffle(indices)
-    split_idx = int(len(indices) * (1-test_ratio))
-    train_indices, test_indices = indices[:split_idx], indices[split_idx:]
-
-    train = xarr.isel(index=train_indices).drop_encoding()
-    test = xarr.isel(index=test_indices).drop_encoding()
-
-    return train, test
+    return len(df_time)
 
 
 def main(**kwargs):
@@ -386,6 +374,7 @@ def main(**kwargs):
     LOGGER = get_logger(config["log_path"], config["log_name"])
 
     start_main = time.time()
+    num_samples = None
     try:
         if config["generate_squares"]:
             LOGGER.info("Generating squares...")
@@ -404,10 +393,13 @@ def main(**kwargs):
                 "strata_columns": config["strata_columns"],
                 "fraction": config["fraction"]
             }
-            generate_squares(**square_config)
+            num_samples = generate_squares(**square_config)
             end = time.time()
             LOGGER.info(
                 f"Square generation completed in: {(end - start)/60:.2} minutes")
+
+        if num_samples is None:
+            num_samples = xr.open_zarr(config["meta_data_path"]).sizes["index"]
 
         if config["generate_time_combinations"]:
             LOGGER.info("Generating time sample...")
@@ -416,35 +408,35 @@ def main(**kwargs):
                 "start_year": config["start_date"].year,
                 "end_year": config["end_date"].year,
                 "back_step": config["back_step"],
-                "meta_data_path": config["meta_data_path"],
+                "meta_data_path": config["time_meta_data_path"]
             }
-            xarr_out = generate_time_combinations(**time_sample_config)
+            num_samples = generate_time_combinations(
+                num_samples, **time_sample_config)
             end = time.time()
             LOGGER.info(
                 f"Time sample generation completed in: {(end - start)/60:.2} minutes")
-        else:
-            xarr_out = xr.open_zarr(config["meta_data_path"])
 
         if config["generate_train_test_split"]:
             LOGGER.info(
                 "Splitting sample data into training, validation, test, and predict sets...")
-            xarr_train, xarr_validate = train_test_split_xarr(
-                xarr_out, config["validate_ratio"])
-            xarr_validate, xarr_test = train_test_split_xarr(
-                xarr_validate, config["test_ratio"])
-            xarr_test, xarr_predict = train_test_split_xarr(
-                xarr_test, config["predict_ratio"])
+            indices = np.arange(num_samples)
+            train, validate = train_test_split(
+                indices, test_size=config["validate_ratio"])
+            validate, test = train_test_split(
+                validate, test_size=config["test_ratio"])
+            test, predict = train_test_split(
+                test, test_size=config["predict_ratio"])
 
             LOGGER.info("Saving sample data splits to paths...")
-            xarr_list = [xarr_train, xarr_validate, xarr_test, xarr_predict]
+            idx_lsts = [train, test, validate, predict]
             paths = [config["train_sample_path"],
                      config["validate_sample_path"],
                      config["test_sample_path"],
                      config["predict_sample_path"]]
-            for xarr, path in zip(xarr_list, paths):
-                xarr.to_zarr(store=path, mode="a")
+            for path, idx_lst in zip(paths, idx_lsts):
+                np.save(path, idx_lst)
         else:
-            xarr_out.to_zarr(store=config["train_sample_path"], mode="a")
+            np.save.to_zarr(store=config["train_sample_path"], mode="a")
 
     except Exception as e:
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")

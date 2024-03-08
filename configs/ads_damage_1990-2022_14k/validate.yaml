@@ -40,16 +40,16 @@ data:
             - 1368.3446143747644
             - 1291.6764008585435
             - 1154.505683480695
-        anno_data_path: samples/ads_damage_1990-2022/anno_data.zarr
+        anno_data_path: samples/ads_damage_1990-2022_14k/anno_data.zarr
         back_step: null
         base_year: null
-        chip_data_path: samples/ads_damage_1990-2022/chip_data.zarr
+        chip_data_path: samples/ads_damage_1990-2022_14k/chip_data.zarr
         chip_size: 256
         file_type: zarr
-        predict_sample_path: samples/ads_damage_1990-2022/predict_sample.zarr
-        test_sample_path: samples/ads_damage_1990-2022/test_sample.zarr
-        train_sample_path: samples/ads_damage_1990-2022/train_sample.zarr
-        validate_sample_path: samples/ads_damage_1990-2022/validate_sample.zarr
+        predict_sample_path: samples/ads_damage_1990-2022_14k/predict_sample.npy
+        test_sample_path: samples/ads_damage_1990-2022_14k/test_sample.npy
+        train_sample_path: samples/ads_damage_1990-2022_14k/train_sample.npy
+        validate_sample_path: samples/ads_damage_1990-2022_14k/validate_sample.npy
         drop_duplicates: ["square_name"]
 trainer:
     accelerator: cuda
@@ -58,4 +58,4 @@ trainer:
         class_path: TensorBoardLogger
         init_args:
             name: validate
-            save_dir: sundial/logs/ads_damage_1990-2022
+            save_dir: sundial/logs/ads_damage_1990-2022_14k
