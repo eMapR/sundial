@@ -50,7 +50,6 @@ data:
         test_sample_path: samples/ads_damage_1990-2022_14k/test_sample.npy
         train_sample_path: samples/ads_damage_1990-2022_14k/train_sample.npy
         validate_sample_path: samples/ads_damage_1990-2022_14k/validate_sample.npy
-        drop_duplicates: ["square_name"]
 trainer:
     accelerator: cuda
     callbacks:

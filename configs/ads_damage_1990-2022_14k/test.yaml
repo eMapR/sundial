@@ -50,7 +50,6 @@ data:
         test_sample_path: samples/ads_damage_1990-2022_14k/test_sample.npy
         train_sample_path: samples/ads_damage_1990-2022_14k/train_sample.npy
         validate_sample_path: samples/ads_damage_1990-2022_14k/validate_sample.npy
-        drop_duplicates: ["square_name"]
 ckpt_path: checkpoints/ads_damage_1990-2022_14k/epoch-00_val_loss-2.50_v-.ckpt
 trainer:
     accelerator: cuda
