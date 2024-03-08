@@ -131,9 +131,10 @@ package: _variable_check
 	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).ckpts.tar.gz $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME); \ 
 
 clean: _variable_check
-	echo "Cleaning up logs and sample data for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	echo "Cleaning up logs, sample data, and checkpoints for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME); \
+	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME); \
 
 clean_logs: _variable_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME)."; \
