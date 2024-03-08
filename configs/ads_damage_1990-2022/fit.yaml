@@ -59,7 +59,7 @@ trainer:
             auto_insert_metric_name: false
             dirpath: checkpoints/ads_damage_1990-2022
             every_n_epochs: 2
-            filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-
+            filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}
             monitor: val_loss
             save_top_k: 4
     inference_mode: true
@@ -73,8 +73,7 @@ trainer:
 optimizer:
     class_path: torch.optim.AdamW
     init_args:
-        lr: 0.0001
-        weight_decay: 0.01
+        lr: 0.001
 
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.StepLR

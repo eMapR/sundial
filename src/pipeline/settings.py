@@ -167,7 +167,7 @@ DATALOADER = {
 
 CHECKPOINT = {
     "dirpath": CHECKPOINT_PATH,
-    "filename": "epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-",
+    "filename": "epoch-{epoch:02d}_val_loss-{val_loss:.2f}",
     "monitor": "val_loss",
     "save_top_k": 4,
     "auto_insert_metric_name": False,
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     # saving sampler and download configs
     save_config(SAMPLER, SAMPLE_CONFIG_PATH)
     save_config(DOWNLOADER, DOWNLOAD_CONFIG_PATH)
-    
+
     # generating and saving run configs for fit, validate, test and predict
     run = {
         "data": {
@@ -191,12 +191,6 @@ if __name__ == "__main__":
         },
         "trainer": {
             "accelerator": "cuda",
-            "callbacks": [
-                {
-                    "class_path": "ModelCheckpoint",
-                    "init_args": CHECKPOINT
-                }
-            ],
             "logger": {
                 "class_path": "TensorBoardLogger",
                 "init_args": LOGGER
@@ -209,6 +203,10 @@ if __name__ == "__main__":
         match method:
             case "fit":
                 run["trainer"]["inference_mode"] = True
+                run["trainer"]["callbacks"] = [{
+                    "class_path": "ModelCheckpoint",
+                    "init_args": CHECKPOINT
+                }]
             case "validate" | "predict" | "test":
                 run["trainer"]["inference_mode"] = False
 

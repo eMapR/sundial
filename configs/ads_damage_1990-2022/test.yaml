@@ -53,30 +53,9 @@ data:
         drop_duplicates: ["square_name"]
 trainer:
     accelerator: cuda
-    callbacks:
-    - class_path: ModelCheckpoint
-        init_args:
-            auto_insert_metric_name: false
-            dirpath: checkpoints/ads_damage_1990-2022
-            every_n_epochs: 2
-            filename: epoch-{epoch:02d}_val_loss-{val_loss:.2f}_v-
-            monitor: val_loss
-            save_top_k: 4
-    inference_mode: true
-    log_every_n_steps: 16
+    inference_mode: false
     logger:
         class_path: TensorBoardLogger
         init_args:
-            name: fit
+            name: test
             save_dir: logs/ads_damage_1990-2022
-    max_epochs: 128
-optimizer:
-    class_path: torch.optim.AdamW
-    init_args:
-        lr: 0.0001
-        weight_decay: 0.01
-
-lr_scheduler:
-    class_path: torch.optim.lr_scheduler.StepLR
-    init_args:
-        step_size: 16

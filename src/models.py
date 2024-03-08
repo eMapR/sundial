@@ -110,7 +110,7 @@ class SundialPrithvi(L.LightningModule):
         self.log(
             name="train_loss",
             value=loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
         )
@@ -129,7 +129,7 @@ class SundialPrithvi(L.LightningModule):
         self.log(
             name="val_loss",
             value=loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
         )
@@ -145,10 +145,35 @@ class SundialPrithvi(L.LightningModule):
         logits = self(image)
         loss = self.criterion(logits, annotations)
 
+        for i in range(image.shape[0]):
+            self.logger.experiment.add_video(
+                tag="chips",
+                vid_tensor=batch[i],
+                global_step=self.global_step,
+                fps=1,
+            )
+
+        for i in range(annotations.shape[0]):
+            pred = torch.max(annotations[i], dim=0, keepdim=True)
+            self.logger.experiment.add_image(
+                tag="annotations",
+                img_tensor=pred,
+                global_step=self.global_step,
+                dataformats="CHW"
+            )
+        for i in range(logits.shape[0]):
+            imgs = logits[i].unsqueeze(1)
+            self.logger.experiment.add_images(
+                tag="predictions",
+                img_tensor=imgs,
+                global_step=self.global_step,
+                dataformats="NCHW"
+            )
+
         self.log(
             name="test_loss",
             value=loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
         )
@@ -156,35 +181,9 @@ class SundialPrithvi(L.LightningModule):
         return loss
 
     def predict_step(self, batch):
-        if isinstance(batch, list):
-            chip, annotations = batch
-        else:
-            chip, annotations = batch, None
-
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
-        image = chip.permute(0, 1, 4, 2, 3)
+        image = batch.permute(0, 1, 4, 2, 3)
 
         logits = self(image)
-
-        self.logger.experiment.add_video(
-            tag="chips",
-            vid_tensor=chip,
-            global_step=self.global_step,
-            fps=1,
-        )
-        if annotations is not None:
-            self.logger.experiment.add_images(
-                tag="annotations",
-                img_tensor=annotations,
-                global_step=self.global_step,
-                dataformats="NCHW",
-            )
-
-        self.logger.experiment.add_images(
-            tag="predictions",
-            img_tensor=logits,
-            global_step=self.global_step,
-            dataformats="NCHW",
-        )
 
         return logits
