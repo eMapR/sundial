@@ -238,7 +238,7 @@ class Downloader:
                         self._anno_data_path, anno_file_name)
                     if not self._overwrite and os.path.exists(chip_data_path):
                         report_queue.put(("INFO",
-                                          f"Files for index {index} already exists. Skipping... {index} {square_name}"))
+                                          f"Files for index {index} already exists. Skipping... {square_name}"))
                         continue
                 else:
                     chip_data_path = self._chip_data_path
@@ -246,7 +246,7 @@ class Downloader:
                     chip_var_path = os.path.join(chip_data_path, square_name)
                     if not self._overwrite and os.path.exists(chip_var_path):
                         report_queue.put(("INFO",
-                                          f"Files for index {index} already exists. Skipping... {index} {square_name}"))
+                                          f"Files for index {index} already exists. Skipping... {square_name}"))
                         continue
 
                 # creating payload for each square to send to GEE
@@ -273,7 +273,7 @@ class Downloader:
                 # reprojecting the image if necessary
                 if epsg_code is not None:
                     report_queue.put(
-                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {index} {square_name}"))
+                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {square_name}"))
                     image = image.reproject(
                         crs=epsg_code, scale=self._scale)
 
@@ -288,7 +288,7 @@ class Downloader:
                     (payload, index, square_name, point_name, chip_data_path, anno_data_path, attributes))
             except Exception as e:
                 report_queue.put(
-                    ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {index} {square_name}"))
+                    ("CRITICAL", f"Failed to create image payload for square {index} skipping: {type(e)} {e} {square_name}"))
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
