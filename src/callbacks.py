@@ -4,7 +4,7 @@ import torch
 
 class SundialPrithviCallback(L.Callback):
     def on_sanity_check_start(self, trainer, pl_module):
-        img_size = pl_module.prithvi_params.img_size
+        img_size = pl_module.prithvi_params["img_size"]
         in_channels = pl_module.prithvi_params["in_channels"]
         num_frames = pl_module.prithvi_params["num_frames"]
         sample_img = torch.rand(
