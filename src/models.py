@@ -146,9 +146,10 @@ class SundialPrithvi(L.LightningModule):
         loss = self.criterion(logits, annotations)
 
         for i in range(image.shape[0]):
+            vid = image[i].unsqueeze(0)
             self.logger.experiment.add_video(
                 tag="chips",
-                vid_tensor=batch[i],
+                vid_tensor=vid,
                 global_step=self.global_step,
                 fps=1,
             )
@@ -162,10 +163,10 @@ class SundialPrithvi(L.LightningModule):
                 dataformats="CHW"
             )
         for i in range(logits.shape[0]):
-            imgs = logits[i].unsqueeze(1)
+            logt = logits[i].unsqueeze(1)
             self.logger.experiment.add_images(
                 tag="predictions",
-                img_tensor=imgs,
+                img_tensor=logt,
                 global_step=self.global_step,
                 dataformats="NCHW"
             )
