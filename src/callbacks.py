@@ -3,7 +3,7 @@ import torch
 
 
 class SundialPrithviCallback(L.Callback):
-    def on_validation_end(self, trainer, pl_module):
+    def on_sanity_check_end(self, trainer, pl_module):
         img_size = pl_module.prithvi_params["model_args"]["img_size"]
         in_chans = pl_module.prithvi_params["model_args"]["in_chans"]
         num_frames = pl_module.prithvi_params["model_args"]["num_frames"]
