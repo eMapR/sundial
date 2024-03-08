@@ -59,19 +59,21 @@ class SundialPrithvi(L.LightningModule):
 
         self.view_size = view_size
         self.mask_ratio = prithvi_params["train_params"]["mask_ratio"]
+        self.prithvi_params = prithvi_params
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         checkpoint = torch.load(prithvi_path)
         del checkpoint['pos_embed']
         del checkpoint['decoder_pos_embed']
-        self.backbone = MaskedAutoencoderViT(**prithvi_params["model_args"])
+        self.backbone = MaskedAutoencoderViT(
+            **self.prithvi_params["model_args"])
         self.backbone.eval()
         _ = self.backbone.load_state_dict(checkpoint, strict=False)
 
         # Initializing upscaling neck
-        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
-            prithvi_params["model_args"]["num_frames"]
+        embed_dim = self.prithvi_params["model_args"]["embed_dim"] * \
+            self.prithvi_params["model_args"]["num_frames"]
         embed_dims = [embed_dim // (upscale_reduction_factor**i)
                       for i in range(upscale_depth + 1)]
         self.neck = UpscaleNeck(embed_dims)
