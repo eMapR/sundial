@@ -173,13 +173,13 @@ class SundialPrithvi(L.LightningModule):
                 dataformats="NCHW"
             )
 
-#        self.log(
-#            name="test_loss",
-#            value=loss,
-#            on_step=False,
-#            on_epoch=True,
-#            prog_bar=True,
-#        )
+        self.log(
+            name="test_loss",
+            value=loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
 
         return loss
 
