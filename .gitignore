@@ -164,3 +164,4 @@ logs/
 lightning_logs/
 shapes/ads_damage_1990-2022
 samples/
+checkpoints/
