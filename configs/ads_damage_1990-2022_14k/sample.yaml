@@ -1,0 +1,25 @@
+back_step: 5
+end_date: null
+fraction: 2.0e-2
+generate_squares: true
+generate_time_combinations: false
+generate_train_test_split: true
+geo_file_path: shapes/ads_damage_1990-2022
+log_name: sample
+log_path: logs/ads_damage_1990-2022
+meta_data_path: samples/ads_damage_1990-2022/meta_data.zarr
+meter_edge_size: 7680
+method: single
+num_points: null
+num_strata: null 
+predict_ratio: 0.5
+predict_sample_path: samples/ads_damage_1990-2022/predict_sample.zarr
+start_date: null
+strata_columns: ['damage', "host"]
+strata_map_path: samples/ads_damage_1990-2022/strata_map.yaml
+strata_scale: null
+test_ratio: 0.2
+test_sample_path: samples/ads_damage_1990-2022/test_sample.zarr
+train_sample_path: samples/ads_damage_1990-2022/train_sample.zarr
+validate_ratio: 0.2
+validate_sample_path: samples/ads_damage_1990-2022/validate_sample.zarr

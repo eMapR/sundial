@@ -1,0 +1,17 @@
+anno_data_path: samples/ads_damage_1990-2022/anno_data.zarr
+back_step: 5
+chip_data_path: samples/ads_damage_1990-2022/chip_data.zarr
+end_date: null
+file_type: ZARR
+io_limit: 32
+log_name: download
+log_path: logs/ads_damage_1990-2022
+meta_data_path: samples/ads_damage_1990-2022/meta_data.zarr
+num_workers: 40
+overlap_band: true
+overwrite: false
+pixel_edge_size: 269
+reprojection: UTM
+scale: 30
+start_date: null
+strata_map_path: samples/ads_damage_1990-2022/strata_map.yaml
