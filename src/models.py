@@ -155,7 +155,7 @@ class SundialPrithvi(L.LightningModule):
             )
 
         for i in range(annotations.shape[0]):
-            pred = torch.max(annotations[i], dim=0, keepdim=True)
+            pred, _ = torch.max(annotations[i], dim=0, keepdim=True)
             self.logger.experiment.add_image(
                 tag="annotations",
                 img_tensor=pred,
