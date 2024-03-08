@@ -189,6 +189,7 @@ if __name__ == "__main__":
             "class_path": "ChipsDataModule",
             "init_args": DATALOADER
         },
+        
         "trainer": {
             "accelerator": "cuda",
             "callbacks": [{"class_path": "SundialPrithviCallback"}],
@@ -196,6 +197,7 @@ if __name__ == "__main__":
                 "class_path": "TensorBoardLogger",
                 "init_args": LOGGER
             },
+            "profiler": "advanced",
         }
     }
     for method in ["fit", "validate", "test", "predict"]:

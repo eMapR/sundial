@@ -169,6 +169,7 @@ class ChipsDataModule(L.LightningDataModule):
             "num_workers": self.num_workers,
             "pin_memory": True,
             "drop_last": True,
+            "persistent_workers": True,
         }
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
