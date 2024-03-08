@@ -3,8 +3,10 @@ import torch
 
 from lightning.pytorch.cli import ArgsType, LightningCLI
 
-from models import *
+from callbacks import *
 from dataloaders import *
+from models import *
+
 from pipeline.settings import RANDOM_STATE, CONFIG_PATH
 
 

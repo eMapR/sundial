@@ -82,6 +82,9 @@ class SundialPrithvi(L.LightningModule):
         # Defining loss function
         self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
+        # Defining activation function for predictions
+        self.activation = torch.nn.LogSoftmax()
+
     def forward(self, image):
         # gathering features
         features, _, _ = self.backbone.forward_encoder(
@@ -104,16 +107,9 @@ class SundialPrithvi(L.LightningModule):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = chip.permute(0, 1, 4, 2, 3)
 
+        # forward pass
         logits = self(image)
         loss = self.criterion(logits, annotations)
-
-        self.log(
-            name="train_loss",
-            value=loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
 
         return loss
 
@@ -123,16 +119,9 @@ class SundialPrithvi(L.LightningModule):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = chip.permute(0, 1, 4, 2, 3)
 
+        # forward pass
         logits = self(image)
         loss = self.criterion(logits, annotations)
-
-        self.log(
-            name="val_loss",
-            value=loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
 
         return loss
 
@@ -142,48 +131,18 @@ class SundialPrithvi(L.LightningModule):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = chip.permute(0, 1, 4, 2, 3)
 
+        # forward pass
         logits = self(image)
         loss = self.criterion(logits, annotations)
 
-        for i in range(image.shape[0]):
-            vid = image[i].unsqueeze(0)
-            self.logger.experiment.add_video(
-                tag="chips",
-                vid_tensor=vid,
-                global_step=self.global_step,
-                fps=1,
-            )
-
-            pred, _ = torch.max(annotations[i], dim=0, keepdim=True)
-            self.logger.experiment.add_image(
-                tag="annotations",
-                img_tensor=pred,
-                global_step=self.global_step,
-                dataformats="CHW"
-            )
-
-            logt = logits[i].unsqueeze(1)
-            self.logger.experiment.add_images(
-                tag="predictions",
-                img_tensor=logt,
-                global_step=self.global_step,
-                dataformats="NCHW"
-            )
-
-        self.log(
-            name="test_loss",
-            value=loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
-        return loss
+        return loss, image, logits
 
     def predict_step(self, batch):
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = batch.permute(0, 1, 4, 2, 3)
 
+        # forward pass
         logits = self(image)
+        classes = self.activation(logits)
 
-        return logits
+        return classes

@@ -191,6 +191,7 @@ if __name__ == "__main__":
         },
         "trainer": {
             "accelerator": "cuda",
+            "callbacks": [{"class_path": "SundialPrithviCallbacks"}],
             "logger": {
                 "class_path": "TensorBoardLogger",
                 "init_args": LOGGER
@@ -203,10 +204,10 @@ if __name__ == "__main__":
         match method:
             case "fit":
                 run["trainer"]["inference_mode"] = True
-                run["trainer"]["callbacks"] = [{
+                run["trainer"]["callbacks"].append({
                     "class_path": "ModelCheckpoint",
                     "init_args": CHECKPOINT
-                }]
+                })
             case "validate" | "predict" | "test":
                 run["trainer"]["inference_mode"] = False
 
