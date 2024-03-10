@@ -126,9 +126,9 @@ _run:
 	fi; \
 
 package: _variable_check
-	echo "Compressing logs for  $(SUNDIAL_EXPERIMENT_NAME) to tar. Tar file will be saved in home directory and overwrite already existing archives."; \
-	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tblog.tar.gz $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \ 
-	tar -czvf --overwrite $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).ckpts.tar.gz $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME); \ 
+	echo "Compressing logs and checkpoints for $(SUNDIAL_EXPERIMENT_NAME) to tar. Tar file will be saved in home directory and overwrite already existing archives."; \
+	tar -czvf $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tblog.tar.gz logs/$(SUNDIAL_EXPERIMENT_NAME); \
+	tar -czvf $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).ckpts.tar.gz checkpoints/$(SUNDIAL_EXPERIMENT_NAME); \
 
 clean: _variable_check
 	echo "Cleaning up logs, sample data, and checkpoints for $(SUNDIAL_EXPERIMENT_NAME)."; \
