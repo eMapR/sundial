@@ -10,13 +10,14 @@ import pandas as pd
 import xarray as xr
 
 from datetime import datetime
+from multiprocessing.pool import ThreadPool
 from typing import Literal
-from shapely.ops import unary_union
 from sklearn.model_selection import train_test_split
+from shapely.ops import unary_union
 
-from helpers import parse_meta_data, generate_name
-from logger import get_logger
-from settings import RANDOM_STATE, SQUARE_COLUMNS
+from .utils import parse_meta_data, generate_coords_name
+from .logger import get_logger
+from .settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME, GEE_REQUEST_LIMIT, GEE_FEATURE_LIMIT
 
 
 def get_elevation_image(
@@ -84,7 +85,7 @@ def stratify_by_percentile(
 
 def draw_bounding_square(
         feature: ee.Feature,
-        edge_size: int) -> ee.feature:
+        meter_edge_size: int) -> ee.feature:
     maxError = ee.Number(0.01)
     geometry = feature.geometry()
     point = ee.Geometry(
@@ -94,7 +95,7 @@ def draw_bounding_square(
             geometry.centroid(maxError=maxError)
         ))
     square_coords = point.buffer(
-        edge_size // 2).bounds(maxError=maxError).coordinates()
+        meter_edge_size // 2).bounds(maxError=maxError).coordinates()
     point_coords = point.coordinates()
     return feature.set({
         "square_coords": square_coords,
@@ -180,37 +181,94 @@ def download_features(features: ee.FeatureCollection) -> gpd.GeoDataFrame:
         raise e
 
 
+def process_download(
+        gdf_download: gpd.GeoDataFrame,
+        sample: gpd.GeoDataFrame,
+        strata_columns: list[str]) -> gpd.GeoDataFrame:
+    # extracting square coordinates
+    df_out = gdf_download.loc[:, "square_coords"]\
+        .explode()\
+        .apply(pd.Series)\
+        .add_prefix("square_")\
+        .map(tuple)
+
+    # extracting geometry coordinates
+    match gdf_download.loc[0:0, "geometry"].item().geom_type:
+        case "Polygon":
+            def f(p): return list(p.exterior.coords)
+        case "Point":
+            def f(p): return list(p.coords)
+    df_out = pd.concat([df_out, gdf_download.loc[:, "geometry"]
+                        .apply(f)
+                        .apply(pd.Series)
+                        .add_prefix("geometry_")], axis=1)
+    geometry_columns = df_out.filter(like="geometry_").columns.to_list()
+
+    # setting names and poin coordinates
+    df_out.loc[:, "point_coords"] = gdf_download\
+        .loc[:, "point_coords"].apply(tuple)
+    df_out.loc[:, "point_name"] = df_out\
+        .loc[:, "point_coords"].apply(generate_coords_name)
+    df_out.loc[:, "square_name"] = df_out\
+        .loc[:, SQUARE_COLUMNS].apply(lambda r: generate_coords_name(r.tolist()), axis=1)
+
+    # adding in attribute data
+    if "constant" in gdf_download.columns:
+        df_out.loc[:, "constant"] = gdf_download.loc[:, "constant"]
+    if strata_columns is not None:
+        if "year" in sample.columns:
+            df_out.loc[:, "year"] = sample.loc[:, "year"]
+        for col in strata_columns:
+            df_out.loc[:, col] = sample.loc[:, col]
+        df_out.loc[:, STRATA_ATTR_NAME] = sample.loc[:, strata_columns].astype(
+            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
+    return df_out, geometry_columns
+
+
+def get_square_features(sample: gpd.GeoDataFrame, meter_edge_size: int) -> gpd.GeoDataFrame:
+    points = ee.FeatureCollection([ee.Geometry.Polygon(
+        list(p.exterior.coords))
+        for p in sample.loc[:, "geometry"]])
+    squares = points.map(
+        lambda f: draw_bounding_square(f, meter_edge_size))
+    gdf = download_features(squares)
+    return gdf
+
+
 def generate_squares(
-        method: Literal["convering_grid", "random", "stratified", "single"],
+        method: Literal["convering_grid", "random", "stratified", "centroid"],
         geo_file_path: str,
         meta_data_path: str,
-        edge_size: int | float,
+        meter_edge_size: int | float,
         num_points: int | None,
         num_strata: int | None,
         start_date: datetime | None,
         end_date: datetime | None,
+        strata_map_path: str | None,
         strata_scale: int | None,
         strata_columns: list[str] | None,
-        fraction: float | None) -> None:
+        fraction: float | None) -> int:
     ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
 
     LOGGER.info("Loading geo file into GeoDataFrame...")
     gdf = gpd.read_file(geo_file_path)
 
-    if method != "single":
-        unary_polygon = unary_union(gdf["geometry"].to_crs(epsg=4326))
+    if method != "centroid":
+        unary_polygon = unary_union(gdf[strata_columns].to_crs(epsg=4326))
         gee_polygon = ee.Geometry.Polygon(
             list(unary_polygon.exterior.coords))
 
     LOGGER.info(f"Generating squares via {method}...")
     match method:
         case "convering_grid":
-            squares = gee_polygon.coveringGrid(scale=edge_size)
+            squares = gee_polygon.coveringGrid(scale=meter_edge_size)
         case "random":
             points = generate_random_points(
-                gee_polygon, edge_size, num_points)
+                gee_polygon, meter_edge_size, num_points)
             squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size, None))
+                lambda f: draw_bounding_square(f, meter_edge_size, None))
+            LOGGER.info("Downloading squares to dataframe from GEE...")
+            gdf = download_features(squares)
         case "stratified":
             points = stratified_sampling(
                 num_points,
@@ -220,8 +278,10 @@ def generate_squares(
                 gee_polygon,
                 strata_scale)
             squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size, None))
-        case "single":
+                lambda f: draw_bounding_square(f, meter_edge_size, None))
+            LOGGER.info("Downloading squares to dataframe from GEE...")
+            gdf = download_features(squares)
+        case "centroid":
             if fraction is not None:
                 groupby = gdf.groupby(strata_columns)
                 sample = groupby.sample(frac=fraction)
@@ -233,195 +293,158 @@ def generate_squares(
             sample = sample.reset_index(drop=True)
             sample.loc[:, "geometry"] = sample.loc[:, "geometry"].to_crs(
                 epsg=4326)
-            points = ee.FeatureCollection([ee.Geometry.Polygon(
-                list(p.exterior.coords))
-                for p in sample.loc[:, "geometry"]])
-            squares = points.map(
-                lambda f: draw_bounding_square(f, edge_size))
 
-    LOGGER.info("Downloading squares to dataframe from GEE...")
-    gdf = download_features(squares)
+            if (num_samples := len(sample)) > GEE_FEATURE_LIMIT:
+                # partition sample into batches. numpy array split has a deprecated warning
+                # this is done to maintain same order of samples for post processing
+                rem = num_samples % GEE_REQUEST_LIMIT
+                s = num_samples // GEE_REQUEST_LIMIT
+                b = []
+                for i in range(40):
+                    if rem > 0:
+                        rem -= 1
+                        b.append(sample.iloc[s*i:s*(i+1) + 1])
+                    else:
+                        b.append(sample.iloc[s*i:s*(i+1)])
+
+                # execute download in parallel
+                LOGGER.info(
+                    f"Downloading {num_samples} squares to dataframe from GEE using pool with batchsize {num_samples // GEE_REQUEST_LIMIT}...")
+                with ThreadPool(processes=GEE_REQUEST_LIMIT) as p:
+                    def f(b): return get_square_features(b, meter_edge_size)
+                    result = p.map(f, b)
+                    gdf = pd.concat(result, axis=0).reset_index(drop=True)
+            else:
+                points = ee.FeatureCollection([ee.Geometry.Polygon(
+                    list(p.exterior.coords))
+                    for p in sample.loc[:, "geometry"]])
+                squares = points.map(
+                    lambda f: draw_bounding_square(f, meter_edge_size))
+                LOGGER.info("Downloading squares to dataframe from GEE...")
+                gdf = download_features(squares)
+
+            # final processing check to ensure gee didn't fail
+            assert len(gdf) == len(sample)
 
     LOGGER.info("Processing dataframe columns for zarr...")
-    df_out = gdf.loc[:, "square_coords"]\
-        .explode()\
-        .apply(pd.Series)\
-        .add_prefix("square_")\
-        .map(tuple)
-
-    match gdf.loc[0:0, "geometry"].item().geom_type:
-        case "Polygon":
-            def f(p): return list(p.exterior.coords)
-        case "Point":
-            def f(p): return list(p.coords)
-    df_out = pd.concat([df_out, gdf.loc[:, "geometry"]
-                        .apply(f)
-                        .apply(pd.Series)
-                        .add_prefix("geometry_")], axis=1)
-    geometry_columns = df_out.filter(like="geometry_").columns.to_list()
-
-    df_out.loc[:, "point_coords"] = gdf.loc[:, "point_coords"].apply(tuple)
-    df_out.loc[:, "point_name"] = df_out.loc[:,
-                                             "point_coords"].apply(generate_name)
-    df_out.loc[:, "square_name"] = df_out.loc[:, SQUARE_COLUMNS].apply(
-        lambda r: generate_name(r.tolist()), axis=1)
-    if "constant" in gdf.columns:
-        df_out.loc[:, "constant"] = gdf.loc[:, "constant"]
-    if strata_columns is not None:
-        if "year" in sample.columns:
-            df_out.loc[:, "year"] = sample.loc[:, "year"]
-        for col in strata_columns:
-            df_out.loc[:, col] = sample.loc[:, col]
+    df_out, geometry_columns = process_download(gdf, sample, strata_columns)
+    if strata_columns is not None and strata_map_path is not None:
+        strata_map = {v: k for k, v in enumerate(
+            df_out[STRATA_ATTR_NAME].unique())}
+        with open(strata_map_path, "w") as f:
+            yaml.dump(strata_map, f, default_flow_style=False)
 
     LOGGER.info("Converting to xarray and saving...")
-    xarr = df_out.to_xarray()
+    xarr = df_out.to_xarray().drop_vars("index")
     coord_columns = SQUARE_COLUMNS + geometry_columns + ["point_coords"]
     xarr[coord_columns] = xarr[coord_columns].astype(
         [("x", float), ("y", float)])
-    xarr.to_zarr(
-        store=meta_data_path,
-        mode="a")
+    xarr.to_zarr(store=meta_data_path, mode="a")
+    return xarr.sizes["index"]
 
 
 def generate_time_combinations(
+        num_samples: list[int],
         start_year: int,
         end_year: int,
         back_step: int,
-        meta_data_path: str) -> None:
-    meta_data = xr.open_zarr(meta_data_path)
+        meta_data_path: str) -> int:
     years = range(end_year, start_year + back_step, -1)
     df_years = pd.DataFrame(years, columns=["year"])
 
     df_list = []
-    for idx in range(meta_data.sizes["index"]):
-        _, _, point_name, _, square_name, _, _ = parse_meta_data(
-            meta_data, idx)
+    for idx in range(num_samples):
         new_df = df_years.copy()
-        new_df.loc[:, "point_name"] = point_name
-        new_df.loc[:, "square_name"] = square_name
+        new_df.loc[:, "index"] = idx
         df_list.append(new_df)
     df_time = pd.concat(df_list, axis=0)
     df_time = df_time.reset_index(drop=True)
 
-    return df_time
+    xarr = df_time.to_xarray().drop_vars("index")
+    xarr.to_zarr(store=meta_data_path, mode="a")
 
-
-def split_sample_data(
-        df_out: pd.DataFrame,
-        training_ratio: float,
-        test_ratio: float) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    df_train, df_test = train_test_split(
-        df_out, test_size=test_ratio, random_state=RANDOM_STATE)
-    df_train, df_validate = train_test_split(
-        df_train, test_size=training_ratio, random_state=RANDOM_STATE)
-    return df_train, df_validate, df_test
-
-
-def save_sample_data_zarr(
-        df_train: pd.DataFrame,
-        df_validate: pd.DataFrame,
-        df_test: pd.DataFrame,
-        train_sample_path: str,
-        validate_sample_path: str,
-        test_sample_path: str) -> None:
-    df_list = [df_train, df_validate, df_test]
-    paths = [train_sample_path, validate_sample_path, test_sample_path]
-    for df, path in zip(df_list, paths):
-        yarr = df.to_xarray()
-        yarr.to_zarr(
-            store=path,
-            mode="a")
-
-
-def save_sample_paths_txt(
-        df_train: pd.DataFrame,
-        df_validate: pd.DataFrame,
-        df_test: pd.DataFrame,
-        column_names: str | list[str],
-        delimiter: str | None,
-        train_sample_path: str,
-        validate_sample_path: str,
-        test_sample_path: str) -> None:
-    df_list = [df_train, df_validate, df_test]
-    zarr_paths = [train_sample_path, validate_sample_path, test_sample_path]
-    txt_paths = [os.path.splitext(path)[0] + '.txt' for path in zarr_paths]
-    for df, path in zip(df_list, txt_paths):
-        df.loc[:, column_names].to_csv(
-            path, sep=delimiter, header=False, index=False)
+    return len(df_time)
 
 
 def main(**kwargs):
-    from settings import SAMPLER as config, SAMPLE_PATH
+    from .settings import SAMPLER as config, SAMPLE_PATH
     os.makedirs(SAMPLE_PATH, exist_ok=True)
-    if (config_path := kwargs["config_path"]) is not None:
-        with open(config_path, "r") as f:
-            config = config | yaml.safe_load(f)
+
     global LOGGER
     LOGGER = get_logger(config["log_path"], config["log_name"])
 
+    start_main = time.time()
+    num_samples = None
     try:
-        if kwargs["generate_squares"]:
+        if config["generate_squares"]:
             LOGGER.info("Generating squares...")
             start = time.time()
             square_config = {
                 "method": config["method"],
                 "geo_file_path": config["geo_file_path"],
-                "edge_size": config["edge_size"],
+                "meta_data_path": config["meta_data_path"],
+                "meter_edge_size": config["meter_edge_size"],
                 "num_points": config["num_points"],
                 "num_strata": config["num_strata"],
                 "start_date": config["start_date"],
                 "end_date": config["end_date"],
+                "strata_map_path": config["strata_map_path"],
                 "strata_scale": config["strata_scale"],
                 "strata_columns": config["strata_columns"],
-                "fraction": config["fraction"],
-                "meta_data_path": config["meta_data_path"],
+                "fraction": config["fraction"]
             }
-            generate_squares(**square_config)
+            num_samples = generate_squares(**square_config)
             end = time.time()
             LOGGER.info(
-                f"Square generation completed in: {(end - start)/60:.2} minutes")
+                f"Square generation completed in: {(end - start)/60:.2f} minutes")
 
-        if kwargs["generate_time_sample"]:
+        if num_samples is None:
+            num_samples = xr.open_zarr(config["meta_data_path"]).sizes["index"]
+
+        if config["generate_time_combinations"]:
             LOGGER.info("Generating time sample...")
             start = time.time()
             time_sample_config = {
                 "start_year": config["start_date"].year,
                 "end_year": config["end_date"].year,
                 "back_step": config["back_step"],
-                "meta_data_path": config["meta_data_path"],
+                "meta_data_path": config["time_meta_data_path"]
             }
-            df_out = generate_time_combinations(**time_sample_config)
+            num_samples = generate_time_combinations(
+                num_samples, **time_sample_config)
             end = time.time()
             LOGGER.info(
-                f"Time sample generation completed in: {(end - start)/60:.2} minutes")
+                f"Time sample generation completed in: {(end - start)/60:.2f} minutes")
+
+        if config["generate_train_test_split"]:
+            LOGGER.info(
+                "Splitting sample data into training, validation, test, and predict sets...")
+            indices = np.arange(num_samples)
+            train, validate = train_test_split(
+                indices, test_size=config["validate_ratio"])
+            validate, test = train_test_split(
+                validate, test_size=config["test_ratio"])
+            test, predict = train_test_split(
+                test, test_size=config["predict_ratio"])
+
+            LOGGER.info("Saving sample data splits to paths...")
+            idx_lsts = [train, test, validate, predict]
+            paths = [config["train_sample_path"],
+                     config["validate_sample_path"],
+                     config["test_sample_path"],
+                     config["predict_sample_path"]]
+            for path, idx_lst in zip(paths, idx_lsts):
+                np.save(path, idx_lst)
         else:
-            df_out = xr.open_zarr(config["meta_data_path"]).to_dataframe()
-
-        LOGGER.info(
-            "Splitting sample data into training, validation, and test sets...")
-        df_train, df_validate, df_test = split_sample_data(
-            df_out, config["training_ratio"], config["test_ratio"])
-
-        LOGGER.info("Saving sample data splits to paths...")
-        save_sample_data_zarr(
-            df_train, df_validate, df_test,
-            config["train_sample_path"],
-            config["validate_sample_path"],
-            config["test_sample_path"])
+            np.save.to_zarr(store=config["train_sample_path"], mode="a")
 
     except Exception as e:
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")
         raise e
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Sampler Arguments')
-    parser.add_argument('--config_path', type=str, default=None)
-    parser.add_argument('--generate_squares', type=bool, default=True)
-    parser.add_argument('--generate_time_sample', type=bool, default=True)
-    parser.add_argument('--generate_train_test', type=bool, default=True)
-    return vars(parser.parse_args())
+    end = time.time()
+    LOGGER.info(
+        f"Sample completed in: {(end - start_main)/60:.2f} minutes")
 
 
 if __name__ == '__main__':
-    main(**parse_args())
+    main()

@@ -1,4 +1,0 @@
----
-method: single
-fraction: 2.0e-4
-strata_columns: ['damage', "host"]
