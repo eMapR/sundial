@@ -236,7 +236,7 @@ def get_square_features(sample: gpd.GeoDataFrame, meter_edge_size: int) -> gpd.G
 
 
 def generate_squares(
-        method: Literal["convering_grid", "random", "stratified", "single"],
+        method: Literal["convering_grid", "random", "stratified", "centroid"],
         geo_file_path: str,
         meta_data_path: str,
         meter_edge_size: int | float,
@@ -253,7 +253,7 @@ def generate_squares(
     LOGGER.info("Loading geo file into GeoDataFrame...")
     gdf = gpd.read_file(geo_file_path)
 
-    if method != "single":
+    if method != "centroid":
         unary_polygon = unary_union(gdf[strata_columns].to_crs(epsg=4326))
         gee_polygon = ee.Geometry.Polygon(
             list(unary_polygon.exterior.coords))
@@ -281,7 +281,7 @@ def generate_squares(
                 lambda f: draw_bounding_square(f, meter_edge_size, None))
             LOGGER.info("Downloading squares to dataframe from GEE...")
             gdf = download_features(squares)
-        case "single":
+        case "centroid":
             if fraction is not None:
                 groupby = gdf.groupby(strata_columns)
                 sample = groupby.sample(frac=fraction)
