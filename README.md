@@ -125,7 +125,7 @@ The configs worth looking at are:
 | SAMPLER.num_strata | Number of strata to generate from statistics | |
 | SAMPLER.meter_edge_size | Edge size of squares in meters | |
 | SAMPLER.strata_columns | Columns found in shapefile to generate strata for training | |
-
+| - | - | - |
 | DOWNLOADER.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
 | DOWNLOADER.scale | Scale to generate image | |
 | DOWNLOADER.reprojection | Reprojection string (EPSG:****) | |
