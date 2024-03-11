@@ -120,7 +120,7 @@ While the framework for deep learning is done via [Pytorch Lightning](https://li
 The configs worth looking at are:
 | CONFIG | DESCRIPTION | OPTIONS |
 | --- | --- | --- |
-| SAMPLER.method | Method to generate samples options | "convering_grid", "random", "stratified" | "centroid" |
+| SAMPLER.method | Method to generate samples options | "convering_grid", "random", "stratified", "centroid" |
 | SAMPLER.num_points | Number of points to sample from original shapefile | |
 | SAMPLER.num_strata | Number of strata to generate from statistics | |
 | SAMPLER.meter_edge_size | Edge size of squares in meters | |
@@ -128,6 +128,6 @@ The configs worth looking at are:
 | - | - | - |
 | DOWNLOADER.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
 | DOWNLOADER.scale | Scale to generate image | |
-| DOWNLOADER.reprojection | Reprojection string (EPSG:****) | |
+| DOWNLOADER.reprojection | Reprojection string | (EPSG:****) |
 | DOWNLOADER.overlap_band | Whether to include an additional band that notes if the pixel in the | |generated square overlaps the original polygon | |
 | DOWNLOADER.pixel_edge_size | Edge size of chip image in pixels | |
