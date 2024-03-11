@@ -32,12 +32,14 @@ CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
 SHAPES_PATH = os.path.join(BASE_PATH, "shapes")
 SAMPLES_PATH = os.path.join(BASE_PATH, "samples")
 CHECKPOINTS_PATH = os.path.join(BASE_PATH, "checkpoints")
+PREDICTIONS_PATH = os.path.join(BASE_PATH, "predictions")
 LOGS_PATH = os.path.join(BASE_PATH, "logs")
 
 # experiment paths
 CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_NAME)
 SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
 CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_NAME)
+PREDICTIONS_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_NAME)
 LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
 
 # config paths

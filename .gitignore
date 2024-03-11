@@ -160,8 +160,8 @@ cython_debug/
 #.idea/
 
 ###############################################################################
-logs/
-lightning_logs/
 shapes/ads_damage_1990-2022
+logs/
 samples/
 checkpoints/
+predictions/
