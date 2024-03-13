@@ -63,7 +63,8 @@ class SundialPrithvi(L.LightningModule):
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        checkpoint = torch.load(prithvi_path)
+        map_location = "cuda" if torch.cuda.is_available() else "cpu"
+        checkpoint = torch.load(prithvi_path, map_location=map_location)
         del checkpoint['pos_embed']
         del checkpoint['decoder_pos_embed']
         self.backbone = MaskedAutoencoderViT(
@@ -82,10 +83,10 @@ class SundialPrithvi(L.LightningModule):
         self.head = FCNHead(embed_dims[-1], num_classes)
 
         # Defining loss function
-        self.criterion = nn.CrossEntropyLoss(reduction="mean")
+        self.criterion = nn.BCEWithLogitsLoss(reduction="mean")
 
         # Defining activation function for predictions
-        self.activation = torch.nn.LogSoftmax()
+        self.activation = torch.nn.Sigmoid()
 
     def forward(self, image):
         # gathering features
@@ -132,7 +133,7 @@ class SundialPrithvi(L.LightningModule):
 
         # reshaping gee data (N D H W C) to pytorch format (N C D H W)
         image = chip.permute(0, 4, 1, 2, 3)
-        
+
         # forward pass
         logits = self(image)
         loss = self.criterion(logits, annotations)

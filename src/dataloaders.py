@@ -4,6 +4,7 @@ import os
 import torch
 import xarray as xr
 
+from rioxarray import open_rasterio
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal
@@ -108,8 +109,7 @@ class ChipsDataset(Dataset):
 
     def _tif_loader(self, data_path: str, name: int):
         image_path = os.path.join(data_path, f"{name}.tif")
-        image = xr.open_rasterio(image_path)
-        # TODO: convert to tensor
+        image = open_rasterio(image_path)
         return image
 
 

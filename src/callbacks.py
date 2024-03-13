@@ -54,23 +54,23 @@ class SundialPrithviCallback(L.Callback):
         )
 
         for i in range(image.shape[0]):
-            vid = image[i].unsqueeze(0)
-            pl_module.logger.experiment.add_video(
-                tag="chips",
-                vid_tensor=vid,
-                fps=1,
+            chip = image[i]
+            chip.squeeze(4)
+            pl_module.logger.experiment.add_images(
+                tag=f"chip_{batch_idx:02d}_{i:02d}",
+                img_tensor=chip,
             )
 
             pred, _ = torch.max(annotations[i], dim=0, keepdim=True)
             pl_module.logger.experiment.add_image(
-                tag="annotations",
+                tag=f"annotation_{batch_idx:02d}_{i:02d}",
                 img_tensor=pred,
                 dataformats="CHW"
             )
 
             logt = logits[i].unsqueeze(1)
             pl_module.logger.experiment.add_images(
-                tag="predictions",
+                tag=f"prediction_{batch_idx:02d}_{i:02d}",
                 img_tensor=logt,
                 dataformats="NCHW"
             )

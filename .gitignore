@@ -160,7 +160,7 @@ cython_debug/
 #.idea/
 
 ###############################################################################
-shapes/ads_damage_1990-2022
+shapes/
 logs/
 samples/
 checkpoints/
