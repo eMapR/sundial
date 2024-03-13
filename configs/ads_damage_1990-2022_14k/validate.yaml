@@ -1,7 +1,7 @@
 model:
     class_path: SundialPrithvi
     init_args:
-        num_classes: 61 
+        num_classes: 10 
         view_size: 16
         upscale_depth: 4
         upscale_reduction_factor: 2
@@ -15,7 +15,7 @@ model:
                 embed_dim: 768
                 img_size: 256
                 in_chans: 6
-                num_frames: 6
+                num_frames: 3
                 num_heads: 12
                 patch_size: 16
                 tubelet_size: 1
@@ -56,7 +56,8 @@ trainer:
       - class_path: SundialPrithviCallback
     inference_mode: false
     logger:
-        class_path: TensorBoardLogger
+        class_path: TBLogger
         init_args:
             name: validate
-            save_dir: sundial/logs/ads_damage_1990-2022_14k
+            save_dir: logs/ads_damage_1990-2022_14k
+            default_hp_metric: false

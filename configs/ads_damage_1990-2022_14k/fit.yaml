@@ -1,7 +1,7 @@
 model:
     class_path: SundialPrithvi
     init_args:
-        num_classes: 61 
+        num_classes: 10
         view_size: 16
         upscale_depth: 4
         upscale_reduction_factor: 2
@@ -15,7 +15,7 @@ model:
                 embed_dim: 768
                 img_size: 256
                 in_chans: 6
-                num_frames: 6
+                num_frames: 3
                 num_heads: 12
                 patch_size: 16
                 tubelet_size: 1
@@ -24,7 +24,7 @@ model:
 data:
     class_path: ChipsDataModule
     init_args:
-        batch_size: 64
+        batch_size: 128
         num_workers: 0
         means:
             - 775.2290211032589
@@ -62,14 +62,19 @@ trainer:
             monitor: val_loss
             save_top_k: 4
       - class_path: SundialPrithviCallback
+    devices: 1
     inference_mode: true
     log_every_n_steps: 16
     logger:
-        class_path: TensorBoardLogger
+        class_path: TBLogger
         init_args:
             name: fit
             save_dir: logs/ads_damage_1990-2022_14k
+            default_hp_metric: false
     max_epochs: 128
+    num_nodes: 2
+    strategy: ddp_find_unused_parameters_true
+
 optimizer:
     class_path: torch.optim.AdamW
     init_args:

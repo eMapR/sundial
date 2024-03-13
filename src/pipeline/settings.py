@@ -3,8 +3,6 @@ import yaml
 
 from datetime import date
 
-# config save and load functions
-
 
 def save_config(config, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -19,7 +17,7 @@ def load_config(path):
 
 # max date ranges as default
 START_DATE = date(1985, 6, 1)
-END_DATE = date(1985, 9, 1)
+END_DATE = date(2023, 9, 1)
 
 # sample information
 SAMPLE_NAME = os.getenv("SUNDIAL_SAMPLE_NAME")
@@ -39,15 +37,14 @@ LOGS_PATH = os.path.join(BASE_PATH, "logs")
 CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_NAME)
 SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_NAME)
 CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_NAME)
-PREDICTIONS_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_NAME)
+PREDICTION_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_NAME)
 LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_NAME)
 
 # config paths
 SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
-DOWNLOAD_CONFIG_PATH = os.path.join(CONFIG_PATH, "download.yaml")
 
 # sample and data paths
-META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zarr")
+META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data.zip")
 STRATA_MAP_PATH = os.path.join(SAMPLE_PATH, "strata_map.yaml")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
 ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data.zarr")
@@ -57,21 +54,15 @@ PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
 
 
-# shapefile and source data paths
-GEO_FILE_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
+# zipped shapefile and source data paths
+GEO_FILE_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME+".zip")
 
 # image and meta data settings
 RANDOM_STATE = 42
-SQUARE_COLUMNS = [f"square_{i}" for i in range(5)]
-BANDS = ["B1", "B2", "B3", "B4", "B5", "B7"]
-NUM_CHANNELS = len(BANDS)
 MASK_LABELS = ["cloud"]
-STRATA_DIM_NAME = "strata"
 STRATA_ATTR_NAME = "stratum"
-PADDING = 1.05
 GEE_REQUEST_LIMIT = 40
-GEE_FEATURE_LIMIT = 1e4
-NO_DATA_VALUE = -9999
+NO_DATA_VALUE = 0
 
 # GEE file type settings
 FILE_EXT_MAP = {
@@ -83,28 +74,31 @@ FILE_EXT_MAP = {
 
 SAMPLER = {
     # sampling settings
-    "generate_squares": True,
+    "generate_square_samples": True,
     "generate_time_combinations": True,
-    "generate_train_test_split": True,
-    "method": "stratified",
+    "generate_train_test_splits": True,
+    "generate_annotation_data": True,
+    "generate_image_chip_data": True,
 
-    # paths
-    "geo_file_path": GEO_FILE_PATH,
-    "meta_data_path": META_DATA_PATH,
-
-    # strata settings
-    "num_points": 1e4,  # number of points per strata
-    "num_strata": 1e2,  # number of strata to generate based on stats
-    "start_date": START_DATE,  # start date for medoid time samples
-    "end_date": END_DATE,  # end date for medoid time samples
-    "meter_edge_size": 256*30,  # edge size of square in meters
+    # sampling settings
+    "method": "centroid",
+    "fraction": 2.0e-2,  # fraction of total points to sample to pull from
+    "num_points": None,  # number of points to sample. This is used if fraction is None
     "strata_map_path": STRATA_MAP_PATH,  # path to save strata map
-    "strata_scale": 1e4,  # scale in which to split stats to generate strata
     "strata_columns": None,  # columns in provided geo_file_path to use for strata
-    "fraction": None,  # fraction of total points to sample
+    "groupby_columns": None,  # columns to group by for annotations generation
+
+    # time_combinations settings
+    "back_step": None,  # number of years to step back from end date
+
+    # gee strata settings
+    "gee_num_points": 1e4,  # number of points per strata
+    "gee_num_strata": 1e2,  # number of strata to generate based on stats
+    "gee_strata_scale": 1e4,  # scale in which to split stats to generate strata
+    "gee_start_date": START_DATE,  # start date for medoid time samples
+    "gee_end_date": END_DATE,  # end date for medoid time samples
 
     # train test split settings
-    "back_step": 5,  # n years to step back from end date
     "validate_ratio": 2e-1,  # ratio of validate samples from total samples
     "test_ratio": 2e-1,  # ratio of test samples from validate samples
     "predict_ratio": 5e-1,  # ratio of predict samples from test samples
@@ -113,6 +107,26 @@ SAMPLER = {
     "test_sample_path": TEST_SAMPLE_PATH,
     "predict_sample_path": PREDICT_SAMPLE_PATH,
 
+    # image and downloading settings
+    "file_type": "ZARR",  # file type to download from GEE
+    "overwrite": False,  # whether to overwrite existing files
+    "scale": 30,  # scale in meters/pixel of images
+    "pixel_edge_size": 256,  # edge size of square in meters
+    "projection": "EPSG:5070",  # projection of images
+    "look_years": 3,  # n years to step back from end date
+
+    # paths
+    "geo_file_path": GEO_FILE_PATH,  # path to load original shape file
+    "chip_data_path": CHIP_DATA_PATH,  # path to store actual images
+    "anno_data_path": ANNO_DATA_PATH,  # path to load annotation image
+    "strata_map_path": STRATA_MAP_PATH,  # path to load strata map
+    "meta_data_path": META_DATA_PATH,  # path to store meta data of images
+
+    # MP and GEE specific settings
+    "num_workers": 64,  # number of parallel workers to use for annotation generation
+    "gee_workers": GEE_REQUEST_LIMIT,  # number of parallel workers to use for download
+    "io_limit": 32,  # number of chips to download before locking IO and writing
+
     # logging and testing
     "log_path": LOG_PATH,
     "log_name": "sample",
@@ -120,45 +134,15 @@ SAMPLER = {
 if os.path.exists(SAMPLE_CONFIG_PATH):
     SAMPLER = SAMPLER | load_config(SAMPLE_CONFIG_PATH)
 
-DOWNLOADER = {
-    # downloading settings
-    "start_date": START_DATE,  # start date for medoid time samples
-    "end_date": END_DATE,  # end date for medoid time samples
-    "file_type": "ZARR",  # file type to download from GEE
-    "overwrite": False,  # whether to overwrite existing files
-    "scale": 30,  # scale to download from GEE
-    "pixel_edge_size": round(256*PADDING),  # edge size of square in pixels
-    "reprojection": "UTM",  # reprojection of image (default: EPSG:4326)
-    "overlap_band": False,  # whether to include overlap to og polygon band
-    "back_step": SAMPLER["back_step"],  # n years to step back from end date
-
-    # paths
-    "chip_data_path": CHIP_DATA_PATH,  # path to store actual images
-    "anno_data_path": ANNO_DATA_PATH,  # path to load strata image
-    "strata_map_path": STRATA_MAP_PATH,  # path to load strata map
-    "meta_data_path": META_DATA_PATH,  # path to store meta data of images
-
-    # MP and GEE specific settings
-    "num_workers": GEE_REQUEST_LIMIT,  # number of parallel workers to use for download
-    "io_limit": 32,  # number of chips to download before locking IO and writing
-
-    # logging and testing
-    "log_path": LOG_PATH,
-    "log_name": "download",
-}
-if os.path.exists(DOWNLOAD_CONFIG_PATH):
-    DOWNLOADER = DOWNLOADER | load_config(DOWNLOAD_CONFIG_PATH)
-
-
 # pytorch lightning settings
 DATALOADER = {
     # image / chip settings
-    "chip_size": round(SAMPLER["meter_edge_size"] / DOWNLOADER["scale"]),
+    "chip_size": SAMPLER["pixel_edge_size"],
     "base_year": START_DATE.year,
     "back_step": SAMPLER["back_step"],
 
     # path settings to load data
-    "file_type": FILE_EXT_MAP[DOWNLOADER["file_type"]],
+    "file_type": FILE_EXT_MAP[SAMPLER["file_type"]],
     "chip_data_path": CHIP_DATA_PATH,
     "anno_data_path": ANNO_DATA_PATH,
     "train_sample_path": TRAIN_SAMPLE_PATH,
@@ -177,13 +161,17 @@ CHECKPOINT = {
 }
 
 LOGGER = {
-    "save_dir": LOG_PATH
+    "save_dir": LOG_PATH,
+    "default_hp_metric": False
 }
+
+paths = [CONFIG_PATH, SAMPLE_PATH, CHECKPOINT_PATH, PREDICTION_PATH, LOG_PATH]
+for path in paths:
+    os.makedirs(path, exist_ok=True)
 
 if __name__ == "__main__":
     # saving sampler and download configs
     save_config(SAMPLER, SAMPLE_CONFIG_PATH)
-    save_config(DOWNLOADER, DOWNLOAD_CONFIG_PATH)
 
     # generating and saving run configs for fit, validate, test and predict
     run = {
@@ -191,12 +179,12 @@ if __name__ == "__main__":
             "class_path": "ChipsDataModule",
             "init_args": DATALOADER
         },
-        
+
         "trainer": {
             "accelerator": "cuda",
             "callbacks": [{"class_path": "SundialPrithviCallback"}],
             "logger": {
-                "class_path": "TensorBoardLogger",
+                "class_path": "TBLogger",
                 "init_args": LOGGER
             },
             "profiler": "advanced",

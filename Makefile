@@ -36,19 +36,24 @@ default:
 	@echo "    Methods:"
 	@echo "        setup:          Sets up Sundial directories and environment. The existing environment will be overwritten."
 	@echo "        setup_exp:      Sets up Sundial experiment directories and config files using defaults found in src/settings.py."
+	@echo
 	@echo "        sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile."
-	@echo "        download:       Downloads chip sample images from Google Earth Engine."
-	@echo "        fit:            Train model using subset of data from sample and download."
-	@echo "        validate:       Validate model subset of using data from sample and download."
-	@echo "        test:           Test model using subset of data from sample and download."
-	@echo "        predict:        Predict and image from subset of data from sample and download."
+	@echo "        annotate:       Collects image annotations for experiment using sample polygons."
+	@echo "        download:       Downloads image chips for experiment using sample polygons."
+	@echo
+	@echo "        fit:            Train model using subset of data from sample."
+	@echo "        validate:       Validate model subset of using data from sample."
+	@echo "        test:           Test model using subset of data from sample."
+	@echo "        predict:        Predict and image from subset of data from sample."
 	@echo "        package:        Compresses experiment to tar to export. The tar file will be saved in home directory and overwrite already existing archives."
 	@echo "        status:         Check status of all jobs for experiment."
 	@echo "        vars:           Print all Sundial variables."
+	@echo
 	@echo "        clean:          Removes all logs, checkpoints, and predictions for experiment."
 	@echo "        clean_logs:     Removes all logs for experiment."
 	@echo "        clean_sample:   Removes all sample data for experiment."
-	@echo "        clean_download: Removes all chip and anno data for experiment."
+	@echo "        clean_download: Removes all image chip data for experiment."
+	@echo "        clean_anno:     Removes all annotation data for experiment."
 	@echo "        clean_ckpt:     Removes all checkpoints for experiment."
 	@echo "        clean_predict:  Removes all predictions for experiment."
 	@echo "        clean_exp:      Removes all logs, sample data, checkpoints, and predictions for experiment."
@@ -87,44 +92,43 @@ setup_exp: _experiment_name_check
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \
 	fi; \
 
-sample: _experiment_name_check _config_dir_check
-	echo "Retreiving polygon sample from Google Earth Engine. This may take a sec..."; \
-	$(eval export SUNDIAL_METHOD=sample)
+sample: _sample
+	echo "Processing polygon sample from $(SUNDIAL_SAMPLE_NAME) shapefile. Uno momento..."; \
 	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
 	$(MAKE) -s _run
 
-download: _experiment_name_check _config_dir_check
-	echo "Downloading chip sample from Google Earth Engine. This may take a while..."; \
-	$(eval export SUNDIAL_METHOD=download)
+annotate: _annotate
+	echo "Collecting image annotations for $(SUNDIAL_EXPERIMENT_NAME). This might take a sec..."; \
 	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
 	$(MAKE) -s _run
 
-fit: _experiment_name_check _config_dir_check
+download: _download
+	echo "Downloading image chips for $(SUNDIAL_EXPERIMENT_NAME). Sit tight..."; \
+	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
+	$(MAKE) -s _run
+
+fit: _fit
 	echo "Training model... This may take a while..."; \
-	$(eval export SUNDIAL_METHOD=fit)
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
-validate: _experiment_name_check _config_dir_check
+validate: _validate
 	echo "Validating model... Go ahead and hold your breath..."; \
-	$(eval export SUNDIAL_METHOD=validate)
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
-test: _experiment_name_check _config_dir_check
+test: _test
 	echo "Testing model... Please check $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e..."; \
-	$(eval export SUNDIAL_METHOD=test)
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
-predict: _experiment_name_check _config_dir_check
+predict: _predict
 	echo "Predicting image using model... Lets see if this works!"; \
-	$(eval export SUNDIAL_METHOD=predict)
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
 status: _experiment_name_check _hpc_check
-	squeue -u $(USER) --format="%.18i %.9P %.30j %.8u %.8T %.10M %.9l %.6D %R" | grep $(SUNDIAL_EXPERIMENT_NAME); \
+	squeue -u $(USER) --format="%.18i %.9P %.30j %.8u %.8T %.10M %.9l %.6D %R" \
 
 vars: _experiment_name_check
 	echo "SUNDIAL_BASE_PATH: $(SUNDIAL_BASE_PATH)"; \
@@ -141,6 +145,56 @@ package: _experiment_name_check
 		checkpoints/$(SUNDIAL_EXPERIMENT_NAME) \
 		predictions/$(SUNDIAL_EXPERIMENT_NAME) \
 
+sample_watch: _sample _hpc_check
+	$(MAKE) -s _watch
+
+annotate_watch: _annotate _hpc_check
+	$(MAKE) -s _watch
+
+download_watch: _download _hpc_check
+	$(MAKE) -s _watch
+
+fit_watch: _fit _hpc_check
+	$(MAKE) -s _watch
+
+validate_watch: _validate _experiment_name_check _hpc_check
+	$(MAKE) -s _watch
+
+test_watch: _test _hpc_check
+	$(MAKE) -s _watch
+
+predict_watch: _predict _hpc_check
+	$(MAKE) -s _watch
+
+_watch: _experiment_name_check _hpc_check
+	echo "Watching $(SUNDIAL_METHOD) for $(SUNDIAL_EXPERIMENT_NAME)..."; \
+	while true; do \
+		tput clear; \
+		awk 'END {print}' $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).o; \
+		sleep 2; \
+	done; \
+
+_sample: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=sample)
+
+_annotate: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=annotate)
+
+_download: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=download)
+
+_fit: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=fit)
+
+_validate: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=validate)
+
+_test: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=test)
+
+_predict: _experiment_name_check
+	$(eval export SUNDIAL_METHOD=predict)
+
 clean: _experiment_name_check
 	echo "Cleaning up logs, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME); \
@@ -156,8 +210,11 @@ clean_sample: _experiment_name_check
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME); \
 
 clean_download: _experiment_name_check
-	echo "Cleaning up chip data and anno data for $(SUNDIAL_EXPERIMENT_NAME)."; \
+	echo "Cleaning up chip data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*; \
+
+clean_anno: _experiment_name_check
+	echo "Cleaning up annotation data for $(SUNDIAL_EXPERIMENT_NAME)."; \
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*; \
 
 clean_ckpt: _experiment_name_check
