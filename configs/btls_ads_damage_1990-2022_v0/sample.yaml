@@ -1,0 +1,34 @@
+back_step: null
+end_date: null
+file_type: ZARR
+fraction: null
+flat_annotations: true
+gee_workers: 42
+gee_num_points: null
+gee_num_strata: null
+gee_strata_scale: null
+gee_start_date: null
+gee_end_date: null
+generate_annotation_data: true
+generate_image_chip_data: true
+generate_squares: true
+generate_time_combinations: false
+generate_train_test_split: true
+groupby_columns: ["year"]
+io_limit: 32
+look_years: 2
+pixel_edge_size: 256
+method: centroid
+num_points: 16384
+num_workers: 64
+predict_ratio: 0.5
+preprocess_data: true
+preprocess_actions:
+    - column: dca_cat
+      action: "=="
+      targets: ["bark beetles"]
+projection: EPSG:5070
+strata_columns: ['dca_cat']
+stratified_sample: true
+test_ratio: 0.02
+validate_ratio: 0.2

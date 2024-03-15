@@ -139,7 +139,7 @@ class Downloader:
         consumers = set()
         downloads = image_queue.qsize()
         report_queue.put(("INFO",
-                          f"Starting download of {downloads} points of interest..."))
+                          f"Starting download of {downloads-self._num_workers} points of interest..."))
         for consumer_index in range(self._num_workers):
             image_consumer = mp.Process(
                 target=self._image_consumer,

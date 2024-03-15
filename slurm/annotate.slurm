@@ -1,4 +1,5 @@
 #!/bin/bash -l
+#SBATCH --nodes=1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=64
 

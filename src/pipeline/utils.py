@@ -158,7 +158,6 @@ def parse_meta_data(
     attributes = {k: v for k, v in data_vars.items()
                   if all([s not in k for s in ["geometry", "square", "point"]])}
 
-
     return square_coords, \
         point_coords, \
         start_date, \

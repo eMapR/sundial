@@ -7,17 +7,21 @@ import xarray as xr
 from rioxarray import open_rasterio
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from typing import Literal
+from typing import Literal, Optional
 
 from pipeline.utils import clip_xy_xarray
+from pipeline.settings import CHIP_DATA_PATH, ANNO_DATA_PATH, TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH, TEST_SAMPLE_PATH, PREDICT_SAMPLE_PATH, SAMPLER, FILE_EXT_MAP
 
 
 class PreprocesNormalization(nn.Module):
-    def __init__(self, means, stds):
+    def __init__(self,
+                 means,
+                 stds):
         super().__init__()
         self.means = torch.tensor(
-            means, dtype=torch.float).view(1, 1, 1, -1)
-        self.stds = torch.tensor(stds, dtype=torch.float).view(1, 1, 1, -1)
+            means, dtype=torch.float).view(-1, 1, 1, 1)
+        self.stds = torch.tensor(
+            stds, dtype=torch.float).view(-1, 1, 1, 1)
 
     def forward(self, x):
         return (x - self.means) / self.stds
@@ -25,33 +29,34 @@ class PreprocesNormalization(nn.Module):
 
 class ChipsDataset(Dataset):
     def __init__(self,
-                 means: list[float] | None,
-                 stds: list[float] | None,
-
                  chip_size: int,
                  base_year: int | None,
                  back_step: int | None,
+
                  file_type: str,
-
-                 chip_data_path: str,
-                 anno_data_path: str,
                  sample_path: str,
+                 chip_data_path: str,
+                 anno_data_path: str | None,
 
-                 drop_duplicates: bool = list[str] | None,
+                 means: Optional[list[float]] = None,
+                 stds: Optional[list[float]] = None,
                  **kwargs):
         super().__init__(**kwargs)
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
-        self.file_type = file_type
 
+        self.file_type = file_type
+        self.sample_path = sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
-        self.sample_path = sample_path
-        self.drop_duplicates = drop_duplicates
 
-        self.normalize = PreprocesNormalization(
+        self.means = means
+        self.stds = stds
+
+        self.normalizer = PreprocesNormalization(
             means, stds) if means and stds else None
+
         self.samples = np.load(self.sample_path)
 
         if self.file_type == "zarr":
@@ -90,16 +95,19 @@ class ChipsDataset(Dataset):
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
 
+        # reshaping gee data (D H W C) to pytorch format (C D H W)
+        chip = chip.permute(3, 0, 1, 2)
+
         # normalizing chip to precalculated means and stds
-        if self.normalize is not None:
-            chip = self.normalize(chip)
+        if self.normalizer is not None:
+            chip = self.normalizer(chip)
 
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
             strata = self.get_strata(idx)
-            return chip, strata
+            return chip, strata, idx
         else:
-            return chip
+            return chip, idx
 
     def __len__(self):
         return len(self.samples)
@@ -118,50 +126,54 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-        means: list[float] | None,
-        stds: list[float] | None,
 
-        chip_size: int | None,
+        chip_size: int,
         base_year: int | None,
         back_step: int | None,
 
-        file_type: str,
-        chip_data_path: str,
-        anno_data_path: str,
-        train_sample_path: str,
-        validate_sample_path: str,
-        test_sample_path: str,
-        predict_sample_path: str,
+        file_type: str = FILE_EXT_MAP[SAMPLER["file_type"]],
+        train_sample_path: str = TRAIN_SAMPLE_PATH,
+        validate_sample_path: str = VALIDATE_SAMPLE_PATH,
+        test_sample_path: str = TEST_SAMPLE_PATH,
+        predict_sample_path: str = PREDICT_SAMPLE_PATH,
+
+        chip_data_path: str = CHIP_DATA_PATH,
+        anno_data_path: str = ANNO_DATA_PATH,
+
+        means: Optional[list[float]] = None,
+        stds: Optional[list[float]] = None,
 
         **kwargs
     ):
         super().__init__(**kwargs)
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.means = means
-        self.stds = stds
 
         self.chip_size = chip_size
         self.base_year = base_year
         self.back_step = back_step
 
         self.file_type = file_type.lower()
-        self.chip_data_path = chip_data_path
-        self.anno_data_path = anno_data_path
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
 
+        self.chip_data_path = chip_data_path
+        self.anno_data_path = anno_data_path
+
+        self.means = means
+        self.stds = stds
+
         self.dataset_config = {
-            "means": self.means,
-            "stds": self.stds,
             "chip_size": self.chip_size,
             "base_year": self.base_year,
             "back_step": self.back_step,
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
+            "means": self.means,
+            "stds": self.stds,
         }
 
         self.dataloader_config = {
@@ -175,48 +187,35 @@ class ChipsDataModule(L.LightningDataModule):
         match stage:
             case "fit":
                 self.training_ds = ChipsDataset(
-                    sample_path=self.train_sample_path,
-                    **self.dataset_config)
+                    **self.dataset_config | {"sample_path": self.train_sample_path})
 
                 self.validate_ds = ChipsDataset(
-                    sample_path=self.validate_sample_path,
-                    **self.dataset_config)
+                    **self.dataset_config | {"sample_path": self.validate_sample_path})
 
             case "validate":
                 self.validate_ds = ChipsDataset(
-                    sample_path=self.validate_sample_path,
-                    **self.dataset_config)
+                    **self.dataset_config | {"sample_path": self.validate_sample_path})
 
             case "test":
                 self.test_ds = ChipsDataset(
-                    sample_path=self.test_sample_path,
-                    **self.dataset_config)
+                    **self.dataset_config | {"sample_path": self.test_sample_path})
 
             case "predict":
                 self.predict_ds = ChipsDataset(
-                    sample_path=self.predict_sample_path,
-                    **self.dataset_config)
+                    **self.dataset_config | {"sample_path": self.predict_sample_path, "anno_data_path": None})
 
     def train_dataloader(self):
         return DataLoader(
-            dataset=self.training_ds,
-            **self.dataloader_config
-        )
+            **self.dataloader_config | {"dataset": self.training_ds})
 
     def val_dataloader(self):
         return DataLoader(
-            dataset=self.validate_ds,
-            **self.dataloader_config
-        )
+            **self.dataloader_config | {"dataset": self.validate_ds})
 
     def test_dataloader(self):
         return DataLoader(
-            dataset=self.test_ds,
-            **self.dataloader_config
-        )
+            **self.dataloader_config | {"dataset": self.test_ds})
 
     def predict_dataloader(self):
         return DataLoader(
-            dataset=self.predict_ds,
-            **self.dataloader_config | {"drop_last": False}
-        )
+            **self.dataloader_config | {"dataset": self.predict_ds})
