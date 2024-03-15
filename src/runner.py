@@ -5,6 +5,7 @@ from lightning.pytorch.cli import ArgsType, LightningCLI
 
 from callbacks import *
 from dataloaders import *
+from loggers import *
 from models import *
 
 from pipeline.settings import RANDOM_STATE, CONFIG_PATH
@@ -23,10 +24,13 @@ if __name__ == "__main__":
     run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
     match method:
         case "sample":
-            from pipeline.sampler import main
-            main()
+            from pipeline.sampler import sample
+            sample()
+        case "annotate":
+            from pipeline.sampler import annotate
+            annotate()
         case "download":
-            from pipeline.downloader import main
-            main()
+            from pipeline.sampler import download
+            download()
         case "fit" | "validate" | "test" | "predict":
             main([method, f"--config={run_config_path}"])

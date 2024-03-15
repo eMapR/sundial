@@ -1,23 +1,26 @@
 import ee
-import argparse
-import os
-import time
-import yaml
-
 import geopandas as gpd
+import multiprocessing as mp
 import numpy as np
+import os
 import pandas as pd
 import xarray as xr
+import yaml
 
 from datetime import datetime
-from multiprocessing.pool import ThreadPool
-from typing import Literal
+from typing import Literal, Any
+from rasterio.transform import from_bounds
+from rasterio.features import rasterize
+from shapely.geometry import Polygon
 from sklearn.model_selection import train_test_split
-from shapely.ops import unary_union
+from typing import Optional
 
-from .utils import parse_meta_data, generate_coords_name
+from .downloader import Downloader
 from .logger import get_logger
-from .settings import RANDOM_STATE, SQUARE_COLUMNS, STRATA_ATTR_NAME, GEE_REQUEST_LIMIT, GEE_FEATURE_LIMIT
+from .settings import SAMPLER, RANDOM_STATE, STRATA_ATTR_NAME
+from .utils import parse_meta_data, lt_image_generator, zarr_reshape, function_timer, clip_xy_xarray, pad_xy_xarray
+
+LOGGER = get_logger(SAMPLER["log_path"], os.getenv("SUNDIAL_METHOD"))
 
 
 def get_elevation_image(
@@ -83,26 +86,6 @@ def stratify_by_percentile(
     return result
 
 
-def draw_bounding_square(
-        feature: ee.Feature,
-        meter_edge_size: int) -> ee.feature:
-    maxError = ee.Number(0.01)
-    geometry = feature.geometry()
-    point = ee.Geometry(
-        ee.Algorithms.If(
-            geometry.type().equals("Point"),
-            geometry,
-            geometry.centroid(maxError=maxError)
-        ))
-    square_coords = point.buffer(
-        meter_edge_size // 2).bounds(maxError=maxError).coordinates()
-    point_coords = point.coordinates()
-    return feature.set({
-        "square_coords": square_coords,
-        "point_coords": point_coords
-    })
-
-
 def generate_random_points(
         feature: ee.Feature,
         radius: int,
@@ -142,12 +125,12 @@ def stratified_sampling(
     num_points = num_points // num_strata
     percentiles = ee.List.sequence(0, 100, count=num_strata+1)
 
-    LOGGER.info("Getting mean images for stratified sampling...")
+    # Getting mean images for stratified sampling
     raw_images = []
     raw_images.append(get_prism_image(area_of_interest, start_date, end_date))
     raw_images.append(get_elevation_image(area_of_interest))
 
-    LOGGER.info("Stratifying images by percentile...")
+    # stratify by percentile
     stratified_images = []
     for image in raw_images:
         percentile_ranges = get_percentile_ranges(
@@ -155,14 +138,13 @@ def stratified_sampling(
         stratified_images.append(
             stratify_by_percentile(image, percentile_ranges))
 
-    LOGGER.info("Concatenating stratified image class bands...")
+    # concatenate stratified images
     combined = ee.Image.cat(stratified_images)
     num_bands = num_images
     concatenate_expression = " + ".join(
         [f"(b({i})*(100**{i}))" for i in range(num_bands)])
     concatenated = combined.expression(concatenate_expression).toInt()
 
-    LOGGER.info("Sending request for stratified sampling...")
     return concatenated.stratifiedSample(
         num_points,
         region=area_of_interest,
@@ -181,174 +163,114 @@ def download_features(features: ee.FeatureCollection) -> gpd.GeoDataFrame:
         raise e
 
 
-def process_download(
-        gdf_download: gpd.GeoDataFrame,
-        sample: gpd.GeoDataFrame,
-        strata_columns: list[str]) -> gpd.GeoDataFrame:
-    # extracting square coordinates
-    df_out = gdf_download.loc[:, "square_coords"]\
-        .explode()\
-        .apply(pd.Series)\
-        .add_prefix("square_")\
-        .map(tuple)
-
-    # extracting geometry coordinates
-    match gdf_download.loc[0:0, "geometry"].item().geom_type:
-        case "Polygon":
-            def f(p): return list(p.exterior.coords)
-        case "Point":
-            def f(p): return list(p.coords)
-    df_out = pd.concat([df_out, gdf_download.loc[:, "geometry"]
-                        .apply(f)
-                        .apply(pd.Series)
-                        .add_prefix("geometry_")], axis=1)
-    geometry_columns = df_out.filter(like="geometry_").columns.to_list()
-
-    # setting names and poin coordinates
-    df_out.loc[:, "point_coords"] = gdf_download\
-        .loc[:, "point_coords"].apply(tuple)
-    df_out.loc[:, "point_name"] = df_out\
-        .loc[:, "point_coords"].apply(generate_coords_name)
-    df_out.loc[:, "square_name"] = df_out\
-        .loc[:, SQUARE_COLUMNS].apply(lambda r: generate_coords_name(r.tolist()), axis=1)
-
-    # adding in attribute data
-    if "constant" in gdf_download.columns:
-        df_out.loc[:, "constant"] = gdf_download.loc[:, "constant"]
-    if strata_columns is not None:
-        if "year" in sample.columns:
-            df_out.loc[:, "year"] = sample.loc[:, "year"]
-        for col in strata_columns:
-            df_out.loc[:, col] = sample.loc[:, col]
-        df_out.loc[:, STRATA_ATTR_NAME] = sample.loc[:, strata_columns].astype(
-            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
-    return df_out, geometry_columns
+def filter_dataframe(
+        geo_dataframe: gpd.GeoDataFrame,
+        filter_columns: list[str],
+        filter_operators: list[Literal[">", "<", "==", "!="]],
+        filter_values: list[Any]) -> gpd.GeoDataFrame:
+    for column, operator, value in zip(filter_columns, filter_operators, filter_values):
+        match operator:
+            case ">":
+                geo_dataframe = geo_dataframe.loc[geo_dataframe[column] > value]
+            case "<":
+                geo_dataframe = geo_dataframe.loc[geo_dataframe[column] < value]
+            case "==":
+                if isinstance(value, str) or isinstance(value, int):
+                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column] == value]
+                elif isinstance(value, list):
+                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column].isin(
+                        value)]
+                else:
+                    raise ValueError(
+                        f"Invalid filter value type: {type(value)}")
+            case "!=":
+                if isinstance(value, str) or isinstance(value, int):
+                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column] != value]
+                elif isinstance(value, list):
+                    geo_dataframe = geo_dataframe.loc[~geo_dataframe[column].isin(
+                        value)]
+                else:
+                    raise ValueError(
+                        f"Invalid filter value type: {type(value)}")
+            case _:
+                raise ValueError(f"Invalid filter operator: {operator}")
+    return geo_dataframe
 
 
-def get_square_features(sample: gpd.GeoDataFrame, meter_edge_size: int) -> gpd.GeoDataFrame:
-    points = ee.FeatureCollection([ee.Geometry.Polygon(
-        list(p.exterior.coords))
-        for p in sample.loc[:, "geometry"]])
-    squares = points.map(
-        lambda f: draw_bounding_square(f, meter_edge_size))
-    gdf = download_features(squares)
-    return gdf
+@function_timer(logger=LOGGER)
+def generate_centroid_squares(
+        geo_dataframe: gpd.GeoDataFrame,
+        meter_edge_size: int) -> gpd.GeoDataFrame:
+    geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
+        .apply(lambda p: p.centroid.buffer(meter_edge_size//2).envelope)
+    return geo_dataframe
 
 
-def generate_squares(
-        method: Literal["convering_grid", "random", "stratified", "centroid"],
-        geo_file_path: str,
+@function_timer(logger=LOGGER)
+def generate_square_samples(
+        geo_dataframe: gpd.GeoDataFrame,
+        method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
         meta_data_path: str,
         meter_edge_size: int | float,
-        num_points: int | None,
-        num_strata: int | None,
-        start_date: datetime | None,
-        end_date: datetime | None,
-        strata_map_path: str | None,
-        strata_scale: int | None,
-        strata_columns: list[str] | None,
-        fraction: float | None) -> int:
-    ee.Initialize(opt_url='https://earthengine-highvolume.googleapis.com')
+        filter_columns: Optional[list[str]] = None,
+        filter_operators: Optional[list[Literal[">", "<", "==", "!="]]] = None,
+        filter_values: Optional[list[Any]] = None,
+        fraction: Optional[float] = None,
+        num_points: Optional[int] = None,
+        gee_num_points: Optional[int] = None,
+        gee_num_strata: Optional[int] = None,
+        gee_start_date: Optional[datetime] = None,
+        gee_end_date: Optional[datetime] = None,
+        gee_strata_scale: Optional[int] = None,
+        strata_map_path: Optional[str] = None,
+        strata_columns: Optional[list[str]] = None) -> tuple[gpd.GeoDataFrame, int]:
+    if all([l is not None for l in [filter_columns, filter_operators, filter_values]]):
+        geo_dataframe = filter_dataframe(
+            geo_dataframe, filter_columns, filter_operators, filter_values)
 
-    LOGGER.info("Loading geo file into GeoDataFrame...")
-    gdf = gpd.read_file(geo_file_path)
+    if fraction is not None:
+        groupby = geo_dataframe.groupby(strata_columns)
+        sample = groupby.sample(frac=fraction)
+    elif num_points is not None:
+        groupby = geo_dataframe.groupby(strata_columns)
+        sample = groupby.sample(n=num_points)
+    else:
+        sample = geo_dataframe
+    sample = sample.reset_index(drop=True)
 
-    if method != "centroid":
-        unary_polygon = unary_union(gdf[strata_columns].to_crs(epsg=4326))
-        gee_polygon = ee.Geometry.Polygon(
-            list(unary_polygon.exterior.coords))
-
-    LOGGER.info(f"Generating squares via {method}...")
+    LOGGER.info(f"Generating squares from sample points using {method}...")
     match method:
         case "convering_grid":
-            squares = gee_polygon.coveringGrid(scale=meter_edge_size)
+            raise NotImplementedError
         case "random":
-            points = generate_random_points(
-                gee_polygon, meter_edge_size, num_points)
-            squares = points.map(
-                lambda f: draw_bounding_square(f, meter_edge_size, None))
-            LOGGER.info("Downloading squares to dataframe from GEE...")
-            gdf = download_features(squares)
-        case "stratified":
-            points = stratified_sampling(
-                num_points,
-                num_strata,
-                start_date,
-                end_date,
-                gee_polygon,
-                strata_scale)
-            squares = points.map(
-                lambda f: draw_bounding_square(f, meter_edge_size, None))
-            LOGGER.info("Downloading squares to dataframe from GEE...")
-            gdf = download_features(squares)
+            raise NotImplementedError
+        case "gee_stratified":
+            raise NotImplementedError
         case "centroid":
-            if fraction is not None:
-                groupby = gdf.groupby(strata_columns)
-                sample = groupby.sample(frac=fraction)
-            elif num_points is not None:
-                groupby = gdf.groupby(strata_columns)
-                sample = groupby.sample(n=num_points)
-            else:
-                sample = gdf
-            sample = sample.reset_index(drop=True)
-            sample.loc[:, "geometry"] = sample.loc[:, "geometry"].to_crs(
-                epsg=4326)
+            gdf = generate_centroid_squares(
+                sample,
+                meter_edge_size)
 
-            if (num_samples := len(sample)) > GEE_FEATURE_LIMIT:
-                # partition sample into batches. numpy array split has a deprecated warning
-                # this is done to maintain same order of samples for post processing
-                rem = num_samples % GEE_REQUEST_LIMIT
-                s = num_samples // GEE_REQUEST_LIMIT
-                b = []
-                for i in range(40):
-                    if rem > 0:
-                        rem -= 1
-                        b.append(sample.iloc[s*i:s*(i+1) + 1])
-                    else:
-                        b.append(sample.iloc[s*i:s*(i+1)])
-
-                # execute download in parallel
-                LOGGER.info(
-                    f"Downloading {num_samples} squares to dataframe from GEE using pool with batchsize {num_samples // GEE_REQUEST_LIMIT}...")
-                with ThreadPool(processes=GEE_REQUEST_LIMIT) as p:
-                    def f(b): return get_square_features(b, meter_edge_size)
-                    result = p.map(f, b)
-                    gdf = pd.concat(result, axis=0).reset_index(drop=True)
-            else:
-                points = ee.FeatureCollection([ee.Geometry.Polygon(
-                    list(p.exterior.coords))
-                    for p in sample.loc[:, "geometry"]])
-                squares = points.map(
-                    lambda f: draw_bounding_square(f, meter_edge_size))
-                LOGGER.info("Downloading squares to dataframe from GEE...")
-                gdf = download_features(squares)
-
-            # final processing check to ensure gee didn't fail
-            assert len(gdf) == len(sample)
-
-    LOGGER.info("Processing dataframe columns for zarr...")
-    df_out, geometry_columns = process_download(gdf, sample, strata_columns)
+    LOGGER.info("Saving geo dataframe and strata to file...")
     if strata_columns is not None and strata_map_path is not None:
+        gdf.loc[:, STRATA_ATTR_NAME] = gdf.loc[:, strata_columns].astype(
+            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
         strata_map = {v: k for k, v in enumerate(
-            df_out[STRATA_ATTR_NAME].unique())}
+            gdf[STRATA_ATTR_NAME].unique())}
         with open(strata_map_path, "w") as f:
             yaml.dump(strata_map, f, default_flow_style=False)
+    gdf.to_file(meta_data_path)
 
-    LOGGER.info("Converting to xarray and saving...")
-    xarr = df_out.to_xarray().drop_vars("index")
-    coord_columns = SQUARE_COLUMNS + geometry_columns + ["point_coords"]
-    xarr[coord_columns] = xarr[coord_columns].astype(
-        [("x", float), ("y", float)])
-    xarr.to_zarr(store=meta_data_path, mode="a")
-    return xarr.sizes["index"]
+    return len(gdf), gdf
 
 
+@function_timer(logger=LOGGER)
 def generate_time_combinations(
-        num_samples: list[int],
+        num_samples: int,
         start_year: int,
         end_year: int,
         back_step: int,
-        meta_data_path: str) -> int:
+        time_sample_path: str) -> int:
     years = range(end_year, start_year + back_step, -1)
     df_years = pd.DataFrame(years, columns=["year"])
 
@@ -359,92 +281,234 @@ def generate_time_combinations(
         df_list.append(new_df)
     df_time = pd.concat(df_list, axis=0)
     df_time = df_time.reset_index(drop=True)
-
-    xarr = df_time.to_xarray().drop_vars("index")
-    xarr.to_zarr(store=meta_data_path, mode="a")
+    df_time.to_file(time_sample_path)
 
     return len(df_time)
 
 
-def main(**kwargs):
-    from .settings import SAMPLER as config, SAMPLE_PATH
-    os.makedirs(SAMPLE_PATH, exist_ok=True)
+def rasterizer(polygons: gpd.GeoSeries,
+               square: Polygon,
+               scale: int):
+    cols = int((square.bounds[2] - square.bounds[0]) / scale)
+    rows = int((square.bounds[3] - square.bounds[1]) / scale)
 
-    global LOGGER
-    LOGGER = get_logger(config["log_path"], config["log_name"])
+    transform = from_bounds(*square.bounds, rows, cols)
+    raster = rasterize(
+        shapes=polygons,
+        out_shape=(rows, cols),
+        fill=0,
+        transform=transform)
 
-    start_main = time.time()
+    return raster
+
+
+def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
+                      sample_gdf: gpd.GeoDataFrame,
+                      strata_columns: list[str | int],
+                      groupby_columns: list[str | int],
+                      strata_map: dict[str, int],
+                      pixel_edge_size: int,
+                      scale: int,
+                      anno_data_path: str,
+                      io_limit: int,
+                      io_lock: Optional[mp.Lock] = None,
+                      index_queue: Optional[mp.Queue] = None):
+    columns = groupby_columns + strata_columns
+    batch = []
+    while (index := index_queue.get()) is not None:
+        LOGGER.info(f"Rasterizing sample {index}...")
+        target = sample_gdf.iloc[index]
+        square = target.geometry
+        group = target[columns]
+        stratum_idx = strata_map[target[STRATA_ATTR_NAME]]
+        mp = population_gdf[(population_gdf[columns] == group)
+                            .all(axis=1)].geometry
+        annotation = rasterizer(mp, square, scale)
+        annotation = xr.DataArray(annotation, dims=["y", "x"])
+
+        if pixel_edge_size > min(annotation["x"].size,  annotation["y"].size):
+            annotation = pad_xy_xarray(annotation, pixel_edge_size)
+        if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
+            annotation = clip_xy_xarray(annotation, pixel_edge_size)
+
+        xarr_anno_list = [xr.DataArray(np.zeros(annotation.shape), dims=['x', 'y'])
+                          for _ in strata_map]
+        xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
+        xarr_anno[stratum_idx:stratum_idx+1, :, :] = annotation
+        xarr_anno.name = str(index)
+
+        batch.append(xarr_anno)
+        if len(batch) == io_limit:
+            xarr_anno = xr.merge(batch)
+            with io_lock:
+                xarr_anno.to_zarr(store=anno_data_path, mode="a")
+            batch.clear()
+
+    xarr_anno = xr.merge(batch)
+    xarr_anno.to_zarr(store=anno_data_path, mode="a")
+
+
+@function_timer(logger=LOGGER)
+def generate_annotation_chips(
+        population_gdf: gpd.GeoDataFrame,
+        sample_gdf: gpd.GeoDataFrame,
+        strata_columns: list[str],
+        groupby_columns: list[str],
+        strata_map_path: str,
+        pixel_edge_size: int,
+        scale: int,
+        anno_data_path: str,
+        num_workers: int,
+        io_limit: int,):
+    num_samples = len(sample_gdf)
+    with open(strata_map_path, "r") as f:
+        strata_map = yaml.safe_load(f)
+
+    manager = mp.Manager()
+    index_queue = manager.Queue()
+    io_lock = manager.Lock()
+
+    [index_queue.put(i) for i in range(num_samples)]
+    [index_queue.put(None) for _ in range(num_workers)]
+    rasterizers = set()
+    for _ in range(num_workers):
+        p = mp.Process(
+            target=rasterizer_helper,
+            args=(population_gdf,
+                  sample_gdf,
+                  strata_columns,
+                  groupby_columns,
+                  strata_map,
+                  pixel_edge_size,
+                  scale,
+                  anno_data_path,
+                  io_limit,
+                  io_lock,
+                  index_queue),
+            daemon=True)
+        p.start()
+        rasterizers.add(p)
+    [p.join() for p in rasterizers]
+
+
+@function_timer(logger=LOGGER)
+def generate_image_chips(downloader_kwargs):
+    downloader = Downloader(**downloader_kwargs)
+    downloader.start()
+
+
+def sample():
     num_samples = None
     try:
-        if config["generate_squares"]:
+        LOGGER.info("Loading geo file into GeoDataFrame...")
+        geo_dataframe = gpd.read_file(SAMPLER["geo_file_path"])
+
+        if SAMPLER["generate_square_samples"]:
             LOGGER.info("Generating squares...")
-            start = time.time()
             square_config = {
-                "method": config["method"],
-                "geo_file_path": config["geo_file_path"],
-                "meta_data_path": config["meta_data_path"],
-                "meter_edge_size": config["meter_edge_size"],
-                "num_points": config["num_points"],
-                "num_strata": config["num_strata"],
-                "start_date": config["start_date"],
-                "end_date": config["end_date"],
-                "strata_map_path": config["strata_map_path"],
-                "strata_scale": config["strata_scale"],
-                "strata_columns": config["strata_columns"],
-                "fraction": config["fraction"]
+                "geo_dataframe": geo_dataframe,
+                "method": SAMPLER["method"],
+                "meta_data_path": SAMPLER["meta_data_path"],
+                "meter_edge_size": SAMPLER["scale"] * SAMPLER["pixel_edge_size"],
+                "filter_columns": SAMPLER["strata_columns"],
+                "filter_operators": SAMPLER["filter_operators"],
+                "filter_values": SAMPLER["filter_values"],
+                "fraction": SAMPLER["fraction"],
+                "num_points": SAMPLER["num_points"],
+                "gee_num_points": SAMPLER["num_points"],
+                "gee_num_strata": SAMPLER["num_strata"],
+                "gee_start_date": SAMPLER["start_date"],
+                "gee_end_date": SAMPLER["end_date"],
+                "gee_strata_scale": SAMPLER["strata_scale"],
+                "strata_map_path": SAMPLER["strata_map_path"],
+                "strata_columns": SAMPLER["strata_columns"],
             }
-            num_samples = generate_squares(**square_config)
-            end = time.time()
-            LOGGER.info(
-                f"Square generation completed in: {(end - start)/60:.2f} minutes")
+            num_samples, gdf = generate_square_samples(**square_config)
 
         if num_samples is None:
-            num_samples = xr.open_zarr(config["meta_data_path"]).sizes["index"]
+            gdf = gpd.read_file(SAMPLER["meta_data_path"])
+            num_samples = len(gdf)
 
-        if config["generate_time_combinations"]:
-            LOGGER.info("Generating time sample...")
-            start = time.time()
+        if SAMPLER["generate_time_combinations"]:
+            LOGGER.info("Generating time combinations...")
             time_sample_config = {
-                "start_year": config["start_date"].year,
-                "end_year": config["end_date"].year,
-                "back_step": config["back_step"],
-                "meta_data_path": config["time_meta_data_path"]
+                "start_year": SAMPLER["start_date"].year,
+                "end_year": SAMPLER["end_date"].year,
+                "back_step": SAMPLER["back_step"],
+                "time_sample_path": SAMPLER["time_sample_path"]
             }
             num_samples = generate_time_combinations(
                 num_samples, **time_sample_config)
-            end = time.time()
-            LOGGER.info(
-                f"Time sample generation completed in: {(end - start)/60:.2f} minutes")
 
-        if config["generate_train_test_split"]:
+        if SAMPLER["generate_train_test_splits"]:
             LOGGER.info(
                 "Splitting sample data into training, validation, test, and predict sets...")
             indices = np.arange(num_samples)
             train, validate = train_test_split(
-                indices, test_size=config["validate_ratio"])
+                indices, test_size=SAMPLER["validate_ratio"])
             validate, test = train_test_split(
-                validate, test_size=config["test_ratio"])
+                validate, test_size=SAMPLER["test_ratio"])
             test, predict = train_test_split(
-                test, test_size=config["predict_ratio"])
+                test, test_size=SAMPLER["predict_ratio"])
 
             LOGGER.info("Saving sample data splits to paths...")
             idx_lsts = [train, test, validate, predict]
-            paths = [config["train_sample_path"],
-                     config["validate_sample_path"],
-                     config["test_sample_path"],
-                     config["predict_sample_path"]]
+            paths = [SAMPLER["train_sample_path"],
+                     SAMPLER["validate_sample_path"],
+                     SAMPLER["test_sample_path"],
+                     SAMPLER["predict_sample_path"]]
             for path, idx_lst in zip(paths, idx_lsts):
                 np.save(path, idx_lst)
         else:
-            np.save.to_zarr(store=config["train_sample_path"], mode="a")
+            if not os.path.exists(SAMPLER["train_sample_path"]):
+                np.save(SAMPLER["train_sample_path"], np.arange(num_samples))
 
     except Exception as e:
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")
         raise e
-    end = time.time()
-    LOGGER.info(
-        f"Sample completed in: {(end - start_main)/60:.2f} minutes")
 
 
-if __name__ == '__main__':
-    main()
+def annotate():
+    LOGGER.info("Loading geo files into GeoDataFrame...")
+    geo_dataframe = gpd.read_file(SAMPLER["geo_file_path"])
+    gdf = gpd.read_file(SAMPLER["meta_data_path"])
+
+    if SAMPLER["generate_annotation_data"]:
+        LOGGER.info("Generating annotations from samples...")
+        annotation_config = {
+            "population_gdf": geo_dataframe,
+            "sample_gdf": gdf,
+            "strata_columns": SAMPLER["strata_columns"],
+            "groupby_columns": SAMPLER["groupby_columns"],
+            "strata_map_path": SAMPLER["strata_map_path"],
+            "pixel_edge_size": SAMPLER["pixel_edge_size"],
+            "scale": SAMPLER["scale"],
+            "anno_data_path": SAMPLER["anno_data_path"],
+            "num_workers": SAMPLER["num_workers"],
+            "io_limit": SAMPLER["io_limit"],
+        }
+        generate_annotation_chips(**annotation_config)
+
+
+def download():
+    LOGGER.info("Loading geo file into GeoDataFrame...")
+    gdf = gpd.read_file(SAMPLER["meta_data_path"])
+    if SAMPLER["generate_image_chip_data"]:
+        LOGGER.info("Generating image chips from samples...")
+        downloader_kwargs = {
+            "file_type": SAMPLER["file_type"],
+            "overwrite": SAMPLER["overwrite"],
+            "scale": SAMPLER["scale"],
+            "pixel_edge_size": SAMPLER["pixel_edge_size"],
+            "projection": SAMPLER["projection"],
+            "look_years": SAMPLER["look_years"],
+            "chip_data_path": SAMPLER["chip_data_path"],
+            "meta_data": gdf,
+            "meta_data_parser": parse_meta_data,
+            "image_expr_generator": lt_image_generator,
+            "image_reshaper": zarr_reshape,
+            "num_workers": SAMPLER["num_workers"],
+            "io_limit": SAMPLER["io_limit"],
+            "logger": LOGGER,
+        }
+        generate_image_chips(downloader_kwargs)
