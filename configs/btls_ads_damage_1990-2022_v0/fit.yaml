@@ -27,8 +27,6 @@ data:
     init_args:
         batch_size: 16
         num_workers: 64
-        back_step: null
-        base_year: null
         chip_size: 256
         means:
             - 775.2290211032589
@@ -47,10 +45,10 @@ data:
 trainer:
     callbacks:
       - class_path: PrithviFCNCallbacks
-    log_every_n_steps: 16
     max_epochs: 256
     strategy: ddp_find_unused_parameters_true
     devices: 2
+    num_nodes: 1
 optimizer:
     class_path: torch.optim.AdamW
     init_args:

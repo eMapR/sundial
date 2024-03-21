@@ -1,7 +1,7 @@
 model:
     class_path: PrithviFCN
     init_args:
-        num_classes: 5
+        num_classes: 1
         view_size: 16
         upscale_depth: 2
         prithvi_path: src/backbones/prithvi/Prithvi_100M.pt
@@ -27,8 +27,6 @@ data:
     init_args:
         batch_size: 32
         num_workers: 64
-        back_step: null
-        base_year: null
         chip_size: 256
         means:
             - 775.2290211032589
@@ -47,6 +45,4 @@ data:
 trainer:
     callbacks:
       - class_path: PrithviFCNCallbacks
-    log_every_n_steps: 16
 ckpt_path: null
-

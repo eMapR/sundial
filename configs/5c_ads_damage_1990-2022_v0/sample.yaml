@@ -1,28 +1,17 @@
-back_step: null
-end_date: null
 file_type: ZARR
 fraction: null
 flat_annotations: false
 gee_workers: 42
-gee_num_points: null
-gee_num_strata: null
-gee_strata_scale: null
-gee_start_date: null
-gee_end_date: null
-generate_annotation_data: true
-generate_image_chip_data: true
-generate_squares: true
-generate_time_combinations: false
-generate_train_test_split: true
+gee_stratafied_config: null
 groupby_columns: ["year"]
 io_limit: 32
 look_years: 2
-pixel_edge_size: 256
 method: centroid
 num_points: 2048
 num_workers: 64
+overwrite: false
+pixel_edge_size: 256
 predict_ratio: 0.5
-preprocess_data: true
 preprocess_actions:
     - column: dca_cat
       action: "!="
@@ -31,7 +20,14 @@ preprocess_actions:
       action: replace
       targets: [["defoliators", "foliage and shoot diseases", "sap feeders", "wood borers"], "other_damage"]
 projection: EPSG:5070
+sample_toggles:
+    preprocess_data: true
+    stratify_data: true
+    generate_squares: true
+    generate_time_combinations: false
+    generate_train_test_splits: true
+scale: 30
 strata_columns: ['dca_cat']
-stratified_sample: true
-test_ratio: 0.2
+test_ratio: 0.02
 validate_ratio: 0.2
+year_step: null

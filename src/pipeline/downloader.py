@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from .utils import get_utm_zone
-from .logger import get_logger
 from .settings import FILE_EXT_MAP
 
 
@@ -27,7 +26,6 @@ class Downloader:
         scale (int): The scale to use for projecting image.
         pixel_edge_size (int): The edge size to use to calculate padding.
         reprojection (str): A str flag to reproject the image data if set.
-        look_years (int): The number of years to look back from the end date.
 
         chip_data_path (str): The path to save the image data to.
         meta_data_path (str): The path to the meta data file with coordinates.
@@ -55,7 +53,6 @@ class Downloader:
             scale: int,
             pixel_edge_size: int,
             projection: bool,
-            look_years: int | None,
 
             chip_data_path: str,
             meta_data: gpd.GeoDataFrame,
@@ -77,7 +74,6 @@ class Downloader:
         self._scale = scale
         self._pixel_edge_size = pixel_edge_size
         self._projection = projection
-        self._look_years = look_years
 
         self._chip_data_path = chip_data_path
         self._meta_data = meta_data
@@ -199,7 +195,6 @@ class Downloader:
                 square_coords, point_coords, start_date, end_date, attributes \
                     = self._meta_data_parser(self._meta_data,
                                              index,
-                                             self._look_years,
                                              **self._parser_kwargs)
 
                 # checking for existing files and skipping if file found
@@ -222,9 +217,9 @@ class Downloader:
                 # getting utm zone and epsg code for reprojection
                 match self._projection:
                     case "UTM":
-                        epsg_code = get_utm_zone(point_coords)
+                        epsg_str = get_utm_zone(point_coords)
                     case _:
-                        epsg_code = self._projection
+                        epsg_str = self._projection
 
                 # creating payload for each square to send to GEE
                 report_queue.put(
@@ -234,15 +229,15 @@ class Downloader:
                     start_date,
                     end_date,
                     self._scale,
-                    epsg_code,
+                    epsg_str,
                     **self._generator_kwargs)
 
                 # reprojecting the image if necessary
-                if self._reproject and epsg_code is not None:
+                if self._reproject and epsg_str is not None:
                     report_queue.put(
-                        ("INFO", f"Reprojecting image payload square {index} to {epsg_code}... {square_coords}"))
+                        ("INFO", f"Reprojecting image payload square {index} to {epsg_str}... {square_coords}"))
                     image = image.reproject(
-                        crs=epsg_code, scale=self._scale)
+                        crs=epsg_str, scale=self._scale)
 
                 # encoding the image for the image consumer
                 payload = {

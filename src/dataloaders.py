@@ -30,10 +30,10 @@ class PreprocesNormalization(nn.Module):
 class ChipsDataset(Dataset):
     def __init__(self,
                  chip_size: int,
-                 base_year: int | None,
-                 back_step: int | None,
 
+                 year_step: int | None,
                  file_type: str,
+
                  sample_path: str,
                  chip_data_path: str,
                  anno_data_path: str | None,
@@ -43,8 +43,7 @@ class ChipsDataset(Dataset):
                  **kwargs):
         super().__init__(**kwargs)
         self.chip_size = chip_size
-        self.base_year = base_year
-        self.back_step = back_step
+        self.year_step = year_step
 
         self.file_type = file_type
         self.sample_path = sample_path
@@ -79,14 +78,17 @@ class ChipsDataset(Dataset):
             strata = clip_xy_xarray(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
-    def slice_year(self, xarr: xr.Dataset, year: int):
-        end_year = int(year) - self.base_year
-        start_year = end_year - self.back_step
-        return xarr.sel(year=slice(start_year, end_year+1))
+    def slice_year(self, xarr: xr.Dataset, year_idx: int):
+        return xarr.sel(year=slice(year_idx, year_idx+self.year_step))
 
     def __getitem__(self, idx):
         # loading image into xarr file
-        chip = self.chip_loader(str(self.samples[idx]))
+        if len(self.samples.shape) == 2 and self.year_step is not None:
+            img_idx, year_idx = self.samples[img_idx]
+            chip = self.chip_loader(str(img_idx))
+            chip = self.slice_year(chip, year_idx)
+        else:
+            chip = self.chip_loader(str(self.samples[idx]))
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
@@ -126,12 +128,11 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-
-        chip_size: int,
-        base_year: int | None,
-        back_step: int | None,
-
+        
+        chip_size: int = SAMPLER["pixel_edge_size"],
+        year_step: int = SAMPLER["year_step"],
         file_type: str = FILE_EXT_MAP[SAMPLER["file_type"]],
+
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
         test_sample_path: str = TEST_SAMPLE_PATH,
@@ -148,12 +149,11 @@ class ChipsDataModule(L.LightningDataModule):
         super().__init__(**kwargs)
         self.batch_size = batch_size
         self.num_workers = num_workers
-
         self.chip_size = chip_size
-        self.base_year = base_year
-        self.back_step = back_step
 
-        self.file_type = file_type.lower()
+        self.year_step = year_step
+        self.file_type = file_type
+
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
@@ -167,8 +167,7 @@ class ChipsDataModule(L.LightningDataModule):
 
         self.dataset_config = {
             "chip_size": self.chip_size,
-            "base_year": self.base_year,
-            "back_step": self.back_step,
+            "year_step": self.year_step,
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,

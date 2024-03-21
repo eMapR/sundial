@@ -77,16 +77,17 @@ class PrithviFCN(L.LightningModule):
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        map_location = "cuda" if torch.cuda.is_available() else "cpu"
-        checkpoint = torch.load(self.prithvi_path,
-                                map_location=map_location)
-        del checkpoint['pos_embed']
-        del checkpoint['decoder_pos_embed']
         self.backbone = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
         if self.prithvi_freeze:
             self.backbone.eval()
-        _ = self.backbone.load_state_dict(checkpoint, strict=False)
+        if self.prithvi_path is not None:
+            map_location = "cuda" if torch.cuda.is_available() else "cpu"
+            checkpoint = torch.load(self.prithvi_path,
+                                    map_location=map_location)
+            del checkpoint['pos_embed']
+            del checkpoint['decoder_pos_embed']
+            _ = self.backbone.load_state_dict(checkpoint, strict=False)
 
         # Initializing upscaling neck
         embed_dim = self.prithvi_params["model_args"]["embed_dim"] * \
@@ -106,10 +107,10 @@ class PrithviFCN(L.LightningModule):
                 self.criterion = nn.BCEWithLogitsLoss(reduction="sum")
                 self.activation = torch.nn.Sigmoid()
 
-    def forward(self, image):
+    def forward(self, chips):
         # gathering features
         features, _, _ = self.backbone.forward_encoder(
-            image, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
+            chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
 
         # removeing class token and reshaping to 2D representation
         features = features[:, 1:, :]
@@ -153,10 +154,51 @@ class PrithviFCN(L.LightningModule):
         return {"loss": loss, "logits": logits}
 
     def predict_step(self, batch):
-        chip, _ = batch
+        chips, _ = batch
 
         # forward pass
-        logits = self(chip)
+        logits = self(chips)
         classes = self.activation(logits)
 
         return {"classes": classes}
+
+
+class Prithvi(L.LightningModule):
+    def __init__(self,
+                 prithvi_params: dict,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.prithvi_params = prithvi_params
+        from backbones.prithvi.Prithvi import MaskedAutoencoderViT
+        self.model = MaskedAutoencoderViT(
+            **self.prithvi_params["model_args"])
+
+        self.example_input_array = torch.rand((1,
+                                               self.prithvi_params["model_args"]["in_chans"],
+                                               self.prithvi_params["model_args"]["num_frames"],
+                                               self.prithvi_params["model_args"]["img_size"],
+                                               self.prithvi_params["model_args"]["img_size"]))
+
+    def forward(self, chips):
+        return self.model.forward(chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
+
+    def training_step(self, batch):
+        chips, _ = batch
+        loss, _, _ = self(chips)
+        return {"loss": loss}
+
+    def validation_step(self, batch):
+        chips, _ = batch
+        loss, _, _ = self(chips)
+        return {"loss": loss}
+
+    def test_step(self, batch):
+        chips, _ = batch
+        loss, _, _ = self(chips)
+        return {"loss": loss}
+
+    def predict_step(self, batch):
+        chips, _ = batch
+        features, _, _ = self.model.forward_encoder(
+            chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
+        return {"features": features}

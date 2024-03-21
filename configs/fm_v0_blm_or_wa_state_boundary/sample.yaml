@@ -1,0 +1,33 @@
+file_type: ZARR
+fraction: null
+flat_annotations: false
+gee_workers: 42
+gee_stratafied_config:
+    num_points: 4096
+    num_strata: 32
+    scale: 1000
+    start_date: 1985-07-15
+    end_date: 2023-09-01
+    sources: ["ads_score"]
+groupby_columns: null
+io_limit: 32
+look_years: 38
+method: gee_stratified
+num_points: null
+num_workers: null
+overwrite: false
+pixel_edge_size: 256
+predict_ratio: 0.5
+preprocess_actions: null
+projection: EPSG:5070
+sample_toggles:
+    preprocess_data: false
+    stratify_data: false
+    generate_squares: true
+    generate_time_combinations: true
+    generate_train_test_splits: true
+scale: 30
+strata_columns: null
+test_ratio: 0.0002
+validate_ratio: 0.2
+year_step: 3

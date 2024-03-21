@@ -20,6 +20,7 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
             f"--config={run_config_path}"]
     trainer_defaults = {
         "accelerator": "cuda",
+        "log_every_n_steps": 16,
         "logger": [{
             "class_path": "TBLogger",
             "init_args": LOGGER

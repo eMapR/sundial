@@ -1,10 +1,6 @@
 model:
-    class_path: PrithviFCN
+    class_path: Prithvi
     init_args:
-        num_classes: 5
-        view_size: 16
-        upscale_depth: 2
-        prithvi_path: src/backbones/prithvi/Prithvi_100M.pt
         prithvi_params:
             model_args:
                 decoder_depth: 8
@@ -19,14 +15,12 @@ model:
                 patch_size: 16
                 tubelet_size: 1
             train_params:
-                mask_ratio: 0.0
-        prithvi_freeze: true
-        criterion: "ce"
+                mask_ratio: 0.75
 data:
     class_path: ChipsDataModule
     init_args:
         batch_size: 32
-        num_workers: 64
+        num_workers: 64 
         chip_size: 256
         means:
             - 775.2290211032589
@@ -45,4 +39,17 @@ data:
 trainer:
     callbacks:
       - class_path: PrithviFCNCallbacks
-verbose: true
+    max_epochs: 1024
+    strategy: ddp_find_unused_parameters_true
+    devices: 1
+    num_nodes: 2
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: 0.0005
+lr_scheduler:
+    class_path: torch.optim.lr_scheduler.StepLR
+    init_args:
+        step_size: 128
+        gamma: 0.5
+

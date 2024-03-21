@@ -39,6 +39,7 @@ default:
 	echo
 	echo "        setup_env:      Sets up Sundial directories and environment. The existing environment will be overwritten."
 	echo "        setup:          Sets up Sundial experiment directories and config files using defaults found in src/settings.py."
+	echo "        clink:          Copies Sundial experiment configs from source experiment to new experiment and links sample configs and data. Requires SSOURCE variable."
 	echo
 	echo "        sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile."
 	echo "        annotate:       Collects image annotations for experiment using sample polygons."
@@ -52,9 +53,10 @@ default:
 	echo "        status:         Check status of all jobs for user."
 	echo "        vars:           Print all Sundial variables."
 	echo "        (method)_out:   Watch stdout and stderr or logs for experiment."
-	echo "        (method)_err:   Print stderr from save file. Only available on HPC."
+	echo "        (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC."
 	echo
 	echo "        clean:          Removes all logs, checkpoints, and predictions for experiment."
+	echo "        clean_outs:     Removes all stdouts for experiment."
 	echo "        clean_logs:     Removes all logs for experiment."
 	echo "        clean_samp:     Removes all sample data for experiment."
 	echo "        clean_dnld:     Removes all image chip data for experiment."
@@ -62,7 +64,7 @@ default:
 	echo "        clean_ckpt:     Removes all checkpoints for experiment."
 	echo "        clean_pred:     Removes all predictions for experiment."
 	echo "        clean_expt:     Removes all logs, sample data, checkpoints, and predictions for experiment."
-	echo "        clean_all:      Removes all data for experiment including configs."
+	echo "        clean_nuke:     Removes all data for experiment including configs."
 	echo
 	echo "    Variables:"
 	echo "    These may be set at submake (see below)."
@@ -93,14 +95,28 @@ setup: _experiment_name_check
 	mkdir -p $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
 	mkdir -p $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
 	if [[ -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "Configs directory found. To restart experiment from scratch, use make clean_all then make config..."; \
+		echo "WARNING: Configs directory found. To restart experiment from scratch, use 'make clean_nuke' then make config..."; \
 	else \
-		echo "Generateing Sundial config files for experiment with values from sample and download..."; \
+		echo "Generateing Sundial config files for experiment with values from settings.py..."; \
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \
 	fi;
 
+clink: _experiment_name_check
+	if [[ -z "$(SSOURCE)" ]]; then \
+		echo "Please provide a source experiment to copy from in variable "SSOURCE" (eg 'make clink SSOURCE=14k')..."; \
+		exit 1; \
+	fi; \
+	echo "Copying Sundial experiment $(SSOURCE) configs to $(SUNDIAL_EXPERIMENT_NAME)...";
+	echo "WARNING: This will create soft links to the source sammple data and sample config file.";
+	source_exp = $(SSOURCE)_$(SUNDIAL_SAMPLE_NAME);
+	cp -r $(SUNDIAL_BASE_PATH)/configs/$$source_exp $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rf $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/sample.yaml;
+
+	ln -s $(SUNDIAL_BASE_PATH)/samples/$$source_exp $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
+	ln -s $(SUNDIAL_BASE_PATH)/configs/$$source_exp/sample.yaml $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/ sample.yaml;
+
 sample: _sample
-	echo "Processing polygon sample from $(SUNDIAL_SAMPLE_NAME) shapefile. Uno momento...";
+	echo "Processing polygon sample from $(SUNDIAL_SAMPLE_NAME) shapefile for $(SUNDIAL_EXPERIMENT_PREFIX). Uno momento...";
 	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
 	$(MAKE) -s _run
 
@@ -125,7 +141,7 @@ validate: _validate
 	$(MAKE) -s _run
 
 test: _test
-	echo "Testing model... Please check $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e...";
+	echo "Testing model... Use 'make test_err' to check for critical errors...";
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
@@ -135,7 +151,7 @@ predict: _predict
 	$(MAKE) -s _run
 
 status: _experiment_name_check _hpc_check
-	squeue -u $(USER) --format="%.18i %.9P %.30j %.8u %.8T %.10M %.9l %.6D %R";
+	squeue -u $(USER) --format="%.18i %.9P %.40j %.8u %.8T %.10M %.9l %.6D %R";
 
 vars: _experiment_name_check
 	echo "SUNDIAL_BASE_PATH: $(SUNDIAL_BASE_PATH)";
@@ -162,26 +178,38 @@ annotate_out: _annotate
 download_out: _download
 	$(MAKE) -s _watch_log
 
-fit_out: _fit _hpc_check
+fit_out: _fit
 	$(MAKE) -s _watch_std
 
-validate_out: _validate _hpc_check
+validate_out: _validate
 	$(MAKE) -s _watch_std
 
-test_out: _test _hpc_check
+test_out: _test
 	$(MAKE) -s _watch_std
 
-predict_out: _predict _hpc_check
+predict_out: _predict
 	$(MAKE) -s _watch_std
 
-sample_err: _sample _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.e
+sample_err: _sample
+	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.e; \
+	fi; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep ERROR; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep CRITICAL; \
 
-annotate_err: _annotate _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.e
+annotate_err: _annotate
+	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.e; \
+	fi; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep ERROR; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep CRITICAL; \
 
-download_err: _download _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.e
+download_err: _download
+	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.e; \
+	fi; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.log | grep ERROR; \
+	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.log | grep CRITICAL; \
 
 fit_err: _fit _hpc_check
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/fit.e
@@ -200,6 +228,12 @@ clean: _experiment_name_check
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
+
+clean_outs: _experiment_name_check
+	echo "Cleaning up outputs for $(SUNDIAL_EXPERIMENT_NAME).";
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.e
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.o
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.lo
 
 clean_logs: _experiment_name_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME).";
@@ -232,7 +266,7 @@ clean_expt: _experiment_name_check
 	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
 
-clean_all: _experiment_name_check
+clean_nuke: _experiment_name_check
 	echo "Deleting all data for $(SUNDIAL_EXPERIMENT_NAME).";
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
@@ -242,7 +276,7 @@ clean_all: _experiment_name_check
 
 _config_dir_check:
 	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "No configs found. Please run make setup_exp first..."; \
+		echo "No configs found. Please run make setup first..."; \
 		exit 1; \
 	fi;
 

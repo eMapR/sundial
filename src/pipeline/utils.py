@@ -137,22 +137,27 @@ def get_utm_zone(point_coords: list[tuple[float]]) -> int:
 def parse_meta_data(
         meta_data: pd.DataFrame,
         index: int,
-        back_step: int) -> tuple[list[tuple[float, float]],
-                                 tuple[float, float],
-                                 str,
-                                 list[tuple[float, float]],
-                                 str,
-                                 datetime | None,
-                                 datetime | None,
-                                 dict]:
+        look_years: int,
+        start_month: int,
+        start_day: int,
+        end_month: int,
+        end_day: int) -> tuple[list[tuple[float, float]],
+                               tuple[float, float],
+                               str,
+                               list[tuple[float, float]],
+                               str,
+                               datetime | None,
+                               datetime | None,
+                               dict]:
     square = meta_data.iloc[index].loc["geometry"]
     square_coords = list(square.boundary.coords)
     point_coords = list(square.centroid.coords)
 
     # generating start and end date from year attribute and back step
     end_year = meta_data.iloc[index].loc["year"]
-    end_date = datetime(end_year, 9, 1)
-    start_date = datetime(end_year - back_step, 6, 1)
+
+    end_date = datetime(end_year, end_month, end_day)
+    start_date = datetime(end_year - look_years, start_month, start_day)
 
     data_vars = meta_data.iloc[index].to_dict()
     attributes = {k: v for k, v in data_vars.items()
@@ -173,10 +178,18 @@ def function_timer(logger=None):
             end = time.time()
             if logger:
                 logger.info(
-                    f"{func.__name__} took {(end - start)/60:.2f} minutes to complete.")
+                    f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
             else:
                 print(
-                    f"{func.__name__} took {(end - start)/60:.2f} minutes to complete.")
+                    f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
             return result
         return timer
     return wrapper
+
+@function_timer()
+def get_mean_std(chip_data_path: str):
+    data = xr.open_zarr(chip_data_path)
+    data = data.to_dataarray(dim="chip")
+    means = data.mean(dim=["chip", "year", "y", "x"])
+    stds = data.std(dim=["chip", "year", "y", "x"])
+    return means, stds

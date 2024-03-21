@@ -47,6 +47,7 @@ Welcome to Sundial!
 
         setup_env:      Sets up Sundial directories and environment. The existing environment will be overwritten.
         setup:          Sets up Sundial experiment directories and config files using defaults found in src/settings.py.
+        clink:          Copies Sundial experiment configs from source experiment to new experiment and links sample configs and data. Requires SSOURCE variable.
 
         sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile.
         annotate:       Collects image annotations for experiment using chip polygons.

@@ -3,7 +3,6 @@ import geopandas as gpd
 import multiprocessing as mp
 import numpy as np
 import os
-import pandas as pd
 import xarray as xr
 import yaml
 
@@ -12,15 +11,21 @@ from typing import Literal, Any
 from rasterio.transform import from_bounds
 from rasterio.features import rasterize
 from shapely.geometry import Polygon
+from shapely import unary_union
 from sklearn.model_selection import train_test_split
 from typing import Optional
 
 from .downloader import Downloader
 from .logger import get_logger
-from .settings import SAMPLER, RANDOM_STATE, META_DATA_PATH, STRATA_ATTR_NAME, NO_DATA_VALUE, CHIP_DATA_PATH, ANNO_DATA_PATH, TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH, TEST_SAMPLE_PATH, PREDICT_SAMPLE_PATH, STRATA_MAP_PATH, GEO_PRE_PATH, GEO_RAW_PATH, LOG_PATH
-from .utils import parse_meta_data, lt_image_generator, zarr_reshape, function_timer, clip_xy_xarray, pad_xy_xarray
+from .settings import save_config, SAMPLER, RANDOM_STATE, META_DATA_PATH, STRATA_ATTR_NAME, NO_DATA_VALUE, CHIP_DATA_PATH, ANNO_DATA_PATH, TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH, TEST_SAMPLE_PATH, PREDICT_SAMPLE_PATH, STRATA_MAP_PATH, STAT_DATA_PATH, GEO_PRE_PATH, GEO_RAW_PATH, LOG_PATH
+from .utils import parse_meta_data, lt_image_generator, zarr_reshape, function_timer, clip_xy_xarray, pad_xy_xarray, get_mean_std
 
 LOGGER = get_logger(LOG_PATH, os.getenv("SUNDIAL_METHOD"))
+
+
+def gee_get_ads_score_image(
+        area_of_interest: ee.Geometry) -> ee.Image:
+    return ee.Image(os.getenv("ADS_SCORE_IMAGE_LINK")).clip(area_of_interest)
 
 
 def gee_get_elevation_image(
@@ -41,18 +46,7 @@ def gee_get_prism_image(
 def gee_get_percentile_ranges(
         single_band_image: ee.Image,
         area_of_interest: ee.Geometry,
-        percentiles: list[int]) -> list[int]:
-    """
-    Calculates the percentile ranges between 0 and 100 of a single band image within a specified area of interest.
-
-    Args:
-        single_band_image (ee.Image): The single band image.
-        area_of_interest (ee.Geometry): The area of interest.
-        percentiles (list[int]): The list of percentiles to calculate.
-
-    Returns:
-        list[int]: The sorted list of percentile ranges.
-    """
+        percentiles: ee.List) -> list[int]:
     return sorted(single_band_image.reduceRegion(
         reducer=ee.Reducer.percentile(percentiles),
         geometry=area_of_interest,
@@ -60,22 +54,11 @@ def gee_get_percentile_ranges(
     ).values().getInfo())
 
 
+@function_timer(logger=LOGGER)
 def gee_stratify_by_percentile(
         single_band_image: ee.Image,
         percentiles: list[int],
         out_band_name: str = None) -> ee.Image:
-    """
-    Stratifies a single-band image into different classes based on list of percentile ranges.
-
-    Args:
-        single_band_image (ee.Image): The single-band image to be stratified.
-        percentiles (list[int]): A list of percentiles to use for stratification.
-        out_band_name (str, optional): The name of the output band. Defaults to None.
-
-    Returns:
-        ee.Image: The stratified image.
-
-    """
     result = ee.Image(0)
     for idx in range(len(percentiles) - 1):
         mask = single_band_image.gte(percentiles[idx]).And(
@@ -86,6 +69,7 @@ def gee_stratify_by_percentile(
     return result
 
 
+@function_timer(logger=LOGGER)
 def gee_generate_random_points(
         feature: ee.Feature,
         radius: int,
@@ -99,37 +83,34 @@ def gee_generate_random_points(
     )
 
 
+@function_timer(logger=LOGGER)
 def gee_stratified_sampling(
         num_points: int,
         num_strata: int,
+        scale: int,
         start_date: datetime,
         end_date: datetime,
+        sources: Literal["prism", "elevation", "ads_score"],
         area_of_interest: ee.Geometry,
-        scale: int) -> ee.FeatureCollection:
-    """
-    Performs stratified sampling on images within a specified area of interest based on PRISM and elevation.
-
-    Args:
-        num_points (int): The total number of points to sample.
-        num_strata (int): The total number of strata to divide the data into.
-        start_date (datetime): The start date of the time range for image collection.
-        end_date (datetime): The end date of the time range for image collection.
-        area_of_interest (ee.Geometry): The area of interest for sampling.
-        scale (int): The scale at which to perform stratified sampling.
-
-    Returns:
-        ee.FeatureCollection: A feature collection containing the sampled points.
-    """
-    num_images = 2
-    num_strata = num_strata ** (1/num_images)
-    num_points = num_points // num_strata
+        projection: str) -> ee.FeatureCollection:
+    num_images = len(sources)
     percentiles = ee.List.sequence(0, 100, count=num_strata+1)
 
     # Getting mean images for stratified sampling
     raw_images = []
-    raw_images.append(gee_get_prism_image(
-        area_of_interest, start_date, end_date))
-    raw_images.append(gee_get_elevation_image(area_of_interest))
+    for source in sources:
+        match source:
+            case "prism":
+                raw_images.append(
+                    gee_get_prism_image(area_of_interest, start_date, end_date))
+            case "elevation":
+                raw_images.append(
+                    gee_get_elevation_image(area_of_interest))
+            case "ads_score":
+                raw_images.append(
+                    gee_get_ads_score_image(area_of_interest))
+            case _:
+                raise ValueError(f"Invalid source: {source}")
 
     # stratify by percentile
     stratified_images = []
@@ -140,20 +121,26 @@ def gee_stratified_sampling(
             gee_stratify_by_percentile(image, percentile_ranges))
 
     # concatenate stratified images
-    combined = ee.Image.cat(stratified_images)
-    num_bands = num_images
-    concatenate_expression = " + ".join(
-        [f"(b({i})*(100**{i}))" for i in range(num_bands)])
-    concatenated = combined.expression(concatenate_expression).toInt()
+    if num_images == 1:
+        population = stratified_images[0]
+    else:
+        combined = ee.Image.cat(stratified_images)
+        num_bands = num_images
+        concatenate_expression = " + ".join(
+            [f"(b({i})*(100**{i}))" for i in range(num_bands)])
+        population = combined.expression(concatenate_expression).toInt()
 
-    return concatenated.stratifiedSample(
+    return population.stratifiedSample(
         num_points,
         region=area_of_interest,
         scale=scale,
+        projection=projection,
         geometries=True)
 
 
-def gee_download_features(features: ee.FeatureCollection) -> gpd.GeoDataFrame:
+@function_timer(logger=LOGGER)
+def gee_download_features(
+        features: ee.FeatureCollection) -> gpd.GeoDataFrame:
     try:
         return ee.data.computeFeatures({
             "expression": features,
@@ -205,7 +192,7 @@ def preprocess_data(
 
 
 @function_timer(logger=LOGGER)
-def stratified_sample(
+def stratify_data(
     geo_dataframe: gpd.GeoDataFrame,
     fraction: Optional[float] = None,
     num_points: Optional[int] = None,
@@ -227,6 +214,7 @@ def stratified_sample(
 def generate_centroid_squares(
         geo_dataframe: gpd.GeoDataFrame,
         meter_edge_size: int) -> gpd.GeoDataFrame:
+    # TODO: calculate edge_size from scale and non 5070 projections
     geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
         .apply(lambda p: p.centroid.buffer(meter_edge_size//2).envelope)
     return geo_dataframe
@@ -238,34 +226,51 @@ def generate_squares(
         method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
         meta_data_path: str,
         meter_edge_size: int | float,
-        gee_num_points: Optional[int] = None,
-        gee_num_strata: Optional[int] = None,
-        gee_start_date: Optional[datetime] = None,
-        gee_end_date: Optional[datetime] = None,
-        gee_strata_scale: Optional[int] = None,
+        projection: Optional[str] = None,
+        gee_stratafied_config: Optional[dict] = None,
         strata_map_path: Optional[str] = None,
         strata_columns: Optional[list[str]] = None) -> tuple[gpd.GeoDataFrame, int]:
-    LOGGER.info(f"Generating squares from sample points using {method}...")
+    epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
+    if projection is not None and epsg != projection:
+        LOGGER.info(f"Reprojecting geo dataframe to {projection}...")
+        geo_dataframe = geo_dataframe.to_crs(projection)
+        epsg = projection
+
+    LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "convering_grid":
             raise NotImplementedError
         case "random":
             raise NotImplementedError
         case "gee_stratified":
-            raise NotImplementedError
+            ee.Initialize()
+            even_odd = True if epsg == "EPSG:4326" else False
+            area_of_interest = unary_union(geo_dataframe.geometry)
+            area_of_interest = ee.Geometry.Polygon(
+                list(area_of_interest.exterior.coords), proj=epsg, evenOdd=even_odd)
+            gee_stratafied_config["area_of_interest"] = area_of_interest
+            gee_stratafied_config["projection"] = epsg
+
+            points = gee_stratified_sampling(**gee_stratafied_config)
+            points = gee_download_features(points).set_crs("EPSG:4326")
+            gdf = generate_centroid_squares(
+                points,
+                meter_edge_size)
+            gdf.loc[:, "year"] = gee_stratafied_config["end_date"].year
         case "centroid":
             gdf = generate_centroid_squares(
                 geo_dataframe,
                 meter_edge_size)
 
-    LOGGER.info("Saving geo dataframe and strata to file...")
     if strata_columns is not None and strata_map_path is not None:
+        LOGGER.info(f"Saving strata map to {strata_map_path}...")
         gdf.loc[:, STRATA_ATTR_NAME] = gdf.loc[:, strata_columns].astype(
             str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
         strata_map = {v: k for k, v in enumerate(
             gdf[STRATA_ATTR_NAME].unique(), 1)}
         with open(strata_map_path, "w") as f:
             yaml.dump(strata_map, f, default_flow_style=False)
+    LOGGER.info(f"Saving geo dataframe to {meta_data_path}...")
     gdf.to_file(meta_data_path)
 
     return len(gdf), gdf
@@ -274,23 +279,18 @@ def generate_squares(
 @function_timer(logger=LOGGER)
 def generate_time_combinations(
         num_samples: int,
-        start_year: int,
-        end_year: int,
-        back_step: int,
-        time_sample_path: str) -> int:
-    years = range(end_year, start_year + back_step, -1)
-    df_years = pd.DataFrame(years, columns=["year"])
+        num_years: int,
+        year_step: int) -> np.ndarray:
+    start = num_years % year_step
+    sample_arr = np.arange(num_samples)
+    year_arr = np.arange(num_years)[start::year_step]
 
-    df_list = []
-    for idx in range(num_samples):
-        new_df = df_years.copy()
-        new_df.loc[:, "index"] = idx
-        df_list.append(new_df)
-    df_time = pd.concat(df_list, axis=0)
-    df_time = df_time.reset_index(drop=True)
-    df_time.to_file(time_sample_path)
+    sample_arr, year_arr = np.meshgrid(sample_arr, year_arr)
+    sample_arr = sample_arr.flatten()
+    year_arr = year_arr.flatten()
+    time_arr = np.column_stack((sample_arr, year_arr))
 
-    return len(df_time)
+    return time_arr
 
 
 def rasterizer(polygons: gpd.GeoSeries,
@@ -361,6 +361,7 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
             xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
             xarr_anno[stratum_idx-1:stratum_idx, :, :] = annotation
 
+        LOGGER.info(f"Appending rasterized sample {index} to batch...")
         xarr_anno.name = str(index)
         batch.append(xarr_anno)
         if len(batch) == io_limit:
@@ -368,7 +369,8 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
             with io_lock:
                 xarr_anno.to_zarr(store=anno_data_path, mode="a")
             batch.clear()
-        LOGGER.info(f"Rasterized sample {index}.")
+
+        LOGGER.info(f"Rasterize sample {index} completed.")
     with io_lock:
         xarr_anno = xr.merge(batch)
         xarr_anno.to_zarr(store=anno_data_path, mode="a")
@@ -395,6 +397,8 @@ def generate_annotation_data(
     index_queue = manager.Queue()
     io_lock = manager.Lock()
 
+    LOGGER.info(
+        f"Starting annotation generation for {num_samples} samples using {num_workers}...")
     [index_queue.put(i) for i in range(num_samples)]
     [index_queue.put(None) for _ in range(num_workers)]
     rasterizers = set()
@@ -425,14 +429,15 @@ def generate_image_chip_data(downloader_kwargs):
     downloader.start()
 
 
+@function_timer(logger=LOGGER)
 def sample():
     num_samples = None
     try:
         LOGGER.info("Loading geo file into GeoDataFrame...")
         geo_dataframe = gpd.read_file(GEO_RAW_PATH)
 
-        LOGGER.info("Preprocessing data...")
-        if SAMPLER["preprocess_data"]:
+        if SAMPLER["sample_toggles"]["preprocess_data"]:
+            LOGGER.info("Preprocessing data in geo file...")
             sample_config = {
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER["preprocess_actions"],
@@ -440,28 +445,25 @@ def sample():
             geo_dataframe = preprocess_data(**sample_config)
             geo_dataframe.to_file(GEO_PRE_PATH)
 
-        LOGGER.info("Stratified sampling of data...")
-        if SAMPLER["stratified_sample"]:
+        if SAMPLER["sample_toggles"]["stratify_data"]:
+            LOGGER.info("Stratifying data in geo file...")
             group_config = {
                 "geo_dataframe": geo_dataframe,
                 "fraction": SAMPLER["fraction"],
                 "num_points": SAMPLER["num_points"],
                 "strata_columns": SAMPLER["strata_columns"],
             }
-            sample_dataframe = stratified_sample(**group_config)
+            geo_dataframe = stratify_data(**group_config)
 
-        if SAMPLER["generate_squares"]:
+        if SAMPLER["sample_toggles"]["generate_squares"]:
             LOGGER.info("Generating squares...")
             square_config = {
-                "geo_dataframe": sample_dataframe,
+                "geo_dataframe": geo_dataframe,
                 "method": SAMPLER["method"],
                 "meta_data_path": META_DATA_PATH,
                 "meter_edge_size": SAMPLER["scale"] * SAMPLER["pixel_edge_size"],
-                "gee_num_points": SAMPLER["gee_num_points"],
-                "gee_num_strata": SAMPLER["gee_num_strata"],
-                "gee_start_date": SAMPLER["gee_start_date"],
-                "gee_end_date": SAMPLER["gee_end_date"],
-                "gee_strata_scale": SAMPLER["gee_strata_scale"],
+                "projection": SAMPLER["projection"],
+                "gee_stratafied_config": SAMPLER["gee_stratafied_config"],
                 "strata_map_path": STRATA_MAP_PATH,
                 "strata_columns": SAMPLER["strata_columns"],
             }
@@ -471,30 +473,30 @@ def sample():
             gdf = gpd.read_file(META_DATA_PATH)
             num_samples = len(gdf)
 
-        if SAMPLER["generate_time_combinations"]:
+        if SAMPLER["sample_toggles"]["generate_time_combinations"]:
             LOGGER.info("Generating time combinations...")
+            num_years = SAMPLER["look_years"] + 1
             time_sample_config = {
-                "start_year": SAMPLER["start_date"].year,
-                "end_year": SAMPLER["end_date"].year,
-                "back_step": SAMPLER["back_step"],
-                "time_sample_path": SAMPLER["time_sample_path"]
+                "num_samples": num_samples,
+                "num_years": num_years,
+                "year_step": SAMPLER["year_step"]
             }
-            num_samples = generate_time_combinations(
-                num_samples, **time_sample_config)
+            samples = generate_time_combinations(**time_sample_config)
+        else:
+            samples = np.arange(num_samples)
 
-        if SAMPLER["generate_train_test_splits"]:
+        if SAMPLER["sample_toggles"]["generate_train_test_splits"]:
             LOGGER.info(
                 "Splitting sample data into training, validation, test, and predict sets...")
-            indices = np.arange(num_samples)
             train, validate = train_test_split(
-                indices, test_size=SAMPLER["validate_ratio"])
+                samples, test_size=SAMPLER["validate_ratio"])
             validate, test = train_test_split(
                 validate, test_size=SAMPLER["test_ratio"])
             test, predict = train_test_split(
                 test, test_size=SAMPLER["predict_ratio"])
 
             LOGGER.info("Saving sample data splits to paths...")
-            idx_lsts = [train, test, validate, predict]
+            idx_lsts = [train, validate, test, predict]
             paths = [TRAIN_SAMPLE_PATH,
                      VALIDATE_SAMPLE_PATH,
                      TEST_SAMPLE_PATH,
@@ -503,7 +505,7 @@ def sample():
                 np.save(path, idx_lst)
         else:
             if not os.path.exists(TRAIN_SAMPLE_PATH):
-                np.save(TRAIN_SAMPLE_PATH, np.arange(num_samples))
+                np.save(TRAIN_SAMPLE_PATH, samples)
 
     except Exception as e:
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")
@@ -511,11 +513,14 @@ def sample():
 
 
 def annotate():
-    LOGGER.info("Loading geo files into GeoDataFrame...")
-    population_gdf = gpd.read_file(GEO_PRE_PATH)
-    sample_gdf = gpd.read_file(META_DATA_PATH)
+    try:
+        LOGGER.info("Loading geo files into GeoDataFrame...")
+        if os.path.exists(GEO_PRE_PATH):
+            population_gdf = gpd.read_file(GEO_PRE_PATH)
+        else:
+            population_gdf = gpd.read_file(GEO_RAW_PATH)
+        sample_gdf = gpd.read_file(META_DATA_PATH)
 
-    if SAMPLER["generate_annotation_data"]:
         LOGGER.info("Generating annotation data from samples...")
         annotation_config = {
             "population_gdf": population_gdf,
@@ -531,20 +536,25 @@ def annotate():
             "io_limit": SAMPLER["io_limit"],
         }
         generate_annotation_data(**annotation_config)
+    except Exception as e:
+        LOGGER.critical(f"Failed to generate annotations: {type(e)} {e}")
+        raise e
 
 
 def download():
-    LOGGER.info("Loading geo file into GeoDataFrame...")
-    gdf = gpd.read_file(META_DATA_PATH)
-    if SAMPLER["generate_image_chip_data"]:
+    try:
+        LOGGER.info("Loading geo file into GeoDataFrame...")
+        gdf = gpd.read_file(META_DATA_PATH)
+
         LOGGER.info("Generating image chips from samples...")
+        parser_kwargs = SAMPLER["medoid_config"]
+        parser_kwargs["look_years"] = SAMPLER["look_years"]
         downloader_kwargs = {
             "file_type": SAMPLER["file_type"],
             "overwrite": SAMPLER["overwrite"],
             "scale": SAMPLER["scale"],
             "pixel_edge_size": SAMPLER["pixel_edge_size"],
             "projection": SAMPLER["projection"],
-            "look_years": SAMPLER["look_years"],
             "chip_data_path": CHIP_DATA_PATH,
             "meta_data": gdf,
             "meta_data_parser": parse_meta_data,
@@ -553,5 +563,19 @@ def download():
             "num_workers": SAMPLER["gee_workers"],
             "io_limit": SAMPLER["io_limit"],
             "logger": LOGGER,
+            "parser_kwargs": parser_kwargs,
         }
         generate_image_chip_data(downloader_kwargs)
+
+        LOGGER.info("Calculating image chip statistics...")
+        means, stds = get_mean_std(CHIP_DATA_PATH)
+        save_config(
+            {
+                "means": means,
+                "stds": stds
+            },
+            STAT_DATA_PATH
+        )
+    except Exception as e:
+        LOGGER.critical(f"Failed to download images: {type(e)} {e}")
+        raise e

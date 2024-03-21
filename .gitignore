@@ -165,3 +165,4 @@ logs/
 samples/
 checkpoints/
 predictions/
+*.tar.gz

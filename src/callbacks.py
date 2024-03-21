@@ -49,7 +49,7 @@ class PrithviFCNCallbacks(L.Callback):
         for i in range(chips.shape[0]):
             index = indices[i]
             chip = chips[i]
-            
+
             # add each band separately
             for j in range(chip.shape[1]):
                 band = chip[j, :, :, :]
@@ -75,3 +75,31 @@ class PrithviFCNCallbacks(L.Callback):
                 img_tensor=logit,
                 dataformats="NCHW"
             )
+
+
+class PrithviCallbacks(L.Callback):
+    def on_train_batch_end(self,
+                           trainer: L.pytorch.trainer.trainer,
+                           pl_module: L.LightningModule,
+                           outputs: torch.Tensor,
+                           batch: torch.Tensor,
+                           batch_idx: int,):
+        pl_module.log(
+            name="train_loss",
+            value=outputs["loss"],
+            prog_bar=True,
+        )
+
+    def on_validation_batch_end(self,
+                                trainer: L.pytorch.trainer.trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: torch.Tensor,
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        pl_module.log(
+            name="val_loss",
+            value=outputs["loss"],
+            prog_bar=True,
+            sync_dist=True
+        )
