@@ -3,6 +3,7 @@ import torch
 
 from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import CometLogger
 
 from callbacks import *
 from dataloaders import *
@@ -30,10 +31,7 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
     trainer_defaults = {
         "accelerator": "cuda",
         "log_every_n_steps": 16,
-        "logger": [{
-            "class_path": "CometLogger",
-            "init_args": LOGGER
-        }],
+        "logger": [CometLogger(**LOGGER)],
         "enable_progress_bar": False
     }
 
