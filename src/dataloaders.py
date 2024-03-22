@@ -146,6 +146,8 @@ class ChipsDataModule(L.LightningDataModule):
         **kwargs
     ):
         super().__init__(**kwargs)
+        self.save_hyperparameters()
+        
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.chip_size = chip_size

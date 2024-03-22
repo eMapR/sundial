@@ -24,6 +24,7 @@ class PrithviFCNCallbacks(L.Callback):
         )
         pl_module.logger.log_metrics(
             metrics={"train_loss": outputs["loss"]},
+            step=trainer.global_step
         )
 
     def on_validation_batch_end(self,
@@ -42,18 +43,15 @@ class PrithviFCNCallbacks(L.Callback):
         )
         pl_module.logger.log_metrics(
             metrics={"val_loss": outputs["loss"]},
+            step=trainer.global_step
         )
-        
+        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Loss: {outputs["loss"]}")
+                
     def on_train_epoch_start(self,
                        trainer: L.Trainer,
                        pl_module: L.LightningModule):
         LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Batches: {trainer.num_training_batches}")
     
-    def on_validation_epoch_end(self,
-                                    trainer: L.Trainer,
-                                    pl_module: L.LightningModule):
-        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Loss: {trainer.logged_metrics["val_loss"]}")
-
     def on_test_batch_end(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule,
