@@ -1,8 +1,6 @@
 import os
 import yaml
 
-from datetime import date
-
 
 def save_config(config, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -189,7 +187,6 @@ LOGGER = {
     "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
     "project_name": os.getenv("SUNDIAL_SAMPLE_NAME").replace("_", "-"),
-    "rest_api_key": os.getenv("COMET_REST_API_KEY"),
     "experiment_name": os.getenv("SUNDIAL_EXPERIMENT_PREFIX"),
 }
 

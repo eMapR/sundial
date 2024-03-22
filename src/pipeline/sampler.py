@@ -242,7 +242,6 @@ def stratify_data(
 def generate_centroid_squares(
         geo_dataframe: gpd.GeoDataFrame,
         meter_edge_size: int) -> gpd.GeoDataFrame:
-    # TODO: calculate edge_size from scale and non 5070 projections
     geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
         .apply(lambda p: p.centroid.buffer(meter_edge_size//2).envelope)
     return geo_dataframe
@@ -280,10 +279,10 @@ def generate_squares(
             gee_stratafied_config["projection"] = epsg
 
             points = gee_stratified_sampling(**gee_stratafied_config)
-            points = gee_download_features(points).set_crs("EPSG:4326")
-            gdf = generate_centroid_squares(
-                points,
-                meter_edge_size)
+            points = gee_download_features(points)\
+                .set_crs("EPSG:4326")\
+                .to_crs(epsg)
+            gdf = generate_centroid_squares(points, meter_edge_size)
             gdf.loc[:, "year"] = gee_stratafied_config["end_date"].year
         case "centroid":
             gdf = generate_centroid_squares(

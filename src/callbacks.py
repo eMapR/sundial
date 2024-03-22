@@ -24,7 +24,6 @@ class PrithviFCNCallbacks(L.Callback):
         )
         pl_module.logger.log_metrics(
             metrics={"train_loss": outputs["loss"]},
-            step=trainer.global_step
         )
 
     def on_validation_batch_end(self,
@@ -43,7 +42,6 @@ class PrithviFCNCallbacks(L.Callback):
         )
         pl_module.logger.log_metrics(
             metrics={"val_loss": outputs["loss"]},
-            step=trainer.global_step
         )
         
     def on_train_epoch_start(self,
@@ -51,7 +49,7 @@ class PrithviFCNCallbacks(L.Callback):
                        pl_module: L.LightningModule):
         LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Batches: {trainer.num_training_batches}")
     
-    def on_validation_epoch_start(self,
+    def on_validation_epoch_end(self,
                                     trainer: L.Trainer,
                                     pl_module: L.LightningModule):
         LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Loss: {trainer.logged_metrics["val_loss"]}")
@@ -70,7 +68,8 @@ class PrithviFCNCallbacks(L.Callback):
         pl_module.log(
             name="test_loss",
             value=loss,
-            on_step=True
+            logger=False,
+            prog_bar=False,
         )
 
         for i in range(chips.shape[0]):
@@ -79,34 +78,33 @@ class PrithviFCNCallbacks(L.Callback):
 
             # save each band separately
             # TODO: unnormalize the bands
-            for j in range(chip.shape[1]):
-                band = chip[j, :, :, :]
-                band = band.unsqueeze(1)
+            for b in range(chip.shape[1]):
+                band = chip[b, :, :, :]
                 for t in range(band.shape[0]):
                     pl_module.logger.experiment.log_image(
-                        tag=f"{index:07d}_b{j}_t{t}_chip",
-                        img_tensor=band[t],
-                        dataformats="NCHW"
+                        tag=f"{index:07d}_b{b}_t{t}_chip",
+                        img_tensor=band[t].unsqueeze(0),
+                        image_channels="first"
                     )
 
             # save annotations and predictions
+            # TODO: flatten and overlay annotations onto chips
             pred = annotations[i]
-            pred = pred.unsqueeze(1)
             for c in range(pred.shape[0]):
                 pl_module.logger.experiment.add_image(
                     tag=f"{index:07d}_c{c}_anno",
-                    img_tensor=pred[c],
-                    dataformats="NCHW"
+                    img_tensor=pred[c].unsqueeze(0),
+                    image_channels="first"
                 )
 
             # save logits generated from model
+            # TODO: flatten and overlay predictions onto chips
             logit = logits[i]
-            logit = logit.unsqueeze(1)
             for c in range(logit.shape[0]):
                 pl_module.logger.experiment.add_image(
                     tag=f"{index:07d}_c{c}_pred",
-                    img_tensor=logit[c],
-                    dataformats="NCHW"
+                    img_tensor=logit[c].unsqueeze(0),
+                    image_channels="first"
                 )
 
     def on_predict_batch_end(self,
