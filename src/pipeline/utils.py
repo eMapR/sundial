@@ -186,10 +186,11 @@ def function_timer(logger=None):
         return timer
     return wrapper
 
+
 @function_timer()
 def get_xarr_mean_std(chip_data_path: str):
     data = xr.open_zarr(chip_data_path)
     data = data.to_dataarray(dim="chip")
     means = data.mean(dim=["chip", "year", "y", "x"])
     stds = data.std(dim=["chip", "year", "y", "x"])
-    return means, stds
+    return means.values.tolist(), stds.values.tolist()

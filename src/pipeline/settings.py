@@ -55,12 +55,13 @@ TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
 GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
 GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
 
-# image and meta data settings
+# non configurable GEE, image, and meta data settings
 RANDOM_STATE = 42
 MASK_LABELS = ["cloud"]
 STRATA_ATTR_NAME = "stratum"
-GEE_REQUEST_LIMIT = 40
 NO_DATA_VALUE = 0
+GEE_REQUEST_LIMIT = 40
+EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
 
 # GEE file type settings
 FILE_EXT_MAP = {
@@ -184,10 +185,12 @@ CHECKPOINT = {
 
 # default lightning logger settings
 LOGGER = {
-    "name": METHOD,
+    "api_key": os.getenv("COMET_API_KEY"),
+    "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
-    "log_graph": True,
-    "default_hp_metric": False
+    "project_name": os.getenv("SUNDIAL_SAMPLE_NAME").replace("_", "-"),
+    "rest_api_key": os.getenv("COMET_REST_API_KEY"),
+    "experiment_name": os.getenv("SUNDIAL_EXPERIMENT_PREFIX"),
 }
 
 if __name__ == "__main__":

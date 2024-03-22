@@ -2,7 +2,11 @@ import lightning as L
 import os
 import torch
 
-from pipeline.settings import PREDICTION_PATH
+from pipeline.logger import get_logger
+from pipeline.settings import PREDICTION_PATH, META_DATA_PATH, LOG_PATH, SAMPLER
+from utils import tensors_to_tifs
+
+LOGGER = get_logger(LOG_PATH, os.getenv("SUNDIAL_METHOD"))
 
 
 class PrithviFCNCallbacks(L.Callback):
@@ -15,7 +19,12 @@ class PrithviFCNCallbacks(L.Callback):
         pl_module.log(
             name="train_loss",
             value=outputs["loss"],
-            prog_bar=True,
+            logger=False,
+            prog_bar=False,
+        )
+        pl_module.logger.log_metrics(
+            metrics={"train_loss": outputs["loss"]},
+            step=trainer.global_step
         )
 
     def on_validation_batch_end(self,
@@ -28,9 +37,24 @@ class PrithviFCNCallbacks(L.Callback):
         pl_module.log(
             name="val_loss",
             value=outputs["loss"],
-            prog_bar=True,
+            logger=False,
+            prog_bar=False,
             sync_dist=True
         )
+        pl_module.logger.log_metrics(
+            metrics={"val_loss": outputs["loss"]},
+            step=trainer.global_step
+        )
+        
+    def on_train_epoch_start(self,
+                       trainer: L.Trainer,
+                       pl_module: L.LightningModule):
+        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Batches: {trainer.num_training_batches}")
+    
+    def on_validation_epoch_start(self,
+                                    trainer: L.Trainer,
+                                    pl_module: L.LightningModule):
+        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Loss: {trainer.logged_metrics["val_loss"]}")
 
     def on_test_batch_end(self,
                           trainer: L.Trainer,
@@ -58,29 +82,32 @@ class PrithviFCNCallbacks(L.Callback):
             for j in range(chip.shape[1]):
                 band = chip[j, :, :, :]
                 band = band.unsqueeze(1)
-                pl_module.logger.experiment.add_images(
-                    tag=f"{index:07d}_b{j}_chip",
-                    img_tensor=band,
-                    dataformats="NCHW"
-                )
+                for t in range(band.shape[0]):
+                    pl_module.logger.experiment.log_image(
+                        tag=f"{index:07d}_b{j}_t{t}_chip",
+                        img_tensor=band[t],
+                        dataformats="NCHW"
+                    )
 
             # save annotations and predictions
             pred = annotations[i]
             pred = pred.unsqueeze(1)
-            pl_module.logger.experiment.add_images(
-                tag=f"{index:07d}_anno",
-                img_tensor=pred,
-                dataformats="NCHW"
-            )
+            for c in range(pred.shape[0]):
+                pl_module.logger.experiment.add_image(
+                    tag=f"{index:07d}_c{c}_anno",
+                    img_tensor=pred[c],
+                    dataformats="NCHW"
+                )
 
             # save logits generated from model
             logit = logits[i]
             logit = logit.unsqueeze(1)
-            pl_module.logger.experiment.add_images(
-                tag=f"{index:07d}_pred",
-                img_tensor=logit,
-                dataformats="NCHW"
-            )
+            for c in range(logit.shape[0]):
+                pl_module.logger.experiment.add_image(
+                    tag=f"{index:07d}_c{c}_pred",
+                    img_tensor=logit[c],
+                    dataformats="NCHW"
+                )
 
     def on_predict_batch_end(self,
                              trainer: L.Trainer,
@@ -97,6 +124,15 @@ class PrithviFCNCallbacks(L.Callback):
             path = os.path.join(PREDICTION_PATH, f"{index:07d}_pred.pt")
             torch.save(pred, path)
 
+    def on_predict_end(self,
+                       trainer: L.Trainer,
+                       pl_module: L.LightningModule) -> None:
+        LOGGER.info(f"Model prediction completed. Converting to tifs with spatial metadata. num_workers={SAMPLER["num_workers"]}...")
+        tensors_to_tifs(PREDICTION_PATH,
+                        PREDICTION_PATH,
+                        META_DATA_PATH,
+                        SAMPLER["num_workers"])
+
 
 class PrithviCallbacks(L.Callback):
     def on_train_batch_end(self,
@@ -108,7 +144,8 @@ class PrithviCallbacks(L.Callback):
         pl_module.log(
             name="train_loss",
             value=outputs["loss"],
-            prog_bar=True,
+            logger=False,
+            prog_bar=False,
         )
 
     def on_validation_batch_end(self,
@@ -121,6 +158,7 @@ class PrithviCallbacks(L.Callback):
         pl_module.log(
             name="val_loss",
             value=outputs["loss"],
-            prog_bar=True,
+            logger=False,
+            prog_bar=False,
             sync_dist=True
         )

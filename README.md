@@ -31,7 +31,7 @@ Welcome to Sundial!
         package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives.
         status:         Check status of all jobs for user.
         vars:           Print all Sundial variables.
-        (method)_out:   Watch stdout and stderr or logs for experiment.
+        (method)_out:   Watch logs and stdout/stderr on HPC for experiment.
         (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC.
 
         clean:          Removes all logs, checkpoints, and predictions for experiment.
@@ -82,8 +82,8 @@ Experiment directories will be generated with the appropriate paths for all file
 # Set environment variables for experiment. These variables can also be set at submake.
 conda env config vars set \
     SUNDIAL_PROCESSING=local \
-    SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 \
-    SUNDIAL_EXPERIMENT_PREFIX=14k
+    SUNDIAL_SAMPLE_NAME=ads_1990-2022 \
+    SUNDIAL_EXPERIMENT_PREFIX=5c
 
 make setup
 ```
@@ -114,10 +114,7 @@ make fit
 ```
 
 ### 7. View logs.
-Tensorboard is used as the logging package for images and training data. The browser based interface is impractical on a slurm based HPC where web hosting might not be available. Tensorboard logs can be accessed using the submake: 'make package,' copying the tarbell to a local directory, and running the command below. Alternatively, a separate logger can be written and included via config files.
-```console
-tensorboard --logdir logs
-```
+Comet is used as the default logging package for images and training data. See [Lightning Comet Docs](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet) and [Comet Experiment Docs](https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/#experimentlog_metric) for more details. Environment variables needed can be found in src/settings.py Alternatively, a separate logger can be written and included via config files.
 
 ## Config files
 

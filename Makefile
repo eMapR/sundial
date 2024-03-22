@@ -52,7 +52,7 @@ default:
 	echo "        package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives."
 	echo "        status:         Check status of all jobs for user."
 	echo "        vars:           Print all Sundial variables."
-	echo "        (method)_out:   Watch stdout and stderr or logs for experiment."
+	echo "        (method)_out:   Watch logs and stdout/stderr on HPC for experiment."
 	echo "        (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC."
 	echo
 	echo "        clean:          Removes all logs, checkpoints, and predictions for experiment."
@@ -341,6 +341,7 @@ _watch_std: _experiment_name_check _hpc_check
 		tput clear; \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).e; \
 		awk 'END {print}' $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).o; \
+		tail $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log; \
 		sleep 4; \
 	done;
 

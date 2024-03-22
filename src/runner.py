@@ -6,17 +6,16 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 
 from callbacks import *
 from dataloaders import *
-from loggers import *
 from models import *
 from utils import get_best_ckpt
 
 from pipeline.settings import (
+    load_config,
     RANDOM_STATE,
     CONFIG_PATH,
     CHECKPOINT_PATH,
     LOGGER,
     CHECKPOINT,
-    load_config
 )
 
 
@@ -32,9 +31,10 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
         "accelerator": "cuda",
         "log_every_n_steps": 16,
         "logger": [{
-            "class_path": "TBLogger",
+            "class_path": "CometLogger",
             "init_args": LOGGER
         }],
+        "enable_progress_bar": False
     }
 
     # setting up default callbacks for fit method
