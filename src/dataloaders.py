@@ -11,8 +11,10 @@ from typing import Literal, Optional
 
 from pipeline.utils import clip_xy_xarray
 from pipeline.settings import (
+    load_config,
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
+    STAT_DATA_PATH,
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
     TEST_SAMPLE_PATH,
@@ -140,14 +142,13 @@ class ChipsDataModule(L.LightningDataModule):
         predict_sample_path: str = PREDICT_SAMPLE_PATH,
         chip_data_path: str = CHIP_DATA_PATH,
         anno_data_path: str = ANNO_DATA_PATH,
-        means: Optional[list[float]] = None,
-        stds: Optional[list[float]] = None,
+        stat_data_path: str = STAT_DATA_PATH,
 
         **kwargs
     ):
         super().__init__(**kwargs)
         self.save_hyperparameters()
-        
+
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.chip_size = chip_size
@@ -159,8 +160,13 @@ class ChipsDataModule(L.LightningDataModule):
         self.predict_sample_path = predict_sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
-        self.means = means
-        self.stds = stds
+        self.stat_data_path = stat_data_path
+
+        # loading means and stds from stat_data_path
+        if os.path.exists(self.stat_data_path):
+            stats = load_config(self.stat_data_path)
+            self.means = stats["means"]
+            self.stds = stats["stds"]
 
         self.dataset_config = {
             "chip_size": self.chip_size,
