@@ -44,8 +44,8 @@ SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data")
 STRATA_MAP_PATH = os.path.join(SAMPLE_PATH, "strata_map.yaml")
 STAT_DATA_PATH = os.path.join(SAMPLE_PATH, "stat_data.yaml")
-CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data.zarr")
-ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data.zarr")
+CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data")
+ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data")
 TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.npy")
 VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.npy")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
@@ -72,6 +72,7 @@ FILE_EXT_MAP = {
 
 SAMPLER = {
     # sampling settings
+    # (dict) toggles for subprocesses within the sampler
     "sample_toggles": {
         "preprocess_data": True,
         "stratify_data": True,
@@ -81,6 +82,7 @@ SAMPLER = {
     },
 
     # date information for medoid composites
+    # (dict | None) image generator / parser kwargs for download
     "medoid_config": {
         "start_month": 7,
         "start_day": 15,
@@ -107,12 +109,20 @@ SAMPLER = {
     "year_step": None,  # (int | None) number of years between each sample + 1
 
     # gee strata settings
+    # (dict | None) settings for strata generation (None for no strata generation
     "gee_stratafied_config": {
+        # (int) number of points to generate per stratum
         "num_points": None,
+        # (int) number of strata to generate per data source
         "num_strata": None,
+        # (int) scale to perform stratification
         "scale": None,
+        # (int) start date to filter source images
         "start_date": None,
-        "end_date": None
+        # (int) end date to filter source images
+        "end_date": None,
+        # (list[Literal["prism", "elevation", "ads"]]) data sources to use for stratification
+        "sources": None
     },
 
     # train test split settings
@@ -124,7 +134,7 @@ SAMPLER = {
     "predict_ratio": 5e-1,
 
     # image and downloadng settings
-    # (Literal["fit", "validate", "test", "predict"]) file type to download from GEE
+    # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE
     "file_type": "ZARR",
     # (bool) whether to overwrite existing files
     "overwrite": False,
@@ -146,16 +156,23 @@ SAMPLER = {
     "io_limit": 32,
 }
 
+# loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
     SAMPLER = SAMPLER | load_config(SAMPLE_CONFIG_PATH)
 
-# pytorch lightning settings
+if SAMPLER["file_type"] == "ZARR":
+    ext = FILE_EXT_MAP[SAMPLER["file_type"]]
+    CHIP_DATA_PATH = CHIP_DATA_PATH + f".{ext}"
+    ANNO_DATA_PATH = ANNO_DATA_PATH + f".{ext}"
+
+# default lightning dataloader settings
 DATALOADER = {
     "batch_size": 16,
     "num_workers": 8,
     "chip_size": SAMPLER["pixel_edge_size"],
 }
 
+# default lightning model checkpoint save settings
 CHECKPOINT = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "epoch-{epoch}_val_loss-{val_loss:.2f}",
@@ -165,6 +182,7 @@ CHECKPOINT = {
     "every_n_epochs": 1,
 }
 
+# default lightning logger settings
 LOGGER = {
     "name": METHOD,
     "save_dir": LOG_PATH,
@@ -183,6 +201,8 @@ if __name__ == "__main__":
             "init_args": DATALOADER
         }
     }
+
+    # creating run configs for fit, validate, test and predict
     for method in ["fit", "validate", "test", "predict"]:
         run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
         match method:

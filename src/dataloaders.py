@@ -10,7 +10,16 @@ from torch.utils.data import Dataset, DataLoader
 from typing import Literal, Optional
 
 from pipeline.utils import clip_xy_xarray
-from pipeline.settings import CHIP_DATA_PATH, ANNO_DATA_PATH, TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH, TEST_SAMPLE_PATH, PREDICT_SAMPLE_PATH, SAMPLER, FILE_EXT_MAP
+from pipeline.settings import (
+    CHIP_DATA_PATH,
+    ANNO_DATA_PATH,
+    TRAIN_SAMPLE_PATH,
+    VALIDATE_SAMPLE_PATH,
+    TEST_SAMPLE_PATH,
+    PREDICT_SAMPLE_PATH,
+    SAMPLER,
+    FILE_EXT_MAP
+)
 
 
 class PreprocesNormalization(nn.Module):
@@ -30,32 +39,26 @@ class PreprocesNormalization(nn.Module):
 class ChipsDataset(Dataset):
     def __init__(self,
                  chip_size: int,
-
                  year_step: int | None,
                  file_type: str,
-
                  sample_path: str,
                  chip_data_path: str,
                  anno_data_path: str | None,
-
                  means: Optional[list[float]] = None,
                  stds: Optional[list[float]] = None,
                  **kwargs):
         super().__init__(**kwargs)
         self.chip_size = chip_size
         self.year_step = year_step
-
         self.file_type = file_type
         self.sample_path = sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
-
         self.means = means
         self.stds = stds
 
         self.normalizer = PreprocesNormalization(
             means, stds) if means and stds else None
-
         self.samples = np.load(self.sample_path)
 
         if self.file_type == "zarr":
@@ -82,7 +85,7 @@ class ChipsDataset(Dataset):
         return xarr.sel(year=slice(year_idx, year_idx+self.year_step))
 
     def __getitem__(self, idx):
-        # loading image into xarr file
+        # loading image into xarr file and slicing if necessary
         if len(self.samples.shape) == 2 and self.year_step is not None:
             img_idx, year_idx = self.samples[img_idx]
             chip = self.chip_loader(str(img_idx))
@@ -128,19 +131,15 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-        
         chip_size: int = SAMPLER["pixel_edge_size"],
         year_step: int = SAMPLER["year_step"],
         file_type: str = FILE_EXT_MAP[SAMPLER["file_type"]],
-
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
         test_sample_path: str = TEST_SAMPLE_PATH,
         predict_sample_path: str = PREDICT_SAMPLE_PATH,
-
         chip_data_path: str = CHIP_DATA_PATH,
         anno_data_path: str = ANNO_DATA_PATH,
-
         means: Optional[list[float]] = None,
         stds: Optional[list[float]] = None,
 
@@ -150,18 +149,14 @@ class ChipsDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.chip_size = chip_size
-
         self.year_step = year_step
         self.file_type = file_type
-
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
         self.predict_sample_path = predict_sample_path
-
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
-
         self.means = means
         self.stds = stds
 

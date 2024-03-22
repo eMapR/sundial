@@ -35,16 +35,11 @@ class Downloader:
 
         num_workers (int): The number of workers to use for the parallel download process.
         io_limit (int): The number of io requests to make at a time.
-        ignore_size_limit (bool): A flag to ignore the size limits for the image data.
-
         logger (logging.Logger): Instiantiated python logger.
 
     Methods:
         start(): Starts the parallel download process and performs the necessary checks.
     """
-    _size_limit: int = 65
-    _band_limit: int = 1024
-    _pixel_limit: int = 3.2e4
 
     def __init__(
             self,

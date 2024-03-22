@@ -168,6 +168,7 @@ class Prithvi(L.LightningModule):
                  prithvi_params: dict,
                  **kwargs):
         super().__init__(**kwargs)
+        self.save_hyperparameters()
         self.prithvi_params = prithvi_params
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(

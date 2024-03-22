@@ -17,8 +17,34 @@ from typing import Optional
 
 from .downloader import Downloader
 from .logger import get_logger
-from .settings import save_config, SAMPLER, RANDOM_STATE, META_DATA_PATH, STRATA_ATTR_NAME, NO_DATA_VALUE, CHIP_DATA_PATH, ANNO_DATA_PATH, TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH, TEST_SAMPLE_PATH, PREDICT_SAMPLE_PATH, STRATA_MAP_PATH, STAT_DATA_PATH, GEO_PRE_PATH, GEO_RAW_PATH, LOG_PATH
-from .utils import parse_meta_data, lt_image_generator, zarr_reshape, function_timer, clip_xy_xarray, pad_xy_xarray, get_mean_std
+from .settings import (
+    save_config,
+    SAMPLER,
+    RANDOM_STATE,
+    META_DATA_PATH,
+    STRATA_ATTR_NAME,
+    NO_DATA_VALUE,
+    CHIP_DATA_PATH,
+    ANNO_DATA_PATH,
+    TRAIN_SAMPLE_PATH,
+    VALIDATE_SAMPLE_PATH,
+    TEST_SAMPLE_PATH,
+    PREDICT_SAMPLE_PATH,
+    STRATA_MAP_PATH,
+    STAT_DATA_PATH,
+    GEO_PRE_PATH,
+    GEO_RAW_PATH,
+    LOG_PATH
+)
+from .utils import (
+    parse_meta_data,
+    lt_image_generator,
+    zarr_reshape,
+    function_timer,
+    clip_xy_xarray,
+    pad_xy_xarray,
+    get_xarr_mean_std
+)
 
 LOGGER = get_logger(LOG_PATH, os.getenv("SUNDIAL_METHOD"))
 
@@ -93,10 +119,11 @@ def gee_stratified_sampling(
         sources: Literal["prism", "elevation", "ads_score"],
         area_of_interest: ee.Geometry,
         projection: str) -> ee.FeatureCollection:
+    # creating percentiles for stratification
     num_images = len(sources)
     percentiles = ee.List.sequence(0, 100, count=num_strata+1)
 
-    # Getting mean images for stratified sampling
+    # Getting data images for stratification
     raw_images = []
     for source in sources:
         match source:
@@ -130,6 +157,7 @@ def gee_stratified_sampling(
             [f"(b({i})*(100**{i}))" for i in range(num_bands)])
         population = combined.expression(concatenate_expression).toInt()
 
+    # get stratified random sample experession for compute features laters
     return population.stratifiedSample(
         num_points,
         region=area_of_interest,
@@ -330,12 +358,16 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
     columns = groupby_columns + strata_columns
     batch = []
     while (index := index_queue.get()) is not None:
+
+        # getting annotation information from sample
         LOGGER.info(f"Rasterizing sample {index}...")
         target = sample_gdf.iloc[index]
         square = target.geometry
         group = target[columns]
         stratum_idx = strata_map[target[STRATA_ATTR_NAME]]
         default_value = stratum_idx if flat_annotations else 1
+
+        # rasterizing multipolygon and clipping to square
         try:
             mp = population_gdf[(population_gdf[columns] == group)
                                 .all(axis=1)].geometry
@@ -346,11 +378,13 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
             raise e
         annotation = xr.DataArray(annotation, dims=["y", "x"])
 
+        # clipping or padding to pixel_edge_size
         if pixel_edge_size > min(annotation["x"].size,  annotation["y"].size):
             annotation = pad_xy_xarray(annotation, pixel_edge_size)
         if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
             annotation = clip_xy_xarray(annotation, pixel_edge_size)
 
+        # expanding annotation to (C ,H, W) shape
         if flat_annotations:
             xarr_anno = annotation
             xarr_anno = xarr_anno.expand_dims(STRATA_ATTR_NAME)
@@ -361,6 +395,7 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
             xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
             xarr_anno[stratum_idx-1:stratum_idx, :, :] = annotation
 
+        # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index} to batch...")
         xarr_anno.name = str(index)
         batch.append(xarr_anno)
@@ -371,6 +406,8 @@ def rasterizer_helper(population_gdf: gpd.GeoDataFrame,
             batch.clear()
 
         LOGGER.info(f"Rasterize sample {index} completed.")
+
+    # writing remaining batch
     with io_lock:
         xarr_anno = xr.merge(batch)
         xarr_anno.to_zarr(store=anno_data_path, mode="a")
@@ -398,7 +435,7 @@ def generate_annotation_data(
     io_lock = manager.Lock()
 
     LOGGER.info(
-        f"Starting annotation generation for {num_samples} samples using {num_workers}...")
+        f"Starting parallel process for {num_samples} samples using {num_workers}...")
     [index_queue.put(i) for i in range(num_samples)]
     [index_queue.put(None) for _ in range(num_workers)]
     rasterizers = set()
@@ -521,7 +558,7 @@ def annotate():
             population_gdf = gpd.read_file(GEO_RAW_PATH)
         sample_gdf = gpd.read_file(META_DATA_PATH)
 
-        LOGGER.info("Generating annotation data from samples...")
+        LOGGER.info("Generating annotations...")
         annotation_config = {
             "population_gdf": population_gdf,
             "sample_gdf": sample_gdf,
@@ -546,7 +583,7 @@ def download():
         LOGGER.info("Loading geo file into GeoDataFrame...")
         gdf = gpd.read_file(META_DATA_PATH)
 
-        LOGGER.info("Generating image chips from samples...")
+        LOGGER.info("Generating image chips...")
         parser_kwargs = SAMPLER["medoid_config"]
         parser_kwargs["look_years"] = SAMPLER["look_years"]
         downloader_kwargs = {
@@ -568,7 +605,7 @@ def download():
         generate_image_chip_data(downloader_kwargs)
 
         LOGGER.info("Calculating image chip statistics...")
-        means, stds = get_mean_std(CHIP_DATA_PATH)
+        means, stds = get_xarr_mean_std(CHIP_DATA_PATH)
         save_config(
             {
                 "means": means,

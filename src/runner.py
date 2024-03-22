@@ -10,11 +10,21 @@ from loggers import *
 from models import *
 from utils import get_best_ckpt
 
-from pipeline.settings import RANDOM_STATE, CONFIG_PATH, CHECKPOINT_PATH, LOGGER, CHECKPOINT, load_config
+from pipeline.settings import (
+    RANDOM_STATE,
+    CONFIG_PATH,
+    CHECKPOINT_PATH,
+    LOGGER,
+    CHECKPOINT,
+    load_config
+)
 
 
 def main(method: Literal["fit", "validate", "test", "predict"]):
+    # setting lower precision for GH200/cuda gpus
     torch.set_float32_matmul_precision("high")
+
+    # setting up trainer defaults w/ paths from pipeline.settings
     run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
     args = [method,
             f"--config={run_config_path}"]
@@ -26,6 +36,8 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
             "init_args": LOGGER
         }],
     }
+
+    # setting up default callbacks for fit method
     match method:
         case "fit":
             trainer_defaults["callbacks"] = [

@@ -48,7 +48,7 @@ default:
 	echo "        fit:            Train model using subset of data from sample."
 	echo "        validate:       Validate model subset of using data from sample."
 	echo "        test:           Test model using subset of data from sample."
-	echo "        predict:        Predict and image from subset of data from sample."
+	echo "        predict:        Predict an image from subset of data from sample."
 	echo "        package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives."
 	echo "        status:         Check status of all jobs for user."
 	echo "        vars:           Print all Sundial variables."
@@ -67,7 +67,7 @@ default:
 	echo "        clean_nuke:     Removes all data for experiment including configs."
 	echo
 	echo "    Variables:"
-	echo "    These may be set at submake (see below)."
+	echo "    These may be set at submake or as environment variables."
 	echo
 	echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of makefile"
 	echo "        SUNDIAL_SAMPLE_NAME:         Sample name. REQUIRED"
@@ -150,7 +150,7 @@ predict: _predict
 	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
 	$(MAKE) -s _run
 
-status: _experiment_name_check _hpc_check
+status: _hpc_check
 	squeue -u $(USER) --format="%.18i %.9P %.40j %.8u %.8T %.10M %.9l %.6D %R";
 
 vars: _experiment_name_check
@@ -191,21 +191,21 @@ predict_out: _predict
 	$(MAKE) -s _watch_std
 
 sample_err: _sample
-	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.e; \
 	fi; \
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep ERROR; \
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep CRITICAL; \
 
 annotate_err: _annotate
-	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.e; \
 	fi; \
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep ERROR; \
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep CRITICAL; \
 
 download_err: _download
-	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
+	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.e; \
 	fi; \
 	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.log | grep ERROR; \
@@ -233,7 +233,7 @@ clean_outs: _experiment_name_check
 	echo "Cleaning up outputs for $(SUNDIAL_EXPERIMENT_NAME).";
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.e
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.o
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.lo
+	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.log
 
 clean_logs: _experiment_name_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME).";
@@ -267,7 +267,7 @@ clean_expt: _experiment_name_check
 	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
 
 clean_nuke: _experiment_name_check
-	echo "Deleting all data for $(SUNDIAL_EXPERIMENT_NAME).";
+	echo "Cleaning up all data for $(SUNDIAL_EXPERIMENT_NAME).";
 	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
 	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
