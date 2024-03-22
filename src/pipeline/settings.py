@@ -187,7 +187,8 @@ LOGGER = {
     "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
     "project_name": os.getenv("SUNDIAL_SAMPLE_NAME").replace("_", "-"),
-    "experiment_name": os.getenv("SUNDIAL_EXPERIMENT_PREFIX"),
+    "experiment_name": f"{os.getenv("SUNDIAL_EXPERIMENT_NAME")}_{os.getenv('SUNDIAL_METHOD')}",
+    "log_git_metadata": False,
 }
 
 if __name__ == "__main__":

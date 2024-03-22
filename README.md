@@ -31,7 +31,6 @@ Welcome to Sundial!
         package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives.
         status:         Check status of all jobs for user.
         vars:           Print all Sundial variables.
-        (method)_out:   Watch logs and stdout/stderr on HPC for experiment.
         (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC.
 
         clean:          Removes all logs, checkpoints, and predictions for experiment.

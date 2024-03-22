@@ -21,7 +21,10 @@ model:
             train_params:
                 mask_ratio: 0.0
         prithvi_freeze: true
-        criterion: "bce"
+        criterion:
+            class_path: torch.nn.BCEWithLogitsLoss
+            init_args:
+                reduction: sum
 data:
     class_path: ChipsDataModule
     init_args:

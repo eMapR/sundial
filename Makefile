@@ -52,7 +52,6 @@ default:
 	echo "        package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives."
 	echo "        status:         Check status of all jobs for user."
 	echo "        vars:           Print all Sundial variables."
-	echo "        (method)_out:   Watch logs and stdout/stderr on HPC for experiment."
 	echo "        (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC."
 	echo
 	echo "        clean:          Removes all logs, checkpoints, and predictions for experiment."
@@ -95,7 +94,7 @@ setup: _experiment_name_check
 	mkdir -p $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
 	mkdir -p $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
 	if [[ -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
-		echo "WARNING: Configs directory found. To restart experiment from scratch, use 'make clean_nuke' then make config..."; \
+		echo "WARNING: Configs directory found. To restart experiment from scratch, use 'make clean_nuke' then 'make setup'..."; \
 	else \
 		echo "Generateing Sundial config files for experiment with values from settings.py..."; \
 		python $(SUNDIAL_BASE_PATH)/src/pipeline/settings.py; \
@@ -117,37 +116,37 @@ clink: _experiment_name_check
 
 sample: _sample
 	echo "Processing polygon sample from $(SUNDIAL_SAMPLE_NAME) shapefile for $(SUNDIAL_EXPERIMENT_PREFIX). Uno momento...";
-	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 annotate: _annotate
 	echo "Collecting image annotations for $(SUNDIAL_EXPERIMENT_NAME). This might take a sec...";
-	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 download: _download
 	echo "Downloading image chips for $(SUNDIAL_EXPERIMENT_NAME). Sit tight...";
-	$(eval export SUNDIAL_PARTITION=$(CPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 fit: _fit
 	echo "Training model... This may take a while...";
-	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 validate: _validate
 	echo "Validating model... Go ahead and hold your breath...";
-	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 test: _test
 	echo "Testing model... Use 'make test_err' to check for critical errors...";
-	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 predict: _predict
 	echo "Predicting image using model... Lets see if this works!";
-	$(eval export SUNDIAL_PARTITION=$(GPU_PARTITION))
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 status: _hpc_check
@@ -161,67 +160,29 @@ vars: _experiment_name_check
 	echo "SUNDIAL_ENV_NAME: $(SUNDIAL_ENV_NAME)";
 	echo "SUNDIAL_PROCESSING: $(SUNDIAL_PROCESSING)";
 	echo "SUNDIAL_NODES: $(SUNDIAL_NODES)";
-	echo "GPU_PARTITION: $(GPU_PARTITION)";
-	echo "CPU_PARTITION: $(CPU_PARTITION)"; 
-
-package: _experiment_name_check
-	echo "Compressing logs for $(SUNDIAL_EXPERIMENT_NAME) to tar. Tar file will be saved in home directory and overwrite already existing archives.";
-	tar -cvzf $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tar.gz logs/$(SUNDIAL_EXPERIMENT_NAME)
-	echo "Logs saved at $(HOME)/$(SUNDIAL_EXPERIMENT_NAME).tar.gz";
-
-sample_out: _sample
-	$(MAKE) -s _watch_log
-
-annotate_out: _annotate
-	$(MAKE) -s _watch_log
-
-download_out: _download
-	$(MAKE) -s _watch_log
-
-fit_out: _fit
-	$(MAKE) -s _watch_std
-
-validate_out: _validate
-	$(MAKE) -s _watch_std
-
-test_out: _test
-	$(MAKE) -s _watch_std
-
-predict_out: _predict
-	$(MAKE) -s _watch_std
+	echo "SUNDIAL_GPU_PARTITION: $(SUNDIAL_GPU_PARTITION)";
+	echo "SUNDIAL_CPU_PARTITION: $(SUNDIAL_CPU_PARTITION)"; 
 
 sample_err: _sample
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.e; \
-	fi; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep ERROR; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/sample.log | grep CRITICAL; \
+	$(MAKE) -s _read_err;
 
 annotate_err: _annotate
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.e; \
-	fi; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep ERROR; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/annotate.log | grep CRITICAL; \
+	$(MAKE) -s _read_err;
 
 download_err: _download
-	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
-		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.e; \
-	fi; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.log | grep ERROR; \
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/download.log | grep CRITICAL; \
+	$(MAKE) -s _read_err;
 
-fit_err: _fit _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/fit.e
+fit_err: _fit
+	$(MAKE) -s _read_err;
 
-validate_err: _validate _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/validate.e
+validate_err: _validate
+	$(MAKE) -s _read_err;
 
-test_err: _test _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/test.e
+test_err: _test
+	$(MAKE) -s _read_err;
 
-predict_err: _predict _hpc_check
-	cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/predict.e
+predict_err: _predict
+	$(MAKE) -s _read_err;
 
 clean: _experiment_name_check
 	echo "Cleaning up logs, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_NAME).";
@@ -335,15 +296,15 @@ _run:
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
 	fi;
 
-_watch_std: _experiment_name_check _hpc_check
-	echo "Watching $(SUNDIAL_METHOD) for $(SUNDIAL_EXPERIMENT_NAME)...";
-	for ((i=0; i<2048; i++)); do \
-		tput clear; \
+_read_err: _experiment_name_check
+	if [[ -f $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).e ]]; then \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).e; \
-		awk 'END {print}' $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).o; \
+	fi; \
+	if [[ -f $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log | grep ERROR; \
+		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log | grep CRITICAL; \
 		tail $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log; \
-		sleep 4; \
-	done;
+	fi; \
 
 _watch_log: _experiment_name_check
 	echo "Watching $(SUNDIAL_METHOD) for $(SUNDIAL_EXPERIMENT_NAME)...";

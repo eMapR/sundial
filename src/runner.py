@@ -26,12 +26,16 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
 
     # setting up trainer defaults w/ paths from pipeline.settings
     run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
+    config = load_config(run_config_path)
     args = [method,
             f"--config={run_config_path}"]
+    logger = CometLogger(**LOGGER)
+    logger.log_hyperparams(config)
+
     trainer_defaults = {
         "accelerator": "cuda",
         "log_every_n_steps": 16,
-        "logger": [CometLogger(**LOGGER)],
+        "logger": [logger],
         "enable_progress_bar": False
     }
 
@@ -42,7 +46,6 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
                 ModelCheckpoint(**CHECKPOINT),
             ]
         case "test" | "predict":
-            config = load_config(run_config_path)
             if "ckpt_path" not in config.keys() or config["ckpt_path"] is None:
                 ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
             args.append(f"--ckpt_path={ckpt_path}")

@@ -21,27 +21,16 @@ model:
             train_params:
                 mask_ratio: 0.0
         prithvi_freeze: true
-        criterion: "bce"
+        criterion:
+            class_path: torch.nn.BCEWithLogitsLoss
+            init_args:
+                reduction: sum
 data:
     class_path: ChipsDataModule
     init_args:
         batch_size: 32
         num_workers: 64
         chip_size: 256
-        means:
-            - 929.9706637874866
-            - 519.2732993898293
-            - 623.5358891217038
-            - 1943.3809264895197
-            - 3449.934562147595
-            - 367.57940168554586
-        stds:
-            - 537.649909798381
-            - 376.87032375429425
-            - 292.3800669055506
-            - 694.1559922842102
-            - 830.7075035273823
-            - 323.8907211324208
 trainer:
     callbacks:
       - class_path: PrithviFCNCallbacks

@@ -45,13 +45,7 @@ class PrithviFCNCallbacks(L.Callback):
             metrics={"val_loss": outputs["loss"]},
             step=trainer.global_step
         )
-        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Loss: {outputs["loss"]}")
-                
-    def on_train_epoch_start(self,
-                       trainer: L.Trainer,
-                       pl_module: L.LightningModule):
-        LOGGER.info(f"Epoch: {trainer.current_epoch} Step: {trainer.global_step} Batches: {trainer.num_training_batches}")
-    
+
     def on_test_batch_end(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule,
@@ -89,7 +83,7 @@ class PrithviFCNCallbacks(L.Callback):
             # TODO: flatten and overlay annotations onto chips
             pred = annotations[i]
             for c in range(pred.shape[0]):
-                pl_module.logger.experiment.add_image(
+                pl_module.logger.experiment.log_image(
                     tag=f"{index:07d}_c{c}_anno",
                     img_tensor=pred[c].unsqueeze(0),
                     image_channels="first"
@@ -99,7 +93,7 @@ class PrithviFCNCallbacks(L.Callback):
             # TODO: flatten and overlay predictions onto chips
             logit = logits[i]
             for c in range(logit.shape[0]):
-                pl_module.logger.experiment.add_image(
+                pl_module.logger.experiment.log_image(
                     tag=f"{index:07d}_c{c}_pred",
                     img_tensor=logit[c].unsqueeze(0),
                     image_channels="first"
@@ -111,7 +105,7 @@ class PrithviFCNCallbacks(L.Callback):
                              outputs: torch.Tensor,
                              batch: torch.Tensor,
                              batch_idx: int,
-                             dataloader_idx: int = 0) -> None:
+                             dataloader_idx: int = 0):
         _, indices = batch
         classes = outputs["classes"]
         for i in range(classes.shape[0]):
@@ -122,12 +116,13 @@ class PrithviFCNCallbacks(L.Callback):
 
     def on_predict_end(self,
                        trainer: L.Trainer,
-                       pl_module: L.LightningModule) -> None:
-        LOGGER.info(f"Model prediction completed. Converting to tifs with spatial metadata. num_workers={SAMPLER["num_workers"]}...")
+                       pl_module: L.LightningModule):
+        LOGGER.info(
+            f"Model prediction completed. Converting to tifs with spatial metadata. num_workers={SAMPLER['num_workers']}...")
         tensors_to_tifs(PREDICTION_PATH,
                         PREDICTION_PATH,
                         META_DATA_PATH,
-                        SAMPLER["num_workers"])
+                        SAMPLER['num_workers'])
 
 
 class PrithviCallbacks(L.Callback):
@@ -143,6 +138,10 @@ class PrithviCallbacks(L.Callback):
             logger=False,
             prog_bar=False,
         )
+        pl_module.logger.log_metrics(
+            metrics={"train_loss": outputs["loss"]},
+            step=trainer.global_step
+        )
 
     def on_validation_batch_end(self,
                                 trainer: L.pytorch.trainer.trainer,
@@ -157,4 +156,8 @@ class PrithviCallbacks(L.Callback):
             logger=False,
             prog_bar=False,
             sync_dist=True
+        )
+        pl_module.logger.log_metrics(
+            metrics={"val_loss": outputs["loss"]},
+            step=trainer.global_step
         )
