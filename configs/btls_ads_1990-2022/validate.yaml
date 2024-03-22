@@ -1,0 +1,4 @@
+trainer:
+    callbacks:
+      - class_path: LogTrainCallback
+verbose: true

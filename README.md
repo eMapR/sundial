@@ -23,15 +23,16 @@ Welcome to Sundial!
         sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile.
         annotate:       Collects image annotations for experiment using sample polygons.
         download:       Downloads image chips for experiment using sample polygons.
+        calculate:      Calculate means and stds for experiment sample.
 
         fit:            Train model using subset of data from sample.
         validate:       Validate model subset of using data from sample.
         test:           Test model using subset of data from sample.
         predict:        Predict an image from subset of data from sample.
-        package:        Compresses experiment logs to tar to export. The tar file will be saved in home directory and overwrite already existing archives.
+        package:        Convert predictions to GeoTIFF if not already in format and compress for download.
+
         status:         Check status of all jobs for user.
         vars:           Print all Sundial variables.
-        (method)_out:   Watch stdout and stderr or logs for experiment.
         (method)_err:   Print ERRORs and CRITICALs in log file and print stderr from file on HPC.
 
         clean:          Removes all logs, checkpoints, and predictions for experiment.
@@ -50,7 +51,8 @@ Welcome to Sundial!
 
         SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of makefile
         SUNDIAL_SAMPLE_NAME:         Sample name. REQUIRED
-        SUNDIAL_EXPERIMENT_PREFIX:   Sundial experiment name prefix. Default: ''
+        SUNDIAL_EXPERIMENT_PREFIX:   Sundial experiment name prefix used for naming. Default: ''
+        SUNDIAL_EXPERIMENT_SUFFIX:   Experiment suffix used only for logging.
         SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'
         SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'
         SUNDIAL_NODES:               Node within hpc to run job. Default: any node
@@ -59,8 +61,8 @@ Welcome to Sundial!
 ### 1. Setup directories and conda environment.
 This only works on x86_64 machines. Additional steps must be taken for ARM architectures. 
 ```console
-# Clone repository cd into it
-git clone https://github.com/eMapR/sundial.git
+# Clone repository cd into it. Omit --recurse-submodules if you do not plan to use provided backbone.
+git clone --recurse-submodules https://github.com/eMapR/sundial.git
 cd sundial
 
 # Create environment in one of two ways
@@ -82,8 +84,8 @@ Experiment directories will be generated with the appropriate paths for all file
 # Set environment variables for experiment. These variables can also be set at submake.
 conda env config vars set \
     SUNDIAL_PROCESSING=local \
-    SUNDIAL_SAMPLE_NAME=ads_damage_1990-2022 \
-    SUNDIAL_EXPERIMENT_PREFIX=14k
+    SUNDIAL_SAMPLE_NAME=ads_1990-2022 \
+    SUNDIAL_EXPERIMENT_PREFIX=5c
 
 make setup
 ```
@@ -96,7 +98,7 @@ make sample
 ```
 
 ### 4. Generate annotation images from original shapefile and sample metadata.
-Features in the shapefile are used to create annotations by pixel using the SAMPLER.strata_columns setting. The annotation image shape is (N C H W). This step is only necessary for superivsed learning. Note: Annotations are saved as their own image. This may not be as storage efficient but makes for loading into Pytorch much simpler and quicker.
+Features in the shapefile are used to create annotations by pixel using the SAMPLER_CONFIG.strata_columns setting. The annotation image shape is (N C H W). This step is only necessary for superivsed learning. Note: Annotations are saved as their own image. This may not be as storage efficient but makes for loading into Pytorch much simpler and quicker.
 ```console
 make annotate
 ```
@@ -114,10 +116,7 @@ make fit
 ```
 
 ### 7. View logs.
-Tensorboard is used as the logging package for images and training data. The browser based interface is impractical on a slurm based HPC where web hosting might not be available. Tensorboard logs can be accessed using the submake: 'make package,' copying the tarbell to a local directory, and running the command below. Alternatively, a separate logger can be written and included via config files.
-```console
-tensorboard --logdir logs
-```
+Comet is used as the default logging package for images and training data. See [Lightning Comet Docs](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet) and [Comet Experiment Docs](https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/#experimentlog_metric) for more details. Environment variables needed can be found in src/settings.py Alternatively, a separate logger can be written and included via config files.
 
 ## Config files
 
@@ -126,10 +125,10 @@ While the framework for deep learning is build on [Pytorch Lightning](https://li
 The configs worth looking at are:
 | CONFIG | DESCRIPTION | OPTIONS |
 | --- | --- | --- |
-| SAMPLER.method | Method to generate samples options with polygon | "convering_grid", "random", "gee_stratified", "centroid" |
-| SAMPLER.num_points | Number of points to sample from original shapefile | |
-| SAMPLER.strata_columns | Columns found in shapefile to generate strata for training | |
-| SAMPLER.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
-| SAMPLER.scale | Scale to generate image raster | |
-| SAMPLER.projection | Reprojection string | (EPSG:****) |
-| SAMPLER.pixel_edge_size | Edge size of chip image in pixels | |
+| SAMPLER_CONFIG.method | Method to generate samples options with polygon | "convering_grid", "random", "gee_stratified", "centroid" |
+| SAMPLER_CONFIG.num_points | Number of points to sample from original shapefile | |
+| SAMPLER_CONFIG.strata_columns | Columns found in shapefile to generate strata for training | |
+| SAMPLER_CONFIG.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
+| SAMPLER_CONFIG.scale | Scale to generate image raster | |
+| SAMPLER_CONFIG.projection | Reprojection string | (EPSG:****) |
+| SAMPLER_CONFIG.pixel_edge_size | Edge size of chip image in pixels | |

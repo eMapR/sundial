@@ -1,0 +1,21 @@
+trainer:
+    callbacks:
+      - class_path: LogTrainCallback
+      - class_path: LogTrainExtCallback
+    max_epochs: 256
+    strategy: auto
+    devices: 1
+    num_nodes: 1
+    accumulate_grad_batches: 8
+    precision: bf16-mixed
+    gradient_clip_val: 5
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: 0.0005
+lr_scheduler:
+    class_path: torch.optim.lr_scheduler.StepLR
+    init_args:
+        step_size: 64
+        gamma: 0.5
+

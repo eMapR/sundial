@@ -1,6 +1,10 @@
 model:
-    class_path: Prithvi
+    class_path: PrithviFCN
     init_args:
+        num_classes: 1
+        view_size: 16
+        upscale_depth: 2
+        prithvi_path: src/backbones/prithvi/Prithvi_100M.pt 
         prithvi_params:
             model_args:
                 decoder_depth: 8
@@ -16,27 +20,15 @@ model:
                 tubelet_size: 1
             train_params:
                 mask_ratio: 0.0
+        prithvi_freeze: false
+        criterion:
+            class_path: loss.BCEWithLogitsLoss
+            init_args:
+                reduction: sum
+                pos_weight: [3.2]
 data:
     class_path: ChipsDataModule
     init_args:
         batch_size: 32
-        num_workers: 64
+        num_workers: 16
         chip_size: 256
-        means:
-            - 775.2290211032589
-            - 1080.992780391705
-            - 1228.5855250417867
-            - 2497.2022620507532
-            - 2204.2139147975554
-            - 1610.8324823273745
-        stds:
-            - 1281.526139861424
-            - 1270.0297974547493
-            - 1399.4802505642526
-            - 1368.3446143747644
-            - 1291.6764008585435
-            - 1154.505683480695
-trainer:
-    callbacks:
-      - class_path: PrithviFCNCallbacks
-verbose: true

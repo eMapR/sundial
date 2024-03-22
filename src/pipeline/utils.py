@@ -1,6 +1,7 @@
 import ee
 import pandas as pd
 import numpy as np
+import os
 import time
 import utm
 import xarray as xr
@@ -9,7 +10,8 @@ from datetime import datetime
 from ltgee import LandTrendr
 from typing import Optional
 
-from .settings import MASK_LABELS, NO_DATA_VALUE
+from .logger import get_logger
+from .settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD
 
 
 def lt_image_generator(
@@ -170,26 +172,26 @@ def parse_meta_data(
         attributes
 
 
-def function_timer(logger=None):
-    def wrapper(func):
-        def timer(*args, **kwargs):
-            start = time.time()
-            result = func(*args, **kwargs)
-            end = time.time()
-            if logger:
-                logger.info(
-                    f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
-            else:
-                print(
-                    f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
-            return result
-        return timer
-    return wrapper
+def function_timer(func):
+    logger = get_logger(LOG_PATH, METHOD)
 
-@function_timer()
-def get_xarr_mean_std(chip_data_path: str):
-    data = xr.open_zarr(chip_data_path)
+    def timer(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        if logger:
+            logger.info(
+                f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
+        else:
+            print(
+                f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
+        return result
+    return timer
+
+
+@function_timer
+def get_xarr_mean_std(data: xr.Dataset):
     data = data.to_dataarray(dim="chip")
     means = data.mean(dim=["chip", "year", "y", "x"])
     stds = data.std(dim=["chip", "year", "y", "x"])
-    return means, stds
+    return means.values.tolist(), stds.values.tolist()

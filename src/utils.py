@@ -1,12 +1,18 @@
+import geopandas as gpd
 import glob
+import multiprocessing as mp
 import os
+import torch
+import rasterio
 import re
+
+from pipeline.utils import function_timer
 
 
 def get_best_ckpt(dir_path):
-    pattern = "epoch-*_val_loss-*.ckpt"
-    regex = re.compile(r"epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?\.ckpt")
-
+    pattern = "*epoch-*_val_loss-*.ckpt"
+    regex = re.compile(
+        r"(?:.+_)?epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?\.ckpt")
     files = glob.glob(os.path.join(dir_path, pattern))
 
     min_val_loss = float('inf')
@@ -34,3 +40,68 @@ def get_best_ckpt(dir_path):
         return best_file
     else:
         raise FileNotFoundError("No checkpoint found in the directory.")
+
+
+def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
+                           regex: re.Pattern,
+                           output_path: str,
+                           file_queue: mp.Queue):
+    crs = f"EPSG:{meta_data.crs.to_epsg()}"
+    while (file := file_queue.get()) is not None:
+        meta_idx = int(regex.search(file).groups()[0])
+        meta = meta_data.iloc[meta_idx]
+        polygon = meta.geometry
+
+        tensor = torch.load(file, map_location=torch.device('cpu'))
+        base_name = os.path.splitext(os.path.basename(file))[0]
+        bands = tensor.shape[0]
+        minx, miny, maxx, maxy = polygon.bounds
+
+        profile = {
+            'driver': 'GTiff',
+            'height': tensor.shape[1],
+            'width': tensor.shape[2],
+            'count': bands,
+            'dtype': 'float32',
+            'crs': crs,
+            'transform': rasterio.transform.from_bounds(minx, miny, maxx, maxy, tensor.shape[2], tensor.shape[1])
+        }
+
+        with rasterio.open(os.path.join(output_path, f"{base_name}.tif"), 'w', **profile) as dst:
+            dst.write(tensor.numpy())
+
+
+@function_timer
+def tensors_to_tifs(prediction_path: str,
+                    output_path: str,
+                    meta_data_path: str,
+                    num_workers: int = 1):
+    pattern = os.path.join(prediction_path, "*.pt")
+    files = glob.glob(pattern)
+    meta_data = gpd.read_file(meta_data_path)
+    regex = re.compile(r"(?:(\d+)_(?:.+)\.pt)")
+
+    manager = mp.Manager()
+    file_queue = manager.Queue()
+    file_idxes = []
+
+    for file in files:
+        file_queue.put(file)
+        file_idxes.append(int(regex.search(file).groups()[0]))
+
+    [file_queue.put(None) for _ in range(num_workers)]
+    processes = set()
+    for _ in range(num_workers):
+        p = mp.Process(
+            target=tensors_to_tifs_helper,
+            args=(meta_data,
+                  regex,
+                  output_path,
+                  file_queue),
+            daemon=True)
+        p.start()
+        processes.add(p)
+    [r.join() for r in processes]
+
+    meta = meta_data.iloc[file_idxes].reset_index()
+    meta.to_file(os.path.join(output_path, "meta_data"))

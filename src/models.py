@@ -54,26 +54,20 @@ class PrithviFCN(L.LightningModule):
                  num_classes: int,
                  view_size: int,
                  upscale_depth: int,
-                 prithvi_path: str,
                  prithvi_params: dict,
-                 prithvi_freeze: bool,
-                 criterion: str):
+                 prithvi_freeze: bool =True,
+                 prithvi_path: str = None,
+                 criterion: nn.Module = None,
+                 activation: nn.Module = None):
         super().__init__()
-        self.save_hyperparameters()
-
-        # init hyper params for convenience (avoiding self.hparams everywhere)
         self.num_classes = num_classes
         self.view_size = view_size
         self.upscale_depth = upscale_depth
         self.prithvi_path = prithvi_path
         self.prithvi_params = prithvi_params
         self.prithvi_freeze = prithvi_freeze
-
-        self.example_input_array = torch.rand((1,
-                                               self.prithvi_params["model_args"]["in_chans"],
-                                               self.prithvi_params["model_args"]["num_frames"],
-                                               self.prithvi_params["model_args"]["img_size"],
-                                               self.prithvi_params["model_args"]["img_size"]))
+        self.criterion = criterion
+        self.activation = activation
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
@@ -97,15 +91,6 @@ class PrithviFCN(L.LightningModule):
         # Initializing FCNHead
         from torchvision.models.segmentation.fcn import FCNHead
         self.head = FCNHead(embed_dim, self.num_classes)
-
-        # Defining criterion and associated activation
-        match criterion:
-            case "ce":
-                self.criterion = nn.CrossEntropyLoss(reduction="sum")
-                self.activation = torch.nn.LogSoftmax()
-            case "bce":
-                self.criterion = nn.BCEWithLogitsLoss(reduction="sum")
-                self.activation = torch.nn.Sigmoid()
 
     def forward(self, chips):
         # gathering features
@@ -142,7 +127,7 @@ class PrithviFCN(L.LightningModule):
         logits = self(chips)
         loss = self.criterion(logits, annotations)
 
-        return {"loss": loss}
+        return {"loss": loss, "logits": logits}
 
     def test_step(self, batch):
         chips, annotations, _ = batch
@@ -168,17 +153,12 @@ class Prithvi(L.LightningModule):
                  prithvi_params: dict,
                  **kwargs):
         super().__init__(**kwargs)
-        self.save_hyperparameters()
         self.prithvi_params = prithvi_params
+        
+        # initialize prithvi backbone
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
-
-        self.example_input_array = torch.rand((1,
-                                               self.prithvi_params["model_args"]["in_chans"],
-                                               self.prithvi_params["model_args"]["num_frames"],
-                                               self.prithvi_params["model_args"]["img_size"],
-                                               self.prithvi_params["model_args"]["img_size"]))
 
     def forward(self, chips):
         return self.model.forward(chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])

@@ -10,10 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from .utils import get_utm_zone
-from .settings import FILE_EXT_MAP
-
-
-EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
+from .settings import FILE_EXT_MAP, EE_END_POINT
 
 
 class Downloader:

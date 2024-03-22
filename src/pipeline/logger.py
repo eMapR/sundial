@@ -1,19 +1,15 @@
 import os
 import logging
 
+LOGGERS = {}
+
 
 def get_logger(log_path: str, name: str) -> logging.Logger:
-    """
-    Get a simple logger instance with the specified log path.
-
-    Args:
-        log_path (str): The path where the log file will be saved. Defaults to None.
-
-    Returns:
-        logging.Logger: The logger instance.
-    """
     if not os.path.exists(log_path):
         os.makedirs(log_path)
+
+    if LOGGERS.get(name):
+        return LOGGERS.get(name)
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
@@ -25,5 +21,6 @@ def get_logger(log_path: str, name: str) -> logging.Logger:
     file_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)
+    LOGGERS[name] = logger
 
     return logger

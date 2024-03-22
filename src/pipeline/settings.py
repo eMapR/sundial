@@ -1,8 +1,6 @@
 import os
 import yaml
 
-from datetime import date
-
 
 def save_config(config, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -15,9 +13,17 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+def update_config(config, path):
+    if os.path.exists(path):
+        old_config = load_config(path)
+        config |= old_config
+    save_config(config, path)
+
+
 # sample information
 SAMPLE_NAME = os.getenv("SUNDIAL_SAMPLE_NAME")
 EXPERIMENT_PREFIX = os.getenv("SUNDIAL_EXPERIMENT_PREFIX")
+EXPERIMENT_SUFFIX = os.getenv("SUNDIAL_EXPERIMENT_SUFFIX")
 EXPERIMENT_NAME = os.getenv("SUNDIAL_EXPERIMENT_NAME")
 METHOD = os.getenv("SUNDIAL_METHOD")
 
@@ -55,12 +61,13 @@ TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
 GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
 GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
 
-# image and meta data settings
+# non configurable GEE, image, and meta data settings
 RANDOM_STATE = 42
 MASK_LABELS = ["cloud"]
 STRATA_ATTR_NAME = "stratum"
-GEE_REQUEST_LIMIT = 40
 NO_DATA_VALUE = 0
+GEE_REQUEST_LIMIT = 40
+EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
 
 # GEE file type settings
 FILE_EXT_MAP = {
@@ -70,7 +77,7 @@ FILE_EXT_MAP = {
     "ZARR": "zarr"
 }
 
-SAMPLER = {
+SAMPLER_CONFIG = {
     # sampling settings
     # (dict) toggles for subprocesses within the sampler
     "sample_toggles": {
@@ -158,63 +165,87 @@ SAMPLER = {
 
 # loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
-    SAMPLER = SAMPLER | load_config(SAMPLE_CONFIG_PATH)
+    SAMPLER_CONFIG = SAMPLER_CONFIG | load_config(SAMPLE_CONFIG_PATH)
 
-if SAMPLER["file_type"] == "ZARR":
-    ext = FILE_EXT_MAP[SAMPLER["file_type"]]
+if SAMPLER_CONFIG["file_type"] == "ZARR":
+    ext = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]]
     CHIP_DATA_PATH = CHIP_DATA_PATH + f".{ext}"
     ANNO_DATA_PATH = ANNO_DATA_PATH + f".{ext}"
 
 # default lightning dataloader settings
-DATALOADER = {
-    "batch_size": 16,
-    "num_workers": 8,
-    "chip_size": SAMPLER["pixel_edge_size"],
+DATALOADER_CONFIG = {
+    "batch_size": 32,
+    "num_workers": 16,
+    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
 }
 
 # default lightning model checkpoint save settings
-CHECKPOINT = {
+CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "epoch-{epoch}_val_loss-{val_loss:.2f}",
     "monitor": "val_loss",
-    "save_top_k": 3,
+    "save_top_k": 8,
     "auto_insert_metric_name": False,
+    "save_weights_only": False,
     "every_n_epochs": 1,
+    "enable_version_counter": True
 }
 
 # default lightning logger settings
-LOGGER = {
-    "name": METHOD,
+LOGGER_CONFIG = {
+    "api_key": os.getenv("COMET_API_KEY"),
+    "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
-    "log_graph": True,
-    "default_hp_metric": False
+    "project_name": SAMPLE_NAME.replace("_", "-"),
+    "experiment_name": f"{os.getenv('SUNDIAL_METHOD')}_{EXPERIMENT_NAME}",
+    "log_code": False,
+    "auto_param_logging": False,
+    "auto_metric_logging": False,
+    "auto_metric_step_rate": 16,
+    "log_git_metadata": False,
+    "log_git_patch": False,
 }
+if EXPERIMENT_SUFFIX:
+    LOGGER_CONFIG["experiment_name"] += f"_{EXPERIMENT_SUFFIX}"
+    CHECKPOINT_CONFIG["filename"] = f"{EXPERIMENT_SUFFIX}_" + CHECKPOINT_CONFIG["filename"]
 
 if __name__ == "__main__":
     # saving sampler and download configs
-    save_config(SAMPLER, SAMPLE_CONFIG_PATH)
+    save_config(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
 
-    # generating and saving run configs for fit, validate, test and predict
-    run = {
-        "data": {
-            "class_path": "ChipsDataModule",
-            "init_args": DATALOADER
-        }
-    }
-
-    # creating run configs for fit, validate, test and predict
-    for method in ["fit", "validate", "test", "predict"]:
-        run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
+    # creating run configs for base, fit, validate, test, and predict
+    for method in ["base", "fit", "validate", "test", "predict"]:
+        config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
         match method:
+            case "base":
+                run_config = {
+                    "model": None,
+                    "data": {
+                        "class_path": "ChipsDataModule",
+                        "init_args": DATALOADER_CONFIG
+                    }
+                }
             case "fit":
-                run["max_epochs"] = 256
+                run_config = {
+                    "max_epochs": 256,
+                }
             case "validate":
-                run["verbose"] = True
+                run_config = {
+                    "verbose": True,
+                }
             case "test":
-                run["ckpt_path"] = None
-                run["verbose"] = True
+                run_config = {
+                    "ckpt_path": None,
+                    "verbose": True,
+                }
             case "predict":
-                run["ckpt_path"] = None
-                run["data"]["init_args"]["anno_data_path"] = None
+                run_config = {
+                    "ckpt_path": None,
+                    "data": {
+                        "init_args": {
+                            "anno_data_path": None
+                        }
+                    }
+                }
 
-        save_config(run, run_config_path)
+        save_config(run_config, config_path)

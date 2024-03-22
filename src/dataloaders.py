@@ -11,13 +11,15 @@ from typing import Literal, Optional
 
 from pipeline.utils import clip_xy_xarray
 from pipeline.settings import (
+    load_config,
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
+    STAT_DATA_PATH,
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
-    SAMPLER,
+    SAMPLER_CONFIG,
     FILE_EXT_MAP
 )
 
@@ -87,11 +89,12 @@ class ChipsDataset(Dataset):
     def __getitem__(self, idx):
         # loading image into xarr file and slicing if necessary
         if len(self.samples.shape) == 2 and self.year_step is not None:
-            img_idx, year_idx = self.samples[img_idx]
+            img_idx, year_idx = self.samples[idx]
             chip = self.chip_loader(str(img_idx))
             chip = self.slice_year(chip, year_idx)
         else:
-            chip = self.chip_loader(str(self.samples[idx]))
+            img_idx = self.samples[idx]
+            chip = self.chip_loader(str(img_idx))
 
         # clipping chip if larger than chip_size
         if self.chip_size < max(chip["x"].size, chip["y"].size):
@@ -110,9 +113,9 @@ class ChipsDataset(Dataset):
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
             strata = self.get_strata(idx)
-            return chip, strata, idx
+            return chip, strata, img_idx
         else:
-            return chip, idx
+            return chip, img_idx
 
     def __len__(self):
         return len(self.samples)
@@ -131,17 +134,16 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-        chip_size: int = SAMPLER["pixel_edge_size"],
-        year_step: int = SAMPLER["year_step"],
-        file_type: str = FILE_EXT_MAP[SAMPLER["file_type"]],
+        chip_size: int = SAMPLER_CONFIG["pixel_edge_size"],
+        year_step: int = SAMPLER_CONFIG["year_step"],
+        file_type: str = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
         test_sample_path: str = TEST_SAMPLE_PATH,
         predict_sample_path: str = PREDICT_SAMPLE_PATH,
         chip_data_path: str = CHIP_DATA_PATH,
         anno_data_path: str = ANNO_DATA_PATH,
-        means: Optional[list[float]] = None,
-        stds: Optional[list[float]] = None,
+        stat_data_path: str = STAT_DATA_PATH,
 
         **kwargs
     ):
@@ -157,8 +159,13 @@ class ChipsDataModule(L.LightningDataModule):
         self.predict_sample_path = predict_sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
-        self.means = means
-        self.stds = stds
+        self.stat_data_path = stat_data_path
+
+        # loading means and stds from stat_data_path
+        if self.stat_data_path is not None and os.path.exists(self.stat_data_path):
+            stats = load_config(self.stat_data_path)
+            self.means = stats["means"]
+            self.stds = stats["stds"]
 
         self.dataset_config = {
             "chip_size": self.chip_size,
@@ -175,6 +182,8 @@ class ChipsDataModule(L.LightningDataModule):
             "num_workers": self.num_workers,
             "pin_memory": True,
             "drop_last": True,
+            "prefetch_factor": 2,
+            "persistent_workers": True
         }
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
