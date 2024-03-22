@@ -50,7 +50,8 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
     LightningCLI(
         seed_everything_default=RANDOM_STATE,
         args=args,
-        trainer_defaults=trainer_defaults
+        trainer_defaults=trainer_defaults,
+        save_config_kwargs={"overwrite": True}
     )
 
 
