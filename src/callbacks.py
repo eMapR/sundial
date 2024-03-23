@@ -3,7 +3,7 @@ import os
 import torch
 
 from pipeline.logger import get_logger
-from pipeline.settings import PREDICTION_PATH, META_DATA_PATH, LOG_PATH, SAMPLER
+from pipeline.settings import PREDICTION_PATH, META_DATA_PATH, LOG_PATH, SAMPLER_CONFIG
 from utils import tensors_to_tifs
 
 LOGGER = get_logger(LOG_PATH, os.getenv("SUNDIAL_METHOD"))
@@ -118,11 +118,11 @@ class PrithviFCNCallbacks(L.Callback):
                        trainer: L.Trainer,
                        pl_module: L.LightningModule):
         LOGGER.info(
-            f"Model prediction completed. Converting to tifs with spatial metadata. num_workers={SAMPLER['num_workers']}...")
+            f"Model prediction completed. Converting to tifs with spatial metadata. num_workers={SAMPLER_CONFIG['num_workers']}...")
         tensors_to_tifs(PREDICTION_PATH,
                         PREDICTION_PATH,
                         META_DATA_PATH,
-                        SAMPLER['num_workers'])
+                        SAMPLER_CONFIG['num_workers'])
 
 
 class PrithviCallbacks(L.Callback):

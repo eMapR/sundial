@@ -19,7 +19,7 @@ from .downloader import Downloader
 from .logger import get_logger
 from .settings import (
     save_config,
-    SAMPLER,
+    SAMPLER_CONFIG,
     RANDOM_STATE,
     META_DATA_PATH,
     STRATA_ATTR_NAME,
@@ -472,36 +472,36 @@ def sample():
         LOGGER.info("Loading geo file into GeoDataFrame...")
         geo_dataframe = gpd.read_file(GEO_RAW_PATH)
 
-        if SAMPLER["sample_toggles"]["preprocess_data"]:
+        if SAMPLER_CONFIG["sample_toggles"]["preprocess_data"]:
             LOGGER.info("Preprocessing data in geo file...")
             sample_config = {
                 "geo_dataframe": geo_dataframe,
-                "preprocess_actions": SAMPLER["preprocess_actions"],
+                "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
             }
             geo_dataframe = preprocess_data(**sample_config)
             geo_dataframe.to_file(GEO_PRE_PATH)
 
-        if SAMPLER["sample_toggles"]["stratify_data"]:
+        if SAMPLER_CONFIG["sample_toggles"]["stratify_data"]:
             LOGGER.info("Stratifying data in geo file...")
             group_config = {
                 "geo_dataframe": geo_dataframe,
-                "fraction": SAMPLER["fraction"],
-                "num_points": SAMPLER["num_points"],
-                "strata_columns": SAMPLER["strata_columns"],
+                "fraction": SAMPLER_CONFIG["fraction"],
+                "num_points": SAMPLER_CONFIG["num_points"],
+                "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
             geo_dataframe = stratify_data(**group_config)
 
-        if SAMPLER["sample_toggles"]["generate_squares"]:
+        if SAMPLER_CONFIG["sample_toggles"]["generate_squares"]:
             LOGGER.info("Generating squares...")
             square_config = {
                 "geo_dataframe": geo_dataframe,
-                "method": SAMPLER["method"],
+                "method": SAMPLER_CONFIG["method"],
                 "meta_data_path": META_DATA_PATH,
-                "meter_edge_size": SAMPLER["scale"] * SAMPLER["pixel_edge_size"],
-                "projection": SAMPLER["projection"],
-                "gee_stratafied_config": SAMPLER["gee_stratafied_config"],
+                "meter_edge_size": SAMPLER_CONFIG["scale"] * SAMPLER_CONFIG["pixel_edge_size"],
+                "projection": SAMPLER_CONFIG["projection"],
+                "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
                 "strata_map_path": STRATA_MAP_PATH,
-                "strata_columns": SAMPLER["strata_columns"],
+                "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
             num_samples, gdf = generate_squares(**square_config)
 
@@ -509,27 +509,27 @@ def sample():
             gdf = gpd.read_file(META_DATA_PATH)
             num_samples = len(gdf)
 
-        if SAMPLER["sample_toggles"]["generate_time_combinations"]:
+        if SAMPLER_CONFIG["sample_toggles"]["generate_time_combinations"]:
             LOGGER.info("Generating time combinations...")
-            num_years = SAMPLER["look_years"] + 1
+            num_years = SAMPLER_CONFIG["look_years"] + 1
             time_sample_config = {
                 "num_samples": num_samples,
                 "num_years": num_years,
-                "year_step": SAMPLER["year_step"]
+                "year_step": SAMPLER_CONFIG["year_step"]
             }
             samples = generate_time_combinations(**time_sample_config)
         else:
             samples = np.arange(num_samples)
 
-        if SAMPLER["sample_toggles"]["generate_train_test_splits"]:
+        if SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
             LOGGER.info(
                 "Splitting sample data into training, validation, test, and predict sets...")
             train, validate = train_test_split(
-                samples, test_size=SAMPLER["validate_ratio"])
+                samples, test_size=SAMPLER_CONFIG["validate_ratio"])
             validate, test = train_test_split(
-                validate, test_size=SAMPLER["test_ratio"])
+                validate, test_size=SAMPLER_CONFIG["test_ratio"])
             test, predict = train_test_split(
-                test, test_size=SAMPLER["predict_ratio"])
+                test, test_size=SAMPLER_CONFIG["predict_ratio"])
 
             LOGGER.info("Saving sample data splits to paths...")
             idx_lsts = [train, validate, test, predict]
@@ -561,15 +561,15 @@ def annotate():
         annotation_config = {
             "population_gdf": population_gdf,
             "sample_gdf": sample_gdf,
-            "strata_columns": SAMPLER["strata_columns"],
-            "groupby_columns": SAMPLER["groupby_columns"],
+            "strata_columns": SAMPLER_CONFIG["strata_columns"],
+            "groupby_columns": SAMPLER_CONFIG["groupby_columns"],
             "strata_map_path": STRATA_MAP_PATH,
-            "pixel_edge_size": SAMPLER["pixel_edge_size"],
-            "scale": SAMPLER["scale"],
-            "flat_annotations": SAMPLER["flat_annotations"],
+            "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
+            "scale": SAMPLER_CONFIG["scale"],
+            "flat_annotations": SAMPLER_CONFIG["flat_annotations"],
             "anno_data_path": ANNO_DATA_PATH,
-            "num_workers": SAMPLER["num_workers"],
-            "io_limit": SAMPLER["io_limit"],
+            "num_workers": SAMPLER_CONFIG["num_workers"],
+            "io_limit": SAMPLER_CONFIG["io_limit"],
         }
         generate_annotation_data(**annotation_config)
     except Exception as e:
@@ -583,28 +583,40 @@ def download():
         gdf = gpd.read_file(META_DATA_PATH)
 
         LOGGER.info("Generating image chips...")
-        parser_kwargs = SAMPLER["medoid_config"]
-        parser_kwargs["look_years"] = SAMPLER["look_years"]
+        parser_kwargs = SAMPLER_CONFIG["medoid_config"]
+        parser_kwargs["look_years"] = SAMPLER_CONFIG["look_years"]
         downloader_kwargs = {
-            "file_type": SAMPLER["file_type"],
-            "overwrite": SAMPLER["overwrite"],
-            "scale": SAMPLER["scale"],
-            "pixel_edge_size": SAMPLER["pixel_edge_size"],
-            "projection": SAMPLER["projection"],
+            "file_type": SAMPLER_CONFIG["file_type"],
+            "overwrite": SAMPLER_CONFIG["overwrite"],
+            "scale": SAMPLER_CONFIG["scale"],
+            "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
+            "projection": SAMPLER_CONFIG["projection"],
             "chip_data_path": CHIP_DATA_PATH,
             "meta_data": gdf,
             "meta_data_parser": parse_meta_data,
             "image_expr_generator": lt_image_generator,
             "image_reshaper": zarr_reshape,
-            "num_workers": SAMPLER["gee_workers"],
-            "io_limit": SAMPLER["io_limit"],
+            "num_workers": SAMPLER_CONFIG["gee_workers"],
+            "io_limit": SAMPLER_CONFIG["io_limit"],
             "logger": LOGGER,
             "parser_kwargs": parser_kwargs,
         }
         generate_image_chip_data(downloader_kwargs)
+    except Exception as e:
+        LOGGER.critical(f"Failed to download images: {type(e)} {e}")
+        raise e
 
-        LOGGER.info("Calculating image chip statistics...")
-        means, stds = get_xarr_mean_std(CHIP_DATA_PATH)
+
+@function_timer(logger=LOGGER)
+def calculate():
+    try:
+        LOGGER.info("Calculating sample statistics...")
+        match SAMPLER_CONFIG["file_type"]:
+            case "ZARR":
+                means, stds = get_xarr_mean_std(CHIP_DATA_PATH)
+            case _:
+                raise ValueError(
+                    f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
         save_config(
             {
                 "means": means,
@@ -613,5 +625,6 @@ def download():
             STAT_DATA_PATH
         )
     except Exception as e:
-        LOGGER.critical(f"Failed to download images: {type(e)} {e}")
+        LOGGER.critical(
+            f"Failed to calculate sample statistics: {type(e)} {e}")
         raise e

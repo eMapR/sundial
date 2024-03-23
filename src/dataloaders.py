@@ -19,7 +19,7 @@ from pipeline.settings import (
     VALIDATE_SAMPLE_PATH,
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
-    SAMPLER,
+    SAMPLER_CONFIG,
     FILE_EXT_MAP
 )
 
@@ -133,9 +133,9 @@ class ChipsDataModule(L.LightningDataModule):
         self,
         batch_size: int,
         num_workers: int,
-        chip_size: int = SAMPLER["pixel_edge_size"],
-        year_step: int = SAMPLER["year_step"],
-        file_type: str = FILE_EXT_MAP[SAMPLER["file_type"]],
+        chip_size: int = SAMPLER_CONFIG["pixel_edge_size"],
+        year_step: int = SAMPLER_CONFIG["year_step"],
+        file_type: str = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
         test_sample_path: str = TEST_SAMPLE_PATH,

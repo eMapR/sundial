@@ -7,6 +7,7 @@ from lightning.pytorch.loggers import CometLogger
 
 from callbacks import *
 from dataloaders import *
+from loss import *
 from models import *
 from utils import get_best_ckpt
 
@@ -15,8 +16,8 @@ from pipeline.settings import (
     RANDOM_STATE,
     CONFIG_PATH,
     CHECKPOINT_PATH,
-    LOGGER,
-    CHECKPOINT,
+    LOGGER_CONFIG,
+    CHECKPOINT_CONFIG,
 )
 
 
@@ -29,7 +30,7 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
     config = load_config(run_config_path)
     args = [method,
             f"--config={run_config_path}"]
-    logger = CometLogger(**LOGGER)
+    logger = CometLogger(**LOGGER_CONFIG)
     logger.log_hyperparams(config)
 
     trainer_defaults = {
@@ -43,7 +44,7 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
     match method:
         case "fit":
             trainer_defaults["callbacks"] = [
-                ModelCheckpoint(**CHECKPOINT),
+                ModelCheckpoint(**CHECKPOINT_CONFIG),
             ]
         case "test" | "predict":
             if "ckpt_path" not in config.keys() or config["ckpt_path"] is None:
@@ -71,5 +72,8 @@ if __name__ == "__main__":
         case "download":
             from pipeline.sampler import download
             download()
+        case "calculate":
+            from pipeline.sampler import calculate
+            calculate()
         case "fit" | "validate" | "test" | "predict":
             main(method)

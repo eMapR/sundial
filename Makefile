@@ -9,17 +9,6 @@ ifndef SUNDIAL_BASE_PATH
 SUNDIAL_BASE_PATH := $(shell pwd -P)
 endif
 
-ifndef SUNDIAL_SAMPLE_NAME
-SUNDIAL_SAMPLE_NAME :=
-endif
-
-ifndef SUNDIAL_EXPERIMENT_PREFIX
-SUNDIAL_EXPERIMENT_PREFIX :=
-SUNDIAL_EXPERIMENT_NAME := $(SUNDIAL_SAMPLE_NAME)
-else
-SUNDIAL_EXPERIMENT_NAME := $(SUNDIAL_EXPERIMENT_PREFIX)_$(SUNDIAL_SAMPLE_NAME)
-endif
-
 ifndef SUNDIAL_ENV_NAME 
 SUNDIAL_ENV_NAME := sundial
 endif
@@ -31,6 +20,8 @@ endif
 ifndef SUNDIAL_NODES
 SUNDIAL_NODES :=
 endif
+
+SUNDIAL_EXPERIMENT_NAME := $(SUNDIAL_EXPERIMENT_PREFIX)_$(SUNDIAL_SAMPLE_NAME)
 
 default:
 	echo "Welcome to Sundial!"
@@ -76,7 +67,7 @@ default:
 	echo "        SUNDIAL_NODES:               Node within hpc to run job. Default: any node"
 	echo
 
-setup_env: _experiment_name_check
+setup_env:
 	echo "Setting up directories for $(SUNDIAL_BASE_PATH) and conda environment "$(SUNDIAL_ENV_NAME)". The existing environment will be overwritten...";
 	mkdir -p $(SUNDIAL_BASE_PATH)/logs;
 	mkdir -p $(SUNDIAL_BASE_PATH)/samples;
@@ -105,14 +96,13 @@ clink: _experiment_name_check
 		echo "Please provide a source experiment to copy from in variable "SSOURCE" (eg 'make clink SSOURCE=14k')..."; \
 		exit 1; \
 	fi; \
-	echo "Copying Sundial experiment $(SSOURCE) configs to $(SUNDIAL_EXPERIMENT_NAME)...";
-	echo "WARNING: This will create soft links to the source sammple data and sample config file.";
-	source_exp = $(SSOURCE)_$(SUNDIAL_SAMPLE_NAME);
-	cp -r $(SUNDIAL_BASE_PATH)/configs/$$source_exp $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/sample.yaml;
-
-	ln -s $(SUNDIAL_BASE_PATH)/samples/$$source_exp $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
-	ln -s $(SUNDIAL_BASE_PATH)/configs/$$source_exp/sample.yaml $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/ sample.yaml;
+	source_exp=$(SSOURCE)_$(SUNDIAL_SAMPLE_NAME); \
+	echo "Copying Sundial experiment $$source_exp configs to $(SUNDIAL_EXPERIMENT_NAME)..."; \
+	cp -r $(SUNDIAL_BASE_PATH)/configs/$$source_exp $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME); \
+	rm -rfv $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/sample.yaml; \
+	echo "WARNING: This will create soft links to the source sammple data and sample config file."; \
+	ln -s $(SUNDIAL_BASE_PATH)/samples/$$source_exp $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME); \
+	ln -s $(SUNDIAL_BASE_PATH)/configs/$$source_exp/sample.yaml $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME)/sample.yaml;
 
 sample: _sample
 	echo "Processing polygon sample from $(SUNDIAL_SAMPLE_NAME) shapefile for $(SUNDIAL_EXPERIMENT_PREFIX). Uno momento...";
@@ -147,6 +137,11 @@ test: _test
 predict: _predict
 	echo "Predicting image using model... Lets see if this works!";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
+	$(MAKE) -s _run
+
+calculate: _calculate
+	echo "Calculating metrics for $(SUNDIAL_EXPERIMENT_NAME)...";
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 status: _hpc_check
@@ -184,56 +179,53 @@ test_err: _test
 predict_err: _predict
 	$(MAKE) -s _read_err;
 
+calculate_err: _calculate
+	$(MAKE) -s _read_err;
+
 clean: _experiment_name_check
 	echo "Cleaning up logs, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
-
-clean_outs: _experiment_name_check
-	echo "Cleaning up outputs for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.e
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.o
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/*.log
+	rm -rfv $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME)/*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_logs: _experiment_name_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_samp: _experiment_name_check
 	echo "Cleaning up all sample data for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_dnld: _experiment_name_check
 	echo "Cleaning up chip data for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/chip_data*;
 
 clean_anno: _experiment_name_check
 	echo "Cleaning up annotation data for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/anno_data*;
 
 clean_ckpt: _experiment_name_check
 	echo "Cleaning up checkpoints generated for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_pred: _experiment_name_check
 	echo "Cleaning up predictions generated for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_expt: _experiment_name_check
 	echo "Cleaning up logs, sample data, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME)/*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME)/*;
+	rm -rfv $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME)/*;
 
 clean_nuke: _experiment_name_check
 	echo "Cleaning up all data for $(SUNDIAL_EXPERIMENT_NAME).";
-	rm -rf $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
-	rm -rf $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/samples/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/checkpoints/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/predictions/$(SUNDIAL_EXPERIMENT_NAME);
+	rm -rfv $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME);
 
 _config_dir_check:
 	if [[ ! -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_NAME) ]]; then \
@@ -242,10 +234,15 @@ _config_dir_check:
 	fi;
 
 _experiment_name_check:
-	if [[ -z "$(SUNDIAL_EXPERIMENT_NAME)" ]]; then \
-		echo "Please provide sample name and experiment suffix to delete."; \
+	if [[ -z "$(SUNDIAL_SAMPLE_NAME)" ]]; then \
+		echo "Please provide sample name. (eg 'make setup SUNDIAL_SAMPLE_NAME=shapefile_name') "; \
+		exit 1; \
+	fi; \
+	if [[ -z "$(SUNDIAL_EXPERIMENT_PREFIX)" ]]; then \
+		echo "Please provide a Sundial experiment prefix. (eg 'make setup SUNDIAL_EXPERIMENT_PREFIX=14k')..."; \
 		exit 1; \
 	fi;
+
 
 _hpc_check:
 	if [[ "$(SUNDIAL_PROCESSING)" != hpc ]]; then \
@@ -253,28 +250,31 @@ _hpc_check:
 		exit 1; \
 	fi;
 
-_sample: _experiment_name_check
+_sample:
 	$(eval export SUNDIAL_METHOD=sample)
 
-_annotate: _experiment_name_check
+_annotate:
 	$(eval export SUNDIAL_METHOD=annotate)
 
-_download: _experiment_name_check
+_download:
 	$(eval export SUNDIAL_METHOD=download)
 
-_fit: _experiment_name_check
+_fit:
 	$(eval export SUNDIAL_METHOD=fit)
 
-_validate: _experiment_name_check
+_validate:
 	$(eval export SUNDIAL_METHOD=validate)
 
-_test: _experiment_name_check
+_test:
 	$(eval export SUNDIAL_METHOD=test)
 
-_predict: _experiment_name_check
+_predict:
 	$(eval export SUNDIAL_METHOD=predict)
 
-_run:
+_calculate:
+	$(eval export SUNDIAL_METHOD=calculate)
+
+_run: _experiment_name_check
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		if [[ -z "$(SUNDIAL_NODES)" ]]; then \
 			nodes=$(shell sinfo -h -p $(SUNDIAL_PARTITION) -o "%N"); \
@@ -304,12 +304,4 @@ _read_err: _experiment_name_check
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log | grep ERROR; \
 		cat $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log | grep CRITICAL; \
 		tail $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log; \
-	fi; \
-
-_watch_log: _experiment_name_check
-	echo "Watching $(SUNDIAL_METHOD) for $(SUNDIAL_EXPERIMENT_NAME)...";
-	for ((i=0; i<2048; i++)); do \
-		tput clear; \
-		tail $(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_NAME)/$(SUNDIAL_METHOD).log; \
-		sleep 4; \
-	done;
+	fi;

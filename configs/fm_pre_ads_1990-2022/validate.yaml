@@ -1,21 +1,30 @@
 model:
-    class_path: Prithvi
+    class_path: PrithviFCN
     init_args:
+        num_classes: 5
+        view_size: 16
+        upscale_depth: 2
+        prithvi_path: src/backbones/prithvi/Prithvi_100M.pt
         prithvi_params:
             model_args:
                 decoder_depth: 8
                 decoder_embed_dim: 512
                 decoder_num_heads: 16
                 depth: 12
-                embed_dim: 384
+                embed_dim: 768
                 img_size: 256
                 in_chans: 6
                 num_frames: 3
                 num_heads: 12
-                patch_size: 4
+                patch_size: 16
                 tubelet_size: 1
             train_params:
                 mask_ratio: 0.0
+        prithvi_freeze: true
+        criterion:
+            class_path: torch.nn.CrossEntropyLoss
+            init_args:
+                reduction: sum
 data:
     class_path: ChipsDataModule
     init_args:
@@ -25,5 +34,4 @@ data:
 trainer:
     callbacks:
       - class_path: PrithviFCNCallbacks
-ckpt_path: null
-
+verbose: true

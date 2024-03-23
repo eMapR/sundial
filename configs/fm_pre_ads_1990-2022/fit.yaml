@@ -26,7 +26,7 @@ data:
 trainer:
     callbacks:
       - class_path: PrithviCallbacks
-    max_epochs: 1024
+    max_epochs: 256
     strategy: ddp
     devices: 1
     num_nodes: 2
@@ -37,6 +37,6 @@ optimizer:
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.StepLR
     init_args:
-        step_size: 128
+        step_size: 64
         gamma: 0.5
 

@@ -22,9 +22,10 @@ model:
                 mask_ratio: 0.0
         prithvi_freeze: true
         criterion:
-            class_path: torch.nn.BCEWithLogitsLoss
+            class_path: loss.BCEWithLogitsLoss
             init_args:
                 reduction: sum
+                pos_weight: [2.3]
 data:
     class_path: ChipsDataModule
     init_args:

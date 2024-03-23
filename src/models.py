@@ -60,7 +60,6 @@ class PrithviFCN(L.LightningModule):
                  criterion: nn.Module = None,
                  activation: nn.Module = None):
         super().__init__()
-        # init hyper params for convenience (avoiding self.hparams everywhere)
         self.num_classes = num_classes
         self.view_size = view_size
         self.upscale_depth = upscale_depth
@@ -153,8 +152,10 @@ class Prithvi(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
                  **kwargs):
-        super().__init__(**kwargs)     
+        super().__init__(**kwargs)
         self.prithvi_params = prithvi_params
+        
+        # initialize prithvi architecture
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])

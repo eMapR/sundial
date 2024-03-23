@@ -22,9 +22,10 @@ model:
                 mask_ratio: 0.0
         prithvi_freeze: true
         criterion:
-            class_path: torch.nn.CrossEntropyLoss
+            class_path: loss.CrossEntropyLoss
             init_args:
                 reduction: sum
+                weight: [0.7, 1, 0.1, 0.5, 0.6]
 data:
     class_path: ChipsDataModule
     init_args:

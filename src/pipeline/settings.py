@@ -69,7 +69,7 @@ FILE_EXT_MAP = {
     "ZARR": "zarr"
 }
 
-SAMPLER = {
+SAMPLER_CONFIG = {
     # sampling settings
     # (dict) toggles for subprocesses within the sampler
     "sample_toggles": {
@@ -157,22 +157,22 @@ SAMPLER = {
 
 # loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
-    SAMPLER = SAMPLER | load_config(SAMPLE_CONFIG_PATH)
+    SAMPLER_CONFIG = SAMPLER_CONFIG | load_config(SAMPLE_CONFIG_PATH)
 
-if SAMPLER["file_type"] == "ZARR":
-    ext = FILE_EXT_MAP[SAMPLER["file_type"]]
+if SAMPLER_CONFIG["file_type"] == "ZARR":
+    ext = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]]
     CHIP_DATA_PATH = CHIP_DATA_PATH + f".{ext}"
     ANNO_DATA_PATH = ANNO_DATA_PATH + f".{ext}"
 
 # default lightning dataloader settings
-DATALOADER = {
+DATALOADER_CONFIG = {
     "batch_size": 16,
     "num_workers": 8,
-    "chip_size": SAMPLER["pixel_edge_size"],
+    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
 }
 
 # default lightning model checkpoint save settings
-CHECKPOINT = {
+CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "epoch-{epoch}_val_loss-{val_loss:.2f}",
     "monitor": "val_loss",
@@ -182,24 +182,25 @@ CHECKPOINT = {
 }
 
 # default lightning logger settings
-LOGGER = {
+LOGGER_CONFIG = {
     "api_key": os.getenv("COMET_API_KEY"),
     "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
     "project_name": os.getenv("SUNDIAL_SAMPLE_NAME").replace("_", "-"),
-    "experiment_name": f"{os.getenv("SUNDIAL_EXPERIMENT_NAME")}_{os.getenv('SUNDIAL_METHOD')}",
+    "experiment_name": f"{os.getenv('SUNDIAL_EXPERIMENT_PREFIX')}_{os.getenv('SUNDIAL_METHOD')}",
     "log_git_metadata": False,
+    "log_git_patch": False,
 }
 
 if __name__ == "__main__":
     # saving sampler and download configs
-    save_config(SAMPLER, SAMPLE_CONFIG_PATH)
+    save_config(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
 
     # generating and saving run configs for fit, validate, test and predict
     run = {
         "data": {
             "class_path": "ChipsDataModule",
-            "init_args": DATALOADER
+            "init_args": DATALOADER_CONFIG
         }
     }
 

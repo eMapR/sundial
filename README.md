@@ -95,7 +95,7 @@ make sample
 ```
 
 ### 4. Generate annotation images from original shapefile and sample metadata.
-Features in the shapefile are used to create annotations by pixel using the SAMPLER.strata_columns setting. The annotation image shape is (N C H W). This step is only necessary for superivsed learning. Note: Annotations are saved as their own image. This may not be as storage efficient but makes for loading into Pytorch much simpler and quicker.
+Features in the shapefile are used to create annotations by pixel using the SAMPLER_CONFIG.strata_columns setting. The annotation image shape is (N C H W). This step is only necessary for superivsed learning. Note: Annotations are saved as their own image. This may not be as storage efficient but makes for loading into Pytorch much simpler and quicker.
 ```console
 make annotate
 ```
@@ -122,10 +122,10 @@ While the framework for deep learning is build on [Pytorch Lightning](https://li
 The configs worth looking at are:
 | CONFIG | DESCRIPTION | OPTIONS |
 | --- | --- | --- |
-| SAMPLER.method | Method to generate samples options with polygon | "convering_grid", "random", "gee_stratified", "centroid" |
-| SAMPLER.num_points | Number of points to sample from original shapefile | |
-| SAMPLER.strata_columns | Columns found in shapefile to generate strata for training | |
-| SAMPLER.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
-| SAMPLER.scale | Scale to generate image raster | |
-| SAMPLER.projection | Reprojection string | (EPSG:****) |
-| SAMPLER.pixel_edge_size | Edge size of chip image in pixels | |
+| SAMPLER_CONFIG.method | Method to generate samples options with polygon | "convering_grid", "random", "gee_stratified", "centroid" |
+| SAMPLER_CONFIG.num_points | Number of points to sample from original shapefile | |
+| SAMPLER_CONFIG.strata_columns | Columns found in shapefile to generate strata for training | |
+| SAMPLER_CONFIG.file_type | File type to download | "NPY", "NUMPY_NDARRAY", "ZARR", "GEO_TIFF" |
+| SAMPLER_CONFIG.scale | Scale to generate image raster | |
+| SAMPLER_CONFIG.projection | Reprojection string | (EPSG:****) |
+| SAMPLER_CONFIG.pixel_edge_size | Edge size of chip image in pixels | |
