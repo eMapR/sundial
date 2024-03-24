@@ -29,8 +29,8 @@ model:
 data:
     class_path: ChipsDataModule
     init_args:
-        batch_size: 16
-        num_workers: 64
+        batch_size: 32
+        num_workers: 16
         chip_size: 256
 trainer:
     callbacks:
@@ -39,12 +39,16 @@ trainer:
     strategy: ddp_find_unused_parameters_true
     devices: 2
     num_nodes: 1
+    accumulate_grad_batches: 8
+    precision: 16-mixed
+    gradient_clip_val: 5
+    
 optimizer:
     class_path: torch.optim.AdamW
     init_args:
-        lr: 0.0005
+        lr: 0.0001
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.StepLR
     init_args:
-        step_size: 64
-        gamma: 0.5
+        step_size: 16
+        gamma: 0.7

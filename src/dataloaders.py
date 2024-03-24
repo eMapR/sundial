@@ -89,7 +89,7 @@ class ChipsDataset(Dataset):
     def __getitem__(self, idx):
         # loading image into xarr file and slicing if necessary
         if len(self.samples.shape) == 2 and self.year_step is not None:
-            img_idx, year_idx = self.samples[img_idx]
+            img_idx, year_idx = self.samples[idx]
             chip = self.chip_loader(str(img_idx))
             chip = self.slice_year(chip, year_idx)
         else:
@@ -183,6 +183,8 @@ class ChipsDataModule(L.LightningDataModule):
             "num_workers": self.num_workers,
             "pin_memory": True,
             "drop_last": True,
+            "prefetch_factor": 2,
+            "persistent_workers": True
         }
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:

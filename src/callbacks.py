@@ -3,49 +3,59 @@ import os
 import torch
 
 from pipeline.logger import get_logger
-from pipeline.settings import PREDICTION_PATH, META_DATA_PATH, LOG_PATH, SAMPLER_CONFIG
+from pipeline.settings import load_config, PREDICTION_PATH, META_DATA_PATH, LOG_PATH, SAMPLER_CONFIG, CONFIG_PATH
 from utils import tensors_to_tifs
 
 LOGGER = get_logger(LOG_PATH, os.getenv("SUNDIAL_METHOD"))
 
 
-class PrithviFCNCallbacks(L.Callback):
-    def on_train_batch_end(self,
-                           trainer: L.Trainer,
-                           pl_module: L.LightningModule,
-                           outputs: torch.Tensor,
-                           batch: torch.Tensor,
-                           batch_idx: int,):
-        pl_module.log(
-            name="train_loss",
-            value=outputs["loss"],
-            logger=False,
-            prog_bar=False,
-        )
-        pl_module.logger.log_metrics(
-            metrics={"train_loss": outputs["loss"]},
-            step=trainer.global_step
-        )
+class PrithviCallbacks(L.Callback):
+     def setup(self,
+               trainer: L.Trainer,
+               pl_module: L.LightningModule,
+               stage: str):
+         method = os.getenv("SUNDIAL_METHOD")
+         run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
+         config = load_config(run_config_path)
+         pl_module.logger.log_hyperparams(config)
 
-    def on_validation_batch_end(self,
-                                trainer: L.Trainer,
-                                pl_module: L.LightningModule,
-                                outputs: torch.Tensor,
-                                batch: torch.Tensor,
-                                batch_idx: int,
-                                dataloader_idx: int = 0):
-        pl_module.log(
-            name="val_loss",
-            value=outputs["loss"],
-            logger=False,
-            prog_bar=False,
-            sync_dist=True
-        )
-        pl_module.logger.log_metrics(
-            metrics={"val_loss": outputs["loss"]},
-            step=trainer.global_step
-        )
+     def on_train_batch_end(self,
+                            trainer: L.pytorch.trainer.trainer,
+                            pl_module: L.LightningModule,
+                            outputs: torch.Tensor,
+                            batch: torch.Tensor,
+                            batch_idx: int,):
+         pl_module.log(
+             name="train_loss",
+             value=outputs["loss"],
+             logger=False,
+             prog_bar=True,
+         )
+         pl_module.logger.log_metrics(
+             metrics={"train_loss": outputs["loss"]},
+             step=trainer.global_step
+         )
 
+     def on_validation_batch_end(self,
+                                 trainer: L.pytorch.trainer.trainer,
+                                 pl_module: L.LightningModule,
+                                 outputs: torch.Tensor,
+                                 batch: torch.Tensor,
+                                 batch_idx: int,
+                                 dataloader_idx: int = 0):
+         pl_module.log(
+             name="val_loss",
+             value=outputs["loss"],
+             logger=False,
+             prog_bar=True,
+             sync_dist=True
+         )
+         pl_module.logger.log_metrics(
+             metrics={"val_loss": outputs["loss"]},
+             step=trainer.global_step
+         )
+
+class PrithviFCNCallbacks(PrithviCallbacks):
     def on_test_batch_end(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule,
@@ -124,40 +134,3 @@ class PrithviFCNCallbacks(L.Callback):
                         META_DATA_PATH,
                         SAMPLER_CONFIG['num_workers'])
 
-
-class PrithviCallbacks(L.Callback):
-    def on_train_batch_end(self,
-                           trainer: L.pytorch.trainer.trainer,
-                           pl_module: L.LightningModule,
-                           outputs: torch.Tensor,
-                           batch: torch.Tensor,
-                           batch_idx: int,):
-        pl_module.log(
-            name="train_loss",
-            value=outputs["loss"],
-            logger=False,
-            prog_bar=False,
-        )
-        pl_module.logger.log_metrics(
-            metrics={"train_loss": outputs["loss"]},
-            step=trainer.global_step
-        )
-
-    def on_validation_batch_end(self,
-                                trainer: L.pytorch.trainer.trainer,
-                                pl_module: L.LightningModule,
-                                outputs: torch.Tensor,
-                                batch: torch.Tensor,
-                                batch_idx: int,
-                                dataloader_idx: int = 0):
-        pl_module.log(
-            name="val_loss",
-            value=outputs["loss"],
-            logger=False,
-            prog_bar=False,
-            sync_dist=True
-        )
-        pl_module.logger.log_metrics(
-            metrics={"val_loss": outputs["loss"]},
-            step=trainer.global_step
-        )

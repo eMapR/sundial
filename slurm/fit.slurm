@@ -1,7 +1,7 @@
 #!/bin/bash -l
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --mem=0
-#SBATCH --cpus-per-task=64
+#SBATCH --cpus-per-task=16
 #SBATCH --ntasks-per-node=1
 
 ##export NCCL_P2P_DISABLE=1

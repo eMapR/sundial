@@ -3,7 +3,6 @@ import torch
 
 from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.loggers import CometLogger
 
 from callbacks import *
 from dataloaders import *
@@ -22,22 +21,24 @@ from pipeline.settings import (
 
 
 def main(method: Literal["fit", "validate", "test", "predict"]):
-    # setting lower precision for GH200/cuda gpus
+    # setting lower precision for GH200/cuda gpus. Not necessary because it is reset via configs but gets rid of the warning.
     torch.set_float32_matmul_precision("high")
 
     # setting up trainer defaults w/ paths from pipeline.settings
     run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
-    config = load_config(run_config_path)
     args = [method,
             f"--config={run_config_path}"]
-    logger = CometLogger(**LOGGER_CONFIG)
-    logger.log_hyperparams(config)
 
     trainer_defaults = {
         "accelerator": "cuda",
         "log_every_n_steps": 16,
-        "logger": [logger],
-        "enable_progress_bar": False
+        "logger": [
+            {
+                "class_path": "lightning.pytorch.loggers.CometLogger",
+                "init_args": LOGGER_CONFIG
+            }
+        ],
+        "enable_progress_bar": True
     }
 
     # setting up default callbacks for fit method
@@ -47,6 +48,7 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
                 ModelCheckpoint(**CHECKPOINT_CONFIG),
             ]
         case "test" | "predict":
+            config = load_config(run_config_path)
             if "ckpt_path" not in config.keys() or config["ckpt_path"] is None:
                 ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
             args.append(f"--ckpt_path={ckpt_path}")
@@ -61,7 +63,6 @@ def main(method: Literal["fit", "validate", "test", "predict"]):
 
 if __name__ == "__main__":
     method = os.getenv("SUNDIAL_METHOD")
-    run_config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
     match os.getenv("SUNDIAL_METHOD"):
         case "sample":
             from pipeline.sampler import sample
