@@ -1,4 +1,4 @@
-from torch import nn, Tensor, tensor
+from torch import nn, tensor
 
 
 class BCEWithLogitsLoss(nn.Module):

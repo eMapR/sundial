@@ -55,7 +55,7 @@ class PrithviFCN(L.LightningModule):
                  view_size: int,
                  upscale_depth: int,
                  prithvi_params: dict,
-                 prithvi_freeze: bool =True,
+                 prithvi_freeze: bool = True,
                  prithvi_path: str = None,
                  criterion: nn.Module = None,
                  activation: nn.Module = None):
@@ -148,13 +148,39 @@ class PrithviFCN(L.LightningModule):
         return {"classes": classes}
 
 
+class PrithviFCNDiff(PrithviFCN):
+    def __init__(self,
+                 num_classes: int,
+                 view_size: int,
+                 upscale_depth: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 criterion: nn.Module = None,
+                 activation: nn.Module = None):
+        super().__init__(
+            num_classes=num_classes,
+            view_size=view_size,
+            upscale_depth=upscale_depth,
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path,
+            criterion=criterion,
+            activation=activation
+        )
+
+    def forward(self, chips) -> torch.Any:
+        chips = chips[:, :, 1:, :, :] - chips[:, :, :-1, :, :]
+        return super().forward(chips)
+
+
 class Prithvi(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
                  **kwargs):
         super().__init__(**kwargs)
         self.prithvi_params = prithvi_params
-        
+
         # initialize prithvi backbone
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(

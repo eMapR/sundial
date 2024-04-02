@@ -4,7 +4,6 @@ import torch
 
 from torchmetrics.functional.classification import binary_accuracy, binary_precision, binary_jaccard_index
 from torchmetrics.functional.image import structural_similarity_index_measure
-from typing import Any
 
 from pipeline.settings import (load_config,
                                METHOD,

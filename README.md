@@ -3,9 +3,9 @@ Workflow / framework for machine learning with data sourced from Google Earth En
 
 ## Introduction
 
-Google Earth Engine provides an API endpoint which allows you to quickly download images up to 48 MB, give or take a few MB. This is relatively small as far as spatial science goes, but for machine learning, it is ideal for getting a large number of training chips for deep learning. GEE also provides easy access to a plethora of pre-processsed image collections.
+Google Earth Engine provides an API endpoint which allows you to quickly download images up to 48 MB, give or take a few MB. This is relatively small as far as spatial science goes, but for machine learning, it is an ideal tool for getting a large number of training chips for deep learning research. GEE also provides easy access to a plethora of pre-processsed image collections.
 
-This repo contains scripts to download square chips via polygons sourced from shapefiles and run them through a neural network of your own choosing. Although Google already provides powerful tools for deep learning integrated with GEE, it can be beneficial and/or convenient to perform analysis on your own GPU(s). The intended use is time series analysis on an HPC however, the scripts will work on any machine with Nvidia GPU(s).
+This repo contains scripts to download square chips via polygons sourced from shapefiles and run them through a neural network of your own choosing. Although Google already provides powerful tools for deep learning integrated with GEE, it can be beneficial and/or cost-effective to perform analysis on your own GPU(s). The intended use is time series analysis on an HPC however, the scripts will work on any machine with Nvidia GPU(s).
 
 ## Basic Usage
 
@@ -116,11 +116,11 @@ make fit
 ```
 
 ### 7. View logs.
-Comet is used as the default logging package for images and training data. See [Lightning Comet Docs](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet) and [Comet Experiment Docs](https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/#experimentlog_metric) for more details. Environment variables needed can be found in src/settings.py Alternatively, a separate logger can be written and included via config files.
+Comet, an ML cloud reporting service offered free for research, is used as the default logging package for images and training data. See [Lightning Comet Docs](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet) and [Comet Experiment Docs](https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/#experimentlog_metric) for more details. Environment variables needed can be found in src/settings.py. Alternatively, a separate logger can be written and included via config files.
 
 ## Config files
 
-While the framework for deep learning is build on [Pytorch Lightning](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html), the pipeline down from GEE can be configured using a similar format. See src/pipeline/settings.py for more details. In addition, images are generated using an annual medoid composite by default since for now, that is our focus, but another image generator function can be provided to the class if you instantiate it separately.
+While the framework for deep learning is build on [Pytorch Lightning](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html), the pipeline down from GEE can be configured using a similar format. See src/pipeline/settings.py for more details and configs directory for examples. In addition, images are generated using an annual medoid composite by default since for now, that is our focus, but another image generator function can be provided to the class if you instantiate it separately.
 
 The configs worth looking at are:
 | CONFIG | DESCRIPTION | OPTIONS |

@@ -3,6 +3,7 @@ import geopandas as gpd
 import multiprocessing as mp
 import numpy as np
 import os
+import random
 import xarray as xr
 import yaml
 
@@ -12,6 +13,7 @@ from rasterio.transform import from_bounds
 from rasterio.features import rasterize
 from shapely.geometry import Polygon
 from shapely import unary_union
+from shapely.ops import transform
 from sklearn.model_selection import train_test_split
 from typing import Optional
 
@@ -245,7 +247,7 @@ def stratify_data(
         sample = groupby.sample(n=num_points)
     else:
         sample = geo_dataframe
-    sample = sample.reset_index(drop=True)
+    sample = sample.reset_index().rename(columns={'index': 'meta_index'})
     return sample
 
 
@@ -255,6 +257,26 @@ def generate_centroid_squares(
         meter_edge_size: int) -> gpd.GeoDataFrame:
     geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
         .apply(lambda p: p.centroid.buffer(meter_edge_size//2).envelope)
+    return geo_dataframe
+
+
+def centroid_shift_helper(
+        polygon: Polygon,
+        meter_edge_size: int) -> Polygon:
+    centroid = polygon.centroid
+    dx = random.randint(-meter_edge_size//2, meter_edge_size//2)
+    dy = random.randint(-meter_edge_size//2, meter_edge_size//2)
+    centroid_shift = transform(lambda x, y, z=None: (x+dx, y+dy), centroid)
+    centroid_shift = centroid_shift.buffer(meter_edge_size//2).envelope
+    return centroid_shift
+
+
+@function_timer
+def generate_centroid_shift_squares(
+        geo_dataframe: gpd.GeoDataFrame,
+        meter_edge_size: int) -> gpd.GeoDataFrame:
+    geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
+        .apply(lambda p: centroid_shift_helper(p, meter_edge_size))
     return geo_dataframe
 
 
@@ -293,6 +315,12 @@ def generate_squares(
             gdf = generate_centroid_squares(
                 geo_dataframe,
                 meter_edge_size)
+        case "centroid_shift":
+            gdf = generate_centroid_shift_squares(
+                geo_dataframe,
+                meter_edge_size)
+        case _:
+            raise ValueError(f"Invalid method: {method}")
 
     if strata_columns is not None and strata_map_path is not None:
         LOGGER.info(f"Saving strata map to {strata_map_path}...")
@@ -509,6 +537,8 @@ def sample():
                 "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
             num_samples, gdf = generate_squares(**square_config)
+        else:
+            num_samples = None
 
         if num_samples is None and \
                 (
@@ -517,8 +547,6 @@ def sample():
                 ):
             gdf = gpd.read_file(META_DATA_PATH)
             num_samples = len(gdf)
-            if not SAMPLER_CONFIG["sample_toggles"]["generate_time_combinations"]:
-                samples = np.arange(num_samples)
 
         if SAMPLER_CONFIG["sample_toggles"]["generate_time_combinations"]:
             LOGGER.info("Generating time combinations...")
@@ -529,6 +557,8 @@ def sample():
                 "year_step": SAMPLER_CONFIG["year_step"]
             }
             samples = generate_time_combinations(**time_sample_config)
+        elif SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
+            samples = np.arange(num_samples)
 
         if SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
             LOGGER.info(

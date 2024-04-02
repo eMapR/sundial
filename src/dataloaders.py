@@ -96,10 +96,6 @@ class ChipsDataset(Dataset):
             img_idx = self.samples[idx]
             chip = self.chip_loader(str(img_idx))
 
-        # clipping chip if larger than chip_size
-        if self.chip_size < max(chip["x"].size, chip["y"].size):
-            chip = clip_xy_xarray(chip, self.chip_size)
-
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
 
@@ -121,11 +117,16 @@ class ChipsDataset(Dataset):
         return len(self.samples)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
-        return xarr[name]
+        chip = xarr[name]
+        if self.chip_size < max(chip["x"].size, chip["y"].size):
+            chip = clip_xy_xarray(chip, self.chip_size)
+        return chip
 
     def _tif_loader(self, data_path: str, name: int):
         image_path = os.path.join(data_path, f"{name}.tif")
-        image = open_rasterio(image_path)
+        with open_rasterio(image_path) as src:
+            image = src.read()
+        # TODO: implement multiple tif files for multiple years
         return image
 
 

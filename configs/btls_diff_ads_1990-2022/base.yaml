@@ -1,0 +1,34 @@
+model:
+    class_path: PrithviFCNDiff
+    init_args:
+        num_classes: 1
+        view_size: 16
+        upscale_depth: 2
+        prithvi_path: src/backbones/prithvi/Prithvi_100M.pt 
+        prithvi_params:
+            model_args:
+                decoder_depth: 8
+                decoder_embed_dim: 512
+                decoder_num_heads: 16
+                depth: 12
+                embed_dim: 768
+                img_size: 256
+                in_chans: 6
+                num_frames: 3
+                num_heads: 12
+                patch_size: 16
+                tubelet_size: 1
+            train_params:
+                mask_ratio: 0.0
+        prithvi_freeze: false
+        criterion:
+            class_path: loss.BCEWithLogitsLoss
+            init_args:
+                reduction: sum
+                pos_weight: [3.2]
+data:
+    class_path: ChipsDataModule
+    init_args:
+        batch_size: 32
+        num_workers: 16
+        chip_size: 256

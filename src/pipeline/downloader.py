@@ -162,17 +162,20 @@ class Downloader:
     def _reporter(self, report_queue: mp.Queue) -> None:
         while (report := report_queue.get()) is not None:
             level, message = report
-            match level:
-                case "DEBUG":
-                    self._logger.debug(message)
-                case "INFO":
-                    self._logger.info(message)
-                case "WARNING":
-                    self._logger.warning(message)
-                case "ERROR":
-                    self._logger.error(message)
-                case "CRITICAL":
-                    self._logger.critical(message)
+            if self._logger is not None:
+                match level:
+                    case "DEBUG":
+                        self._logger.debug(message)
+                    case "INFO":
+                        self._logger.info(message)
+                    case "WARNING":
+                        self._logger.warning(message)
+                    case "ERROR":
+                        self._logger.error(message)
+                    case "CRITICAL":
+                        self._logger.critical(message)
+            else:
+                print(level, message)
 
     def _image_generator(self,
                          payload_queue: mp.Queue,
