@@ -1,12 +1,11 @@
 file_type: ZARR
 fraction: null
-flat_annotations: true
 gee_workers: 42
 gee_stratafied_config: null
 groupby_columns: ["year"]
 io_limit: 32
-look_years: 2
-method: centroid
+look_years: 6
+method: centroid_shift
 num_points: 16384
 num_workers: 16
 overwrite: false
@@ -19,7 +18,7 @@ preprocess_actions:
 projection: EPSG:5070
 sample_toggles:
     preprocess_data: true
-    stratify_data: true
+    stratified_sample: true
     generate_squares: true
     generate_time_combinations: false
     generate_train_test_splits: true
@@ -27,4 +26,4 @@ scale: 30
 strata_columns: ['dca_cat']
 test_ratio: 0.02
 validate_ratio: 0.2
-year_step: null
+year_step: 3

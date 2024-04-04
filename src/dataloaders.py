@@ -11,7 +11,7 @@ from typing import Literal, Optional
 
 from pipeline.utils import clip_xy_xarray
 from pipeline.settings import (
-    load_config,
+    load_yaml,
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
     STAT_DATA_PATH,
@@ -83,18 +83,22 @@ class ChipsDataset(Dataset):
             strata = clip_xy_xarray(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
-    def slice_year(self, xarr: xr.Dataset, year_idx: int):
-        return xarr.sel(year=slice(year_idx, year_idx+self.year_step))
+    def slice_year(self, xarr: xr.Dataset, slice: slice):
+        return xarr.sel(year=slice)
 
     def __getitem__(self, idx):
-        # loading image into xarr file and slicing if necessary
-        if len(self.samples.shape) == 2 and self.year_step is not None:
+        # loading image idx
+        if len(self.samples.shape) == 2:
             img_idx, year_idx = self.samples[idx]
-            chip = self.chip_loader(str(img_idx))
-            chip = self.slice_year(chip, year_idx)
+            slice = slice(year_idx, self.year_step)
         else:
             img_idx = self.samples[idx]
-            chip = self.chip_loader(str(img_idx))
+            slice = slice(-self.year_step, None) if self.year_step else None
+
+        # loading chip and slicing year if necessary
+        chip = self.chip_loader(img_idx)
+        if slice is not None:
+            chip = self.slice_year(chip, slice)
 
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
@@ -164,7 +168,7 @@ class ChipsDataModule(L.LightningDataModule):
 
         # loading means and stds from stat_data_path
         if self.stat_data_path is not None and os.path.exists(self.stat_data_path):
-            stats = load_config(self.stat_data_path)
+            stats = load_yaml(self.stat_data_path)
             self.means = stats["means"]
             self.stds = stats["stds"]
 

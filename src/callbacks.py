@@ -5,7 +5,7 @@ import torch
 from torchmetrics.functional.classification import binary_accuracy, binary_precision, binary_jaccard_index
 from torchmetrics.functional.image import structural_similarity_index_measure
 
-from pipeline.settings import (load_config,
+from pipeline.settings import (load_yaml,
                                METHOD,
                                PREDICTION_PATH,
                                CHECKPOINT_PATH,
@@ -42,8 +42,8 @@ class LogSetupCallback(L.Callback):
               trainer: L.Trainer,
               pl_module: L.LightningModule,
               stage: str):
-        base_config = load_config(os.path.join(CONFIG_PATH, "base.yaml"))
-        meth_config = load_config(os.path.join(CONFIG_PATH, f"{METHOD}.yaml"))
+        base_config = load_yaml(os.path.join(CONFIG_PATH, "base.yaml"))
+        meth_config = load_yaml(os.path.join(CONFIG_PATH, f"{METHOD}.yaml"))
         pl_module.logger.log_hyperparams(base_config)
         pl_module.logger.log_hyperparams(meth_config)
         pl_module.logger.log_hyperparams({"sampler": SAMPLER_CONFIG})

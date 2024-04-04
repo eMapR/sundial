@@ -1,9 +1,0 @@
-trainer:
-    callbacks:
-      - class_path: LogTestCallback
-      - class_path: SaveTestCallback
-    precision: 16-mixed
-    devices: 1
-ckpt_path: null 
-verbose: true
-

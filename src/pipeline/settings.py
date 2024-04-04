@@ -2,22 +2,22 @@ import os
 import yaml
 
 
-def save_config(config, path):
+def save_yaml(config, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         yaml.dump(config, f)
 
 
-def load_config(path):
+def load_yaml(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
-def update_config(config, path):
+def update_yaml(config, path):
     if os.path.exists(path):
-        old_config = load_config(path)
+        old_config = load_yaml(path)
         config |= old_config
-    save_config(config, path)
+    save_yaml(config, path)
 
 
 # sample information
@@ -48,7 +48,7 @@ SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
 
 # sample and data paths
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data")
-STRATA_MAP_PATH = os.path.join(SAMPLE_PATH, "strata_map.yaml")
+STRATA_LIST_PATH = os.path.join(SAMPLE_PATH, "strata_data.yaml")
 STAT_DATA_PATH = os.path.join(SAMPLE_PATH, "stat_data.yaml")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data")
 ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data")
@@ -64,7 +64,7 @@ GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
 # non configurable GEE, image, and meta data settings
 RANDOM_STATE = 42
 MASK_LABELS = ["cloud"]
-STRATA_ATTR_NAME = "stratum"
+STRATA_ATTR_NAME = "strata"
 NO_DATA_VALUE = 0
 GEE_REQUEST_LIMIT = 40
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
@@ -165,7 +165,7 @@ SAMPLER_CONFIG = {
 
 # loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
-    SAMPLER_CONFIG = SAMPLER_CONFIG | load_config(SAMPLE_CONFIG_PATH)
+    SAMPLER_CONFIG = SAMPLER_CONFIG | load_yaml(SAMPLE_CONFIG_PATH)
 
 if SAMPLER_CONFIG["file_type"] == "ZARR":
     ext = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]]
@@ -211,7 +211,7 @@ if EXPERIMENT_SUFFIX:
 
 if __name__ == "__main__":
     # saving sampler and download configs
-    save_config(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
+    save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
 
     # creating run configs for base, fit, validate, test, and predict
     for method in ["base", "fit", "validate", "test", "predict"]:
@@ -248,4 +248,4 @@ if __name__ == "__main__":
                     }
                 }
 
-        save_config(run_config, config_path)
+        save_yaml(run_config, config_path)

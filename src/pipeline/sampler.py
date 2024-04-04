@@ -5,7 +5,6 @@ import numpy as np
 import os
 import random
 import xarray as xr
-import yaml
 
 from datetime import datetime
 from typing import Literal, Any
@@ -20,7 +19,9 @@ from typing import Optional
 from .downloader import Downloader
 from .logger import get_logger
 from .settings import (
-    update_config,
+    load_yaml,
+    save_yaml,
+    update_yaml,
     METHOD,
     SAMPLER_CONFIG,
     RANDOM_STATE,
@@ -33,7 +34,7 @@ from .settings import (
     VALIDATE_SAMPLE_PATH,
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
-    STRATA_MAP_PATH,
+    STRATA_LIST_PATH,
     STAT_DATA_PATH,
     GEO_PRE_PATH,
     GEO_RAW_PATH,
@@ -186,7 +187,9 @@ def gee_download_features(
 def preprocess_data(
         geo_dataframe: gpd.GeoDataFrame,
         preprocess_actions: list[str, Literal[">", "<", "==", "!=", "replace"], Any],
-        projection: Optional[str] = None,) -> gpd.GeoDataFrame:
+        projection: Optional[str] = None,
+        strata_list_path: Optional[str] = None,
+        strata_columns: Optional[list[str]] = None) -> gpd.GeoDataFrame:
     epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
     if projection is not None and epsg != projection:
         LOGGER.info(f"Reprojecting geo dataframe to {projection}...")
@@ -227,23 +230,30 @@ def preprocess_data(
             case _:
                 raise ValueError(f"Invalid filter operator: {action}")
 
+    if strata_columns is not None and strata_list_path is not None:
+        LOGGER.info(f"Saving strata list to {strata_list_path}...")
+        geo_dataframe.loc[:, STRATA_ATTR_NAME] = geo_dataframe.loc[:, strata_columns].astype(
+            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
+        strata_list = {STRATA_ATTR_NAME: np.sort(
+            geo_dataframe[STRATA_ATTR_NAME].unique()).tolist()}
+        save_yaml(strata_list, strata_list_path)
+
     LOGGER.info(f"Saving processed geo dataframe to {GEO_PRE_PATH}...")
     geo_dataframe.to_file(GEO_PRE_PATH)
     return geo_dataframe
 
 
 @function_timer
-def stratify_data(
+def stratified_sample(
     geo_dataframe: gpd.GeoDataFrame,
     fraction: Optional[float] = None,
     num_points: Optional[int] = None,
-    strata_columns: Optional[list[str]] = None,
 ):
     if fraction is not None:
-        groupby = geo_dataframe.groupby(strata_columns)
+        groupby = geo_dataframe.groupby(STRATA_ATTR_NAME)
         sample = groupby.sample(frac=fraction)
     elif num_points is not None:
-        groupby = geo_dataframe.groupby(strata_columns)
+        groupby = geo_dataframe.groupby(STRATA_ATTR_NAME)
         sample = groupby.sample(n=num_points)
     else:
         sample = geo_dataframe
@@ -286,9 +296,7 @@ def generate_squares(
         method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
         meta_data_path: str,
         meter_edge_size: int | float,
-        gee_stratafied_config: Optional[dict] = None,
-        strata_map_path: Optional[str] = None,
-        strata_columns: Optional[list[str]] = None) -> tuple[gpd.GeoDataFrame, int]:
+        gee_stratafied_config: Optional[dict] = None) -> tuple[gpd.GeoDataFrame, int]:
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "convering_grid":
@@ -322,15 +330,6 @@ def generate_squares(
         case _:
             raise ValueError(f"Invalid method: {method}")
 
-    if strata_columns is not None and strata_map_path is not None:
-        LOGGER.info(f"Saving strata map to {strata_map_path}...")
-        gdf.loc[:, STRATA_ATTR_NAME] = gdf.loc[:, strata_columns].astype(
-            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
-        strata_map = {v: k for k, v in enumerate(
-            gdf[STRATA_ATTR_NAME].unique(), 1)}
-        with open(strata_map_path, "w") as f:
-            yaml.dump(strata_map, f, default_flow_style=False)
-
     LOGGER.info(f"Saving squares geo dataframe to {meta_data_path}...")
     gdf.to_file(meta_data_path)
 
@@ -354,11 +353,11 @@ def generate_time_combinations(
     return time_arr
 
 
-def rasterizer_helper(polygons: gpd.GeoSeries,
-                      square: Polygon,
-                      scale: int,
-                      fill: int | float,
-                      default_value: int | float):
+def rasterizer(polygons: gpd.GeoSeries,
+               square: Polygon,
+               scale: int,
+               fill: int | float,
+               default_value: int | float):
     if len(polygons) == 0:
         raise ValueError(
             f"Check preprocessing actions. Polygon series has len 0...")
@@ -376,56 +375,50 @@ def rasterizer_helper(polygons: gpd.GeoSeries,
     return raster
 
 
-def rasterizer(population_gdf: gpd.GeoDataFrame,
-               sample_gdf: gpd.GeoDataFrame,
-               strata_columns: list[str | int],
-               groupby_columns: list[str | int],
-               strata_map: dict[str, int],
-               pixel_edge_size: int,
-               scale: int,
-               flat_annotations: bool,
-               anno_data_path: str,
-               io_limit: int,
-               io_lock: Optional[mp.Lock] = None,
-               index_queue: Optional[mp.Queue] = None):
-    columns = groupby_columns + strata_columns
+def annotator(population_gdf: gpd.GeoDataFrame,
+              sample_gdf: gpd.GeoDataFrame,
+              groupby_columns: list[str | int],
+              strata_map: dict[str, int],
+              pixel_edge_size: int,
+              scale: int,
+              anno_data_path: str,
+              io_limit: int,
+              io_lock: Optional[mp.Lock] = None,
+              index_queue: Optional[mp.Queue] = None):
     batch = []
     while (index := index_queue.get()) is not None:
 
         # getting annotation information from sample
         LOGGER.info(f"Rasterizing sample {index}...")
         target = sample_gdf.iloc[index]
+        group = target[groupby_columns]
         square = target.geometry
-        group = target[columns]
-        stratum_idx = strata_map[target[STRATA_ATTR_NAME]]
-        default_value = stratum_idx if flat_annotations else 1
+        default_value = strata_map[target[STRATA_ATTR_NAME]]
 
         # rasterizing multipolygon and clipping to square
-        try:
-            mp = population_gdf[(population_gdf[columns] == group)
-                                .all(axis=1)].geometry
-            # TODO: rasterize and save multipolygon using gdal
-            annotation = rasterizer_helper(
-                mp, square, scale, NO_DATA_VALUE, default_value)
-        except Exception as e:
-            raise e
-        annotation = xr.DataArray(annotation, dims=["y", "x"])
+        xarr_anno_list = []
+        LOGGER.info(
+            f"Creating annotations for sample {index} from strata map...")
 
-        # clipping or padding to pixel_edge_size
-        if pixel_edge_size > min(annotation["x"].size,  annotation["y"].size):
-            annotation = pad_xy_xarray(annotation, pixel_edge_size)
-        if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
-            annotation = clip_xy_xarray(annotation, pixel_edge_size)
+        # strata map should already be in order of index value
+        for strata in strata_map:
+            try:
+                mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
+                    (population_gdf[STRATA_ATTR_NAME] == strata)
+                mp = population_gdf[mask].geometry
+                annotation = rasterizer(
+                    mp, square, scale, NO_DATA_VALUE, default_value)
+            except Exception as e:
+                raise e
+            annotation = xr.DataArray(annotation, dims=["y", "x"])
 
-        # expanding annotation to (C ,H, W) shape
-        if flat_annotations:
-            xarr_anno = annotation.expand_dims(STRATA_ATTR_NAME)
-        else:
-            # TODO: omit concat logic and generate with 3D shape
-            xarr_anno_list = [xr.DataArray(np.zeros(annotation.shape), dims=['x', 'y'])
-                              for _ in strata_map]
-            xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
-            xarr_anno[stratum_idx-1:stratum_idx, :, :] = annotation
+            # clipping or padding to pixel_edge_size
+            if pixel_edge_size > min(annotation["x"].size,  annotation["y"].size):
+                annotation = pad_xy_xarray(annotation, pixel_edge_size)
+            if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
+                annotation = clip_xy_xarray(annotation, pixel_edge_size)
+            xarr_anno_list.append(annotation)
+        xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
 
         # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index} to batch...")
@@ -436,8 +429,7 @@ def rasterizer(population_gdf: gpd.GeoDataFrame,
             with io_lock:
                 xarr_anno.to_zarr(store=anno_data_path, mode="a")
             batch.clear()
-
-        LOGGER.info(f"Rasterize sample {index} completed.")
+        LOGGER.info(f"Rasterize sample {index} submitted.")
 
     # writing remaining batch
     if len(batch) > 0:
@@ -450,18 +442,15 @@ def rasterizer(population_gdf: gpd.GeoDataFrame,
 def generate_annotation_data(
         population_gdf: gpd.GeoDataFrame,
         sample_gdf: gpd.GeoDataFrame,
-        strata_columns: list[str],
         groupby_columns: list[str],
-        strata_map_path: str,
+        strata_list_path: str,
         pixel_edge_size: int,
         scale: int,
-        flat_annotations: bool,
         anno_data_path: str,
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    with open(strata_map_path, "r") as f:
-        strata_map = yaml.safe_load(f)
+    strata_map = sorted(load_yaml(strata_list_path)[STRATA_ATTR_NAME])
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -471,26 +460,24 @@ def generate_annotation_data(
         f"Starting parallel process for {num_samples} samples using {num_workers}...")
     [index_queue.put(i) for i in range(num_samples)]
     [index_queue.put(None) for _ in range(num_workers)]
-    rasterizers = set()
+    annotators = set()
     for _ in range(num_workers):
         p = mp.Process(
-            target=rasterizer,
+            target=annotator,
             args=(population_gdf,
                   sample_gdf,
-                  strata_columns,
                   groupby_columns,
                   strata_map,
                   pixel_edge_size,
                   scale,
-                  flat_annotations,
                   anno_data_path,
                   io_limit,
                   io_lock,
                   index_queue),
             daemon=True)
         p.start()
-        rasterizers.add(p)
-    [r.join() for r in rasterizers]
+        annotators.add(p)
+    [r.join() for r in annotators]
 
 
 @function_timer
@@ -512,18 +499,19 @@ def sample():
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
                 "projection": SAMPLER_CONFIG["projection"],
+                "strata_list_path": STRATA_LIST_PATH,
+                "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
             geo_dataframe = preprocess_data(**sample_config)
 
-        if SAMPLER_CONFIG["sample_toggles"]["stratify_data"]:
+        if SAMPLER_CONFIG["sample_toggles"]["stratified_sample"]:
             LOGGER.info("Stratifying data in geo file...")
             group_config = {
                 "geo_dataframe": geo_dataframe,
                 "fraction": SAMPLER_CONFIG["fraction"],
                 "num_points": SAMPLER_CONFIG["num_points"],
-                "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
-            geo_dataframe = stratify_data(**group_config)
+            geo_dataframe = stratified_sample(**group_config)
 
         if SAMPLER_CONFIG["sample_toggles"]["generate_squares"]:
             LOGGER.info("Generating squares...")
@@ -533,8 +521,6 @@ def sample():
                 "meta_data_path": META_DATA_PATH,
                 "meter_edge_size": SAMPLER_CONFIG["scale"] * SAMPLER_CONFIG["pixel_edge_size"],
                 "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
-                "strata_map_path": STRATA_MAP_PATH,
-                "strata_columns": SAMPLER_CONFIG["strata_columns"],
             }
             num_samples, gdf = generate_squares(**square_config)
         else:
@@ -578,7 +564,7 @@ def sample():
                      PREDICT_SAMPLE_PATH]
             for path, idx_lst in zip(paths, idx_lsts):
                 np.save(path, idx_lst)
-            update_config(
+            update_yaml(
                 {
                     "train_count": len(train),
                     "validate_count": len(validate),
@@ -606,12 +592,10 @@ def annotate():
         annotation_config = {
             "population_gdf": population_gdf,
             "sample_gdf": sample_gdf,
-            "strata_columns": SAMPLER_CONFIG["strata_columns"],
             "groupby_columns": SAMPLER_CONFIG["groupby_columns"],
-            "strata_map_path": STRATA_MAP_PATH,
+            "strata_list_path": STRATA_LIST_PATH,
             "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
             "scale": SAMPLER_CONFIG["scale"],
-            "flat_annotations": SAMPLER_CONFIG["flat_annotations"],
             "anno_data_path": ANNO_DATA_PATH,
             "num_workers": SAMPLER_CONFIG["num_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
@@ -665,7 +649,7 @@ def calculate():
             case _:
                 raise ValueError(
                     f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
-        update_config(
+        update_yaml(
             {
                 "chip_count": chip_count,
                 "means": means,

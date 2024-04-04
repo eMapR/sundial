@@ -1,6 +1,5 @@
 file_type: ZARR
 fraction: null
-flat_annotations: false
 gee_workers: 42
 gee_stratafied_config:
     num_points: 4096
@@ -22,7 +21,7 @@ preprocess_actions: null
 projection: EPSG:5070
 sample_toggles:
     preprocess_data: false
-    stratify_data: false
+    stratified_sample: false
     generate_squares: true
     generate_time_combinations: true
     generate_train_test_splits: true

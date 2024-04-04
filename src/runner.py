@@ -21,7 +21,7 @@ from pipeline.sampler import (
     calculate,
 )
 from pipeline.settings import (
-    load_config,
+    load_yaml,
     METHOD,
     RANDOM_STATE,
     CONFIG_PATH,
@@ -73,7 +73,7 @@ def train():
                 "auto_histogram_activation_logging": True
             }
         case "test" | "predict":
-            config = load_config(run_config_path)
+            config = load_yaml(run_config_path)
             trainer_defaults["callbacks"].extend(
                 [LoadCheckPointStrictFalse()])
             if "ckpt_path" not in config.keys() or config["ckpt_path"] is None:
@@ -84,7 +84,7 @@ def train():
         seed_everything_default=RANDOM_STATE,
         args=args,
         trainer_defaults=trainer_defaults,
-        save_config_kwargs={"overwrite": True}
+        save_yaml_kwargs={"overwrite": True}
     )
 
 
