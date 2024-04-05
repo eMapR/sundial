@@ -147,6 +147,11 @@ download: _download
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
+verify: _verify
+	echo "Verifying image chips for $(SUNDIAL_EXPERIMENT_NAME). This may take a while...";
+	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
+	$(MAKE) -s _run
+
 fit: _fit
 	echo "Training model... This may take a while...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
@@ -184,6 +189,9 @@ sample_err: _sample
 	$(MAKE) -s _read_err;
 
 annotate_err: _annotate
+	$(MAKE) -s _read_err;
+
+verify_err: _verify
 	$(MAKE) -s _read_err;
 
 download_err: _download
@@ -283,6 +291,9 @@ _annotate:
 
 _download:
 	$(eval export SUNDIAL_METHOD=download)
+
+_verify:
+	$(eval export SUNDIAL_METHOD=verify)
 
 _fit:
 	$(eval export SUNDIAL_METHOD=fit)

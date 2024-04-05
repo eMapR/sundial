@@ -1,7 +1,3 @@
-model:
-    init_args:
-        activation:
-            class_path: torch.nn.LogSoftmax
 trainer:
     callbacks:
       - class_path: SaveTestCallback

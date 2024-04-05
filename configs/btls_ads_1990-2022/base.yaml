@@ -1,9 +1,9 @@
 model:
-    class_path: PrithviFCN
+    class_path: PrithviUNet
     init_args:
         num_classes: 1
-        view_size: 16
         upscale_depth: 2
+        view_size: 16
         prithvi_path: src/backbones/prithvi/Prithvi_100M.pt 
         prithvi_params:
             model_args:
@@ -20,15 +20,10 @@ model:
                 tubelet_size: 1
             train_params:
                 mask_ratio: 0.0
-        prithvi_freeze: false
-        criterion:
-            class_path: loss.BCEWithLogitsLoss
-            init_args:
-                reduction: sum
-                pos_weight: [3.2]
+        prithvi_freeze: true
 data:
     class_path: ChipsDataModule
     init_args:
-        batch_size: 32
+        batch_size: 64
         num_workers: 16
         chip_size: 256

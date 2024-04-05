@@ -48,7 +48,8 @@ from .utils import (
     function_timer,
     clip_xy_xarray,
     pad_xy_xarray,
-    get_xarr_mean_std
+    get_xarr_mean_std,
+    test_non_zero_sum
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)
@@ -364,9 +365,6 @@ def rasterizer(polygons: gpd.GeoSeries,
                scale: int,
                fill: int | float,
                default_value: int | float):
-    if len(polygons) == 0:
-        raise ValueError(
-            f"Check preprocessing actions. Polygon series has len 0...")
     cols = int((square.bounds[2] - square.bounds[0]) / scale)
     rows = int((square.bounds[3] - square.bounds[1]) / scale)
 
@@ -384,7 +382,7 @@ def rasterizer(polygons: gpd.GeoSeries,
 def annotator(population_gdf: gpd.GeoDataFrame,
               sample_gdf: gpd.GeoDataFrame,
               groupby_columns: list[str | int],
-              strata_map: dict[str, int],
+              strata_list: dict[str, int],
               pixel_edge_size: int,
               scale: int,
               anno_data_path: str,
@@ -399,21 +397,24 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         target = sample_gdf.iloc[index]
         group = target[groupby_columns]
         square = target.geometry
-        default_value = strata_map[target[STRATA_LABEL]]
+        default_value = strata_list.index(target[STRATA_LABEL]) + 1
 
         # rasterizing multipolygon and clipping to square
         xarr_anno_list = []
         LOGGER.info(
-            f"Creating annotations for sample {index} from strata map...")
+            f"Creating annotations for sample {index} from strata list...")
 
-        # strata map should already be in order of index value
-        for strata in strata_map:
+        # strata list should already be in order of index value
+        for strata in strata_list:
             try:
                 mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
                     (population_gdf[STRATA_LABEL] == strata)
                 mp = population_gdf[mask].geometry
-                annotation = rasterizer(
-                    mp, square, scale, NO_DATA_VALUE, default_value)
+                if len(mp) == 0:
+                    annotation = np.zeros((pixel_edge_size, pixel_edge_size))
+                else:
+                    annotation = rasterizer(
+                        mp, square, scale, NO_DATA_VALUE, default_value)
             except Exception as e:
                 raise e
             annotation = xr.DataArray(annotation, dims=["y", "x"])
@@ -456,7 +457,7 @@ def generate_annotation_data(
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    strata_map = sorted(load_yaml(strata_list_path)[STRATA_LABEL])
+    strata_list = sorted(load_yaml(strata_list_path)[STRATA_LABEL])
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -473,7 +474,7 @@ def generate_annotation_data(
             args=(population_gdf,
                   sample_gdf,
                   groupby_columns,
-                  strata_map,
+                  strata_list,
                   pixel_edge_size,
                   scale,
                   anno_data_path,
@@ -487,7 +488,7 @@ def generate_annotation_data(
 
 
 @function_timer
-def generate_image_chip_data(downloader_kwargs):
+def generate_image_chip_data(downloader_kwargs: dict):
     downloader = Downloader(**downloader_kwargs)
     downloader.start()
 
@@ -648,22 +649,24 @@ def download():
 def calculate():
     try:
         LOGGER.info("Calculating sample statistics...")
+        stat = {}
         match SAMPLER_CONFIG["file_type"]:
             case "ZARR":
                 data = xr.open_zarr(CHIP_DATA_PATH)
-                chip_count = len(data.variables)
                 means, stds = get_xarr_mean_std(data)
+                stat["means"] = means
+                stat["stds"] = stds
+                stat["chip_count"] = len(data.variables)
+                stat["chip_verify"] = {
+                    i: s for i, s in test_non_zero_sum(data, RANDOM_STATE)}
+                if os.path.isdir(ANNO_DATA_PATH):
+                    anno_data = xr.open_zarr(ANNO_DATA_PATH)
+                    stat["anno_verify"] = {
+                        i: s for i, s in test_non_zero_sum(anno_data, RANDOM_STATE)}
             case _:
                 raise ValueError(
                     f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
-        update_yaml(
-            {
-                "chip_count": chip_count,
-                "means": means,
-                "stds": stds
-            },
-            STAT_DATA_PATH
-        )
+        update_yaml(stat, STAT_DATA_PATH)
     except Exception as e:
         LOGGER.critical(
             f"Failed to calculate sample statistics: {type(e)} {e}")

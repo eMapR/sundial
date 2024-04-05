@@ -2,8 +2,8 @@ model:
     class_path: PrithviFCN
     init_args:
         num_classes: 5
-        view_size: 16
         upscale_depth: 2
+        view_size: 16
         prithvi_path: src/backbones/prithvi/Prithvi_100M.pt
         prithvi_params:
             model_args:
@@ -21,11 +21,6 @@ model:
             train_params:
                 mask_ratio: 0.0
         prithvi_freeze: true
-        criterion:
-            class_path: loss.CrossEntropyLoss
-            init_args:
-                reduction: sum
-                weight: [0.7, 1, 0.1, 0.5, 0.6]
 data:
     class_path: ChipsDataModule
     init_args:

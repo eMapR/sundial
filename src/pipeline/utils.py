@@ -195,3 +195,15 @@ def get_xarr_mean_std(data: xr.Dataset):
     means = data.mean(dim=["chip", DATETIME_LABEL, "y", "x"])
     stds = data.std(dim=["chip", DATETIME_LABEL, "y", "x"])
     return means.values.tolist(), stds.values.tolist()
+
+
+@function_timer
+def test_non_zero_sum(xarr: xr.Dataset,
+                      size: int):
+    count = len(xarr.variables)
+    tests = np.random.randint(0, count, size=size)
+    for test in tests:
+        test_str = str(test)
+        sum = xarr[test_str].sum().values
+        assert sum > 0
+        yield test_str, int(sum)

@@ -1,3 +1,6 @@
 [submodule "src/backbones/prithvi"]
 	path = src/backbones/prithvi
 	url = https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M
+[submodule "src/heads/unet"]
+	path = src/heads/unet
+	url = https://github.com/milesial/Pytorch-UNet.git

@@ -1,5 +1,5 @@
 model:
-    class_path: Prithvi
+    class_path: PrithviHeadless
     init_args:
         prithvi_params:
             model_args:

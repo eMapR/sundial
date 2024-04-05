@@ -6,4 +6,10 @@ trainer:
     devices: 1
 ckpt_path: null 
 verbose: true
-
+criterion:
+    class_path: FocalLoss
+    init_args:
+        reduction: sum
+    custom: false
+activation:
+    class_path: Sigmoid

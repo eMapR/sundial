@@ -6,14 +6,20 @@ import torch
 import rasterio
 import re
 
+from typing import Optional
+
 from pipeline.utils import function_timer
 
 
-def get_best_ckpt(dir_path):
-    pattern = "*epoch-*_val_loss-*.ckpt"
-    regex = re.compile(
-        r"(?:.+_)?epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?\.ckpt")
-    files = glob.glob(os.path.join(dir_path, pattern))
+def get_best_ckpt(dir_path: str | os.PathLike,
+                  experiment: Optional[str] = None):
+    glob_exp = f"{experiment}_" if experiment else ""
+    glob_pat = f"{glob_exp}epoch-*_val_loss-*.ckpt"
+    files = glob.glob(os.path.join(dir_path, glob_pat))
+
+    regex_exp = experiment if experiment else ".+"
+    regex_str = fr"(?:{regex_exp}_)?epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?\.ckpt"
+    regex = re.compile(regex_str)
 
     min_val_loss = float('inf')
     current_epoch = -1
@@ -36,10 +42,7 @@ def get_best_ckpt(dir_path):
                 current_epoch = int(epoch)
                 current_version = version
                 best_file = file
-    if best_file is not None:
-        return best_file
-    else:
-        raise FileNotFoundError("No checkpoint found in the directory.")
+    return best_file
 
 
 def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,

@@ -4,6 +4,49 @@ import torch
 from torch import nn
 
 
+class SundialPLBase(L.LightningModule):
+    def forward(self, chips):
+        tokens = self.backbone(chips)
+        features = self.neck(tokens)
+        logits = self.head(features)
+
+        return logits
+
+    def training_step(self, batch):
+        chips, annotations, _ = batch
+        logits = self(chips)
+        loss = self.criterion(logits, annotations)
+
+        return {"loss": loss}
+
+    def validation_step(self, batch):
+        chips, annotations, _ = batch
+        logits = self(chips)
+        loss = self.criterion(logits, annotations)
+
+        # reactivating logits for metric logging
+        classes = self.activation(logits)
+
+        return {"loss": loss, "classes": classes}
+
+    def test_step(self, batch):
+        chips, annotations, _ = batch
+        logits = self(chips)
+        loss = self.criterion(logits, annotations)
+
+        # reactivating logits for metric logging
+        classes = self.activation(logits)
+
+        return {"loss": loss, "classes": classes}
+
+    def predict_step(self, batch):
+        chips, _ = batch
+        logits = self(chips)
+        classes = self.activation(logits)
+
+        return {"classes": classes}
+
+
 class UpscaleNeck(nn.Module):
     def __init__(self, embed_dim: int, depth: int):
         super().__init__()
@@ -20,7 +63,7 @@ class UpscaleNeck(nn.Module):
                 in_channels=in_ch,
                 out_channels=out_ch,
                 kernel_size=2,
-                stride=2))
+                stride=2),)
 
         self.block = nn.Sequential(
             *[build_block(embed_dim, embed_dim) for _ in range(depth)])
@@ -29,152 +72,117 @@ class UpscaleNeck(nn.Module):
         return self.block(x)
 
 
-class GradualUpscaleNeck(nn.Module):
-    def __init__(self, embed_dims: int):
-        super().__init__()
-
-        def build_block(in_ch, out_ch): return nn.Sequential(
-            nn.ConvTranspose2d(
-                in_channels=in_ch,
-                out_channels=out_ch,
-                kernel_size=2,
-                stride=2),
-            nn.ReLU())
-
-        self.block = nn.Sequential(
-            *[build_block(embed_dims[i], embed_dims[i+1])
-              for i in range(len(embed_dims) - 1)])
-
-    def forward(self, x):
-        return self.block(x)
-
-
-class PrithviFCN(L.LightningModule):
+class PrithviBackbone(nn.Module):
     def __init__(self,
-                 num_classes: int,
                  view_size: int,
-                 upscale_depth: int,
                  prithvi_params: dict,
                  prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 criterion: nn.Module = None,
-                 activation: nn.Module = None):
+                 prithvi_path: str = None):
         super().__init__()
-        self.num_classes = num_classes
         self.view_size = view_size
-        self.upscale_depth = upscale_depth
         self.prithvi_path = prithvi_path
         self.prithvi_params = prithvi_params
         self.prithvi_freeze = prithvi_freeze
-        self.criterion = criterion
-        self.activation = activation
 
         # Initializing Prithvi Backbone per prithvi documentation
         from backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        self.backbone = MaskedAutoencoderViT(
+        self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
         if self.prithvi_freeze:
-            self.backbone.eval()
+            self.model.eval()
         if self.prithvi_path is not None:
-            map_location = "cuda" if torch.cuda.is_available() else "cpu"
-            checkpoint = torch.load(self.prithvi_path,
-                                    map_location=map_location)
+            checkpoint = torch.load(self.prithvi_path)
             del checkpoint['pos_embed']
             del checkpoint['decoder_pos_embed']
-            _ = self.backbone.load_state_dict(checkpoint, strict=False)
+            _ = self.model.load_state_dict(checkpoint, strict=False)
+
+    def forward(self, chips):
+        # gathering features
+        tokens, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
+
+        # removing class token and reshaping to 2D representation
+        tokens = tokens[:, 1:, :]
+        tokens = tokens.view(
+            tokens.shape[0],
+            -1,
+            self.view_size,
+            self.view_size)
+
+        return tokens
+
+
+class PrithviFCN(SundialPLBase):
+    def __init__(self,
+                 num_classes: int,
+                 upscale_depth: int,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.upscale_depth = upscale_depth
+        self.view_size = view_size
+
+        # Initializing backbone
+        self.backbone = PrithviBackbone(
+            view_size=view_size,
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path)
 
         # Initializing upscaling neck
-        embed_dim = self.prithvi_params["model_args"]["embed_dim"] * \
-            self.prithvi_params["model_args"]["num_frames"]
+        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
+            prithvi_params["model_args"]["num_frames"]
         self.neck = UpscaleNeck(embed_dim, self.upscale_depth)
 
         # Initializing FCNHead
         from torchvision.models.segmentation.fcn import FCNHead
         self.head = FCNHead(embed_dim, self.num_classes)
 
-    def forward(self, chips):
-        # gathering features
-        features, _, _ = self.backbone.forward_encoder(
-            chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
-
-        # removeing class token and reshaping to 2D representation
-        features = features[:, 1:, :]
-        features = features.view(
-            features.shape[0],
-            -1,
-            self.view_size,
-            self.view_size)
-
-        # performating segmentation
-        features = self.neck(features)
-        logits = self.head(features)
-
-        return logits
-
-    def training_step(self, batch):
-        chips, annotations, _ = batch
-
-        # forward pass
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        return {"loss": loss}
-
-    def validation_step(self, batch):
-        chips, annotations, _ = batch
-
-        # forward pass
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        return {"loss": loss, "logits": logits}
-
-    def test_step(self, batch):
-        chips, annotations, _ = batch
-
-        # forward pass
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        return {"loss": loss, "logits": logits}
-
-    def predict_step(self, batch):
-        chips, _ = batch
-
-        # forward pass
-        logits = self(chips)
-        classes = self.activation(logits)
-
-        return {"classes": classes}
-
 
 class PrithviFCNDiff(PrithviFCN):
-    def __init__(self,
-                 num_classes: int,
-                 view_size: int,
-                 upscale_depth: int,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 criterion: nn.Module = None,
-                 activation: nn.Module = None):
-        super().__init__(
-            num_classes=num_classes,
-            view_size=view_size,
-            upscale_depth=upscale_depth,
-            prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
-            criterion=criterion,
-            activation=activation
-        )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def forward(self, chips) -> torch.Any:
         chips = chips[:, :, 1:, :, :] - chips[:, :, :-1, :, :]
         return super().forward(chips)
 
 
-class Prithvi(L.LightningModule):
+class PrithviUNet(SundialPLBase):
+    def __init__(self,
+                 num_classes: int,
+                 upscale_depth: int,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.upscale_depth = upscale_depth
+        self.view_size = view_size
+
+        # Initializing backbone
+        self.backbone = PrithviBackbone(
+            view_size=view_size,
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path)
+
+        # Initializing upscaling neck
+        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
+            prithvi_params["model_args"]["num_frames"]
+        self.neck = UpscaleNeck(embed_dim, self.upscale_depth)
+
+        # Initializing U-Net Head
+        from heads.unet.unet.unet_model import UNet
+        self.head = UNet(embed_dim, self.num_classes)
+
+
+class PrithviHeadless(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
                  **kwargs):

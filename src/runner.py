@@ -4,12 +4,11 @@ import shutil
 import torch
 import tarfile
 
-from lightning.pytorch.cli import LightningCLI
+from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from callbacks import *
 from dataloaders import *
-from loss import *
 from models import *
 from utils import get_best_ckpt, tensors_to_tifs
 
@@ -31,60 +30,72 @@ from pipeline.settings import (
     SAMPLER_CONFIG,
     LOGGER_CONFIG,
     CHECKPOINT_CONFIG,
-    EXPERIMENT_NAME
+    EXPERIMENT_NAME,
+    EXPERIMENT_SUFFIX
 )
 
 
+class SundialCLI(LightningCLI):
+    def add_arguments_to_parser(self,
+                                parser: LightningArgumentParser):
+        # placeholders to avoid parsing errors
+        parser.add_argument("--criterion", default={}, type=dict)
+        parser.add_argument("--activation", default={}, type=dict)
+        parser.add_argument("--ckpt_monitor", default=None, type=str)
+
+
 def train():
-    # setting lower precision for GH200/cuda gpus. Not necessary because it is reset via configs but gets rid of the warning.
+    # setting lower precision for GH200/cuda gpus to clear warning.
     torch.set_float32_matmul_precision("high")
 
     # setting up trainer defaults w/ paths from pipeline.settings
     base_config_path = os.path.join(CONFIG_PATH, "base.yaml")
     run_config_path = os.path.join(CONFIG_PATH, f"{METHOD}.yaml")
+    run_configs = load_yaml(os.path.join(CONFIG_PATH, f"{METHOD}.yaml"))
+
     args = [METHOD,
             f"--config={base_config_path}",
             f"--config={run_config_path}"]
 
+    # setting up default callbacks and ckpts for methods avoiding pL indirect
     trainer_defaults = {
         "accelerator": "cuda",
         "callbacks": [
-            LogSetupCallback(),
+            ModelSetupCallback(),
+            DefineCriterionCallback(**run_configs.get("criterion", {})),
+            DefineActivationCallback(**run_configs.get("activation", {})),
         ],
         "log_every_n_steps": 16,
         "logger": [
-            {
-                "class_path": "lightning.pytorch.loggers.CometLogger",
-                "init_args": LOGGER_CONFIG
-            }
+            {"class_path": "lightning.pytorch.loggers.CometLogger",
+             "init_args": LOGGER_CONFIG}
         ],
         "enable_progress_bar": True,
         "profiler": "simple"
     }
 
-    # setting up default callbacks and ckpts for methods
+    # setting method specific callbacks
     match METHOD:
         case "fit":
-            trainer_defaults["callbacks"].extend(
-                [ModelCheckpoint(**CHECKPOINT_CONFIG)])
-            trainer_defaults["logger"][0]["init_args"] |= {
-                "auto_histogram_weight_logging": True,
-                "auto_histogram_gradient_logging": True,
-                "auto_histogram_activation_logging": True
-            }
+            if ckpt_monitor := run_configs.get("ckpt_monitor"):
+                CHECKPOINT_CONFIG["monitor"] = ckpt_monitor
+            trainer_defaults["callbacks"].extend([
+                ModelCheckpoint(**CHECKPOINT_CONFIG)
+            ]),
         case "test" | "predict":
-            config = load_yaml(run_config_path)
-            trainer_defaults["callbacks"].extend(
-                [LoadCheckPointStrictFalse()])
-            if "ckpt_path" not in config.keys() or config["ckpt_path"] is None:
-                ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
+            if run_configs.get("ckpt_path") is None:
+                ckpt_path = get_best_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
                 args.append(f"--ckpt_path={ckpt_path}")
 
-    LightningCLI(
+    SundialCLI(
         seed_everything_default=RANDOM_STATE,
         args=args,
         trainer_defaults=trainer_defaults,
-        save_yaml_kwargs={"overwrite": True}
+        save_config_callback=LogSetupCallback,
+        save_config_kwargs={
+            "config_filename": "config.yaml",
+            "overwrite": True
+        }
     )
 
 

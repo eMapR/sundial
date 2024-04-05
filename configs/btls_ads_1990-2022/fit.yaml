@@ -1,10 +1,11 @@
 trainer:
     callbacks:
       - class_path: LogTrainCallback
-      - class_path: LogTrainExtCallback
+      - class_path: LogTrainBinaryExtCallback
       - class_path: StochasticWeightAveraging
         init_args:
             swa_lrs: 0.0001
+            device: null
     max_epochs: 64
     strategy: auto
     devices: 1
@@ -21,3 +22,10 @@ lr_scheduler:
     init_args:
         step_size: 16
         gamma: 0.7
+criterion:
+    class_path: FocalLoss
+    init_args:
+        reduction: sum
+    custom: false
+activation:
+    class_path: Sigmoid

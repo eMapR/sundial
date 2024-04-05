@@ -2,18 +2,18 @@ import os
 import yaml
 
 
-def save_yaml(config, path):
+def save_yaml(config: dict, path: str | os.PathLike):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         yaml.dump(config, f)
 
 
-def load_yaml(path):
+def load_yaml(path: str | os.PathLike):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
-def update_yaml(config, path):
+def update_yaml(config: dict, path: str | os.PathLike):
     if os.path.exists(path):
         old_config = load_yaml(path)
         config |= old_config
@@ -114,7 +114,8 @@ SAMPLER_CONFIG = {
     # (str) Column to use for datetime value in geo file
     "datetime_column": "year",
     # (int | None) time combination settings
-    "time_step": None,  # (int | None) number of time steps between each sample + 1
+    # (int | None) number of time steps between each sample + 1
+    "time_step": None,
 
     # gee strata settings
     # (dict | None) settings for strata generation (None for no strata generation

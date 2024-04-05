@@ -1,21 +1,33 @@
+import copy
 import lightning as L
 import os
 import torch
 
-from torchmetrics.functional.classification import binary_accuracy, binary_precision, binary_jaccard_index
+from torchmetrics.functional.classification import (binary_accuracy,
+                                                    binary_precision,
+                                                    binary_jaccard_index,
+                                                    multiclass_accuracy,
+                                                    multiclass_precision,
+                                                    multiclass_jaccard_index)
+from torchmetrics import Dice, JaccardIndex
 from torchmetrics.functional.image import structural_similarity_index_measure
+from torchvision.ops import sigmoid_focal_loss
+from typing import Optional
 
+from losses import (JacardLoss,
+                    DiceLoss,
+                    DiceBCELoss,
+                    FocalLoss,
+                    TverskyLoss,
+                    FocalTverskyLoss)
 from pipeline.settings import (load_yaml,
-                               METHOD,
+                               STAT_DATA_PATH,
                                PREDICTION_PATH,
-                               CHECKPOINT_PATH,
-                               CONFIG_PATH,
                                LOG_PATH,
                                SAMPLER_CONFIG)
-from utils import get_best_ckpt
 
 
-class LoadCheckPointStrictFalse(L.Callback):
+class ModelSetupCallback(L.Callback):
     def setup(self,
               trainer: L.Trainer,
               pl_module: L.LightningModule,
@@ -37,35 +49,139 @@ class DrawPrithviONNXCallback(L.Callback):
         pl_module.to_onnx(LOG_PATH, example_input)
 
 
-class LogSetupCallback(L.Callback):
+class DefineCriterionCallback(L.Callback):
+    def __init__(self,
+                 class_path: Optional[str] = None,
+                 init_args: Optional[dict] = {},
+                 custom: Optional[bool] = False,
+                 *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_path = class_path
+        self.init_args = init_args
+        self.custom = custom
+
     def setup(self,
               trainer: L.Trainer,
               pl_module: L.LightningModule,
-              stage: str):
-        base_config = load_yaml(os.path.join(CONFIG_PATH, "base.yaml"))
-        meth_config = load_yaml(os.path.join(CONFIG_PATH, f"{METHOD}.yaml"))
-        pl_module.logger.log_hyperparams(base_config)
-        pl_module.logger.log_hyperparams(meth_config)
-        pl_module.logger.log_hyperparams({"sampler": SAMPLER_CONFIG})
+              stage: str) -> None:
+        # TODO: Add support for multiple criterions
+        match self.class_path:
+            case "BCEWithLogitsLoss":
+                if self.init_args["weight"] is not None:
+                    self.init_args["weight"] = torch.tensor(
+                        self.init_args["weight"], device=pl_module.device)
+                if self.init_args["pos_weight"] is not None:
+                    self.init_args["pos_weight"] = torch.tensor(
+                        self.init_args["pos_weight"], device=pl_module.device)
+                criterion = torch.nn.BCEWithLogitsLoss(**self.init_args)
+            case "CrossEntropyLoss":
+                if self.init_args["weight"] is not None:
+                    self.init_args["weight"] = torch.tensor(
+                        self.init_args["weight"], device=pl_module.device)
+                criterion = torch.nn.CrossEntropyLoss(**self.init_args)
+            case "DiceLoss":
+                if self.custom:
+                    criterion = DiceLoss(**self.init_args)
+                else:
+                    criterion = Dice(**self.init_args)
+            case "DiceBCELoss":
+                criterion = DiceBCELoss(**self.init_args)
+            case "FocalLoss":
+                if self.custom:
+                    criterion = FocalLoss(**self.init_args)
+                else:
+                    def criterion(i, t): return sigmoid_focal_loss(
+                        i, t, **self.init_args)
+            case "JacardLoss":
+                if self.custom:
+                    criterion = JacardLoss(**self.init_args)
+                else:
+                    criterion = JaccardIndex(**self.init_args)
+            case "TverskyLoss":
+                criterion = TverskyLoss(**self.init_args)
+            case "FocalTverskyLoss":
+                criterion = FocalTverskyLoss(**self.init_args)
+            case "Identity":
+                criterion = torch.nn.Identity()
+            case _:
+                return
 
-        # TODO: Add a global checkpoint file check
-        if "ckpt_path" in meth_config.keys() and meth_config["ckpt_path"] is not None:
-            ckpt_path = meth_config["ckpt_path"]
-        elif METHOD == "test" or METHOD == "predict":
-            ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
-        else:
-            ckpt_path = trainer.ckpt_path
-        pl_module.logger.log_hyperparams({"ckpt_path": ckpt_path})
-        
-        if trainer.lr_scheduler_configs:
-            for c in trainer.lr_scheduler_configs:
-                pl_module.logger.log_hyperparams(c)
-        pl_module.save_hyperparameters()
+        pl_module.criterion = criterion
+
+
+class DefineActivationCallback(L.Callback):
+    def __init__(self,
+                 class_path: Optional[str] = None,
+                 init_args: Optional[dict] = None,
+                 *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_path = class_path
+        self.init_args = init_args
+
+    def setup(self,
+              trainer: L.Trainer,
+              pl_module: L.LightningModule,
+              stage: str) -> None:
+        match self.class_path:
+            case "Sigmoid":
+                activation = torch.nn.Sigmoid()
+            case "Hardsigmoid":
+                activation = torch.nn.Hardsigmoid()
+            case "Softmax":
+                activation = torch.nn.Softmax(**self.init_args)
+            case "Softmax2d":
+                activation = torch.nn.Softmax2d()
+            case "Softplus":
+                activation = torch.nn.Softplus()
+            case "Softsign":
+                activation = torch.nn.Softsign()
+            case "Softmin":
+                activation = torch.nn.Softmin()
+            case "exponential":
+                activation = torch.exp
+            case "ReLU":
+                activation = torch.nn.ReLU()
+            case "LeakyReLU":
+                activation = torch.nn.LeakyReLU()
+            case "ELU":
+                activation = torch.nn.ELU()
+            case "SELU":
+                activation = torch.nn.SELU()
+            case "Tanh":
+                activation = torch.nn.Tanh()
+            case "Identity":
+                activation = torch.nn.Identity()
+            case _:
+                return
+        pl_module.activation = activation
+
+
+class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
+    def save_config(self,
+                    trainer: L.Trainer,
+                    pl_module: L.LightningModule,
+                    stage: str) -> None:
+        config = copy.deepcopy(self.config)
+        del config["trainer"]["logger"]
+        config["config"] = [str(s) for s in config["config"]]
+        config["trainer"]["callbacks"] = [{k: vars(v) if hasattr(
+            v, "__dict__") else v for k, v in vars(c).items()} for c in config["trainer"]["callbacks"]]
+
+        stat_data = load_yaml(STAT_DATA_PATH)
+        if "chip_verify" in stat_data:
+            del stat_data["chip_verify"]
+        if "anno_verify" in stat_data:
+            del stat_data["anno_verify"]
+        pl_module.logger.log_hyperparams(config),
+        pl_module.logger.log_hyperparams({"stat_data": stat_data,
+                                          "sampler": SAMPLER_CONFIG})
 
 
 class LogTrainCallback(L.Callback):
     def on_train_batch_end(self,
-                           trainer: L.pytorch.trainer.trainer,
+                           trainer: L.Trainer,
                            pl_module: L.LightningModule,
                            outputs: torch.Tensor,
                            batch: torch.Tensor,
@@ -78,7 +194,7 @@ class LogTrainCallback(L.Callback):
         )
 
     def on_validation_batch_end(self,
-                                trainer: L.pytorch.trainer.trainer,
+                                trainer: L.Trainer,
                                 pl_module: L.LightningModule,
                                 outputs: torch.Tensor,
                                 batch: torch.Tensor,
@@ -93,23 +209,72 @@ class LogTrainCallback(L.Callback):
         )
 
 
-class LogTrainExtCallback(L.Callback):
+class LogTrainBinaryExtCallback(L.Callback):
     def on_validation_batch_end(self,
-                                trainer: L.pytorch.trainer.trainer,
+                                trainer: L.Trainer,
                                 pl_module: L.LightningModule,
                                 outputs: torch.Tensor,
                                 batch: torch.Tensor,
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
         _, annotations, _ = batch
-        logits = outputs["logits"]
+        classes = outputs["classes"]
 
-        # calculate metrics
         metrics = {
-            "ssim": structural_similarity_index_measure(logits, annotations),
-            "binary_jaccard_index": binary_jaccard_index(logits, annotations),
-            "binary_precision": binary_precision(logits, annotations),
-            "binary_accuracy": binary_accuracy(logits, annotations)
+            "accuracy": binary_accuracy(classes, annotations),
+            "jaccard_index": binary_jaccard_index(classes, annotations),
+            "precision": binary_precision(classes, annotations),
+            "ssim": structural_similarity_index_measure(classes, annotations),
+        }
+
+        pl_module.log_dict(
+            dictionary=metrics,
+            logger=True,
+            prog_bar=False,
+            sync_dist=True
+        )
+
+
+class LogTrainMulticlassExtCallback(L.Callback):
+    def on_validation_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: torch.Tensor,
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        _, annotations, _ = batch
+        classes = outputs["classes"]
+
+        metrics = {
+            "accuracy": multiclass_accuracy(classes, annotations, pl_module.num_classes),
+            "jaccard_index": multiclass_jaccard_index(classes, annotations, pl_module.num_classes),
+            "precision": multiclass_precision(classes, annotations, pl_module.num_classes),
+            "ssim": structural_similarity_index_measure(classes, annotations, pl_module.num_classes),
+        }
+
+        pl_module.log_dict(
+            dictionary=metrics,
+            logger=True,
+            prog_bar=False,
+            sync_dist=True
+        )
+
+
+class LogTrainPixelwiseExtCallback(L.Callback):
+    def on_validation_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: torch.Tensor,
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        _, annotations, _ = batch
+        classes = outputs["classes"]
+
+        # TODO: expand binary accuracy and precision to pixel level
+        metrics = {
+            "ssim": structural_similarity_index_measure(classes, annotations, pl_module.num_classes),
         }
 
         pl_module.log_dict(
@@ -130,7 +295,7 @@ class LogTestCallback(L.Callback):
                           dataloader_idx: int = 0):
         chips, annotations, indices = batch
         loss = outputs["loss"]
-        logits = outputs["logits"]
+        classes = outputs["classes"]
 
         pl_module.log(
             name="test_loss",
@@ -155,19 +320,27 @@ class LogTestCallback(L.Callback):
             index = indices[i]
             chip = chips[i]
             anno = annotations[i]
-            pred = logits[i]
+            pred = classes[i]
 
             # save rgb and ir band separately
+            rgb = chip[0:3].flip(0).permute(1, 2, 3, 0)
+            ir = chip[3:6].permute(1, 2, 3, 0)
+            rgb_max = torch.max(rgb).item()
+            rgb_min = torch.min(rgb).item()
+            ir_max = torch.max(ir).item()
+            ir_min = torch.min(ir).item()
             for t in range(chip.shape[1]):
-                image = chip[0:3, t, :, :].flip(0).permute(1, 2, 0)
+                image = rgb[t, :, :, :]
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_rgb_t{t}_chip",
+                    image_minmax=(rgb_min, rgb_max)
                 )
-                image = chip[3:6, t, :, :].flip(0).permute(1, 2, 0)
+                image = ir[t, :, :, :]
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_ir_t{t}_chip",
+                    image_minmax=(ir_min, ir_max)
                 )
 
             # save original annotations
@@ -176,14 +349,16 @@ class LogTestCallback(L.Callback):
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_c{c+1}_anno",
+                    image_minmax=(0, 1)
                 )
 
-            # save logits generated from model
+            # save predictions generated from model
             for c in range(pred.shape[0]):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_c{c+1}_pred",
+                    image_minmax=(0, 1)
                 )
 
 
@@ -196,7 +371,7 @@ class SaveTestCallback(L.Callback):
                           batch_idx: int,
                           dataloader_idx: int = 0):
         chips, annotations, indices = batch
-        logits = outputs["logits"]
+        classes = outputs["classes"]
 
         # unnormalize chips for loggings
         if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
@@ -214,7 +389,7 @@ class SaveTestCallback(L.Callback):
             index = indices[i]
             chip = chips[i]
             anno = annotations[i]
-            pred = logits[i]
+            pred = classes[i]
 
             # save rgb and ir bands separately
             for t in range(chip.shape[1]):

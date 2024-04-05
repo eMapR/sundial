@@ -2,7 +2,17 @@ trainer:
     callbacks:
       - class_path: LogTestCallback
       - class_path: SaveTestCallback
+      - class_path: LogTrainPixelwiseExtCallback
     precision: 16-mixed
     devices: 1
 ckpt_path: null
 verbose: true
+criterion:
+    class_path: CrossEntropyLoss
+    init_args:
+        reduction: sum
+        weight: [0.7, 1, 0.1, 0.5, 0.6]
+activation:
+    class_path: Softmax
+    init_args:
+        dim: 1

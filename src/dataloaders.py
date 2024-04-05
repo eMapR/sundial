@@ -83,22 +83,22 @@ class ChipsDataset(Dataset):
             strata = clip_xy_xarray(strata, self.chip_size)
         return torch.as_tensor(strata.to_numpy(), dtype=torch.float)
 
-    def slice_year(self, xarr: xr.Dataset, slice: slice):
-        return xarr.sel(year=slice)
+    def slice_time(self, xarr: xr.Dataset, slicer: slice):
+        return xarr.sel(datetime=slicer)
 
     def __getitem__(self, idx):
         # loading image idx
         if len(self.samples.shape) == 2:
-            img_idx, year_idx = self.samples[idx]
-            slice = slice(year_idx, self.time_step)
+            img_idx, time_idx = self.samples[idx]
+            slicer = slice(time_idx, self.time_step)
         else:
             img_idx = self.samples[idx]
-            slice = slice(-self.time_step, None) if self.time_step else None
+            slicer = slice(-self.time_step, None) if self.time_step else None
 
-        # loading chip and slicing year if necessary
+        # loading chip and slicing time if necessary
         chip = self.chip_loader(img_idx)
-        if slice is not None:
-            chip = self.slice_year(chip, slice)
+        if slicer is not None:
+            chip = self.slice_time(chip, slicer)
 
         # converting to tensor
         chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
@@ -121,7 +121,7 @@ class ChipsDataset(Dataset):
         return len(self.samples)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
-        chip = xarr[name]
+        chip = xarr[str(name)]
         if self.chip_size < max(chip["x"].size, chip["y"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
         return chip
@@ -130,7 +130,7 @@ class ChipsDataset(Dataset):
         image_path = os.path.join(data_path, f"{name}.tif")
         with open_rasterio(image_path) as src:
             image = src.read()
-        # TODO: implement multiple tif files for multiple years
+        # TODO: implement multiple tif files for multiple times
         return image
 
 
@@ -171,6 +171,9 @@ class ChipsDataModule(L.LightningDataModule):
             stats = load_yaml(self.stat_data_path)
             self.means = stats["means"]
             self.stds = stats["stds"]
+        else:
+            self.means = None
+            self.stds = None
 
         self.dataset_config = {
             "chip_size": self.chip_size,
@@ -222,8 +225,8 @@ class ChipsDataModule(L.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            **self.dataloader_config | {"dataset": self.test_ds})
+            **self.dataloader_config | {"dataset": self.test_ds, "drop_last": False})
 
     def predict_dataloader(self):
         return DataLoader(
-            **self.dataloader_config | {"dataset": self.predict_ds})
+            **self.dataloader_config | {"dataset": self.predict_ds, "drop_last": False})
