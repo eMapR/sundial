@@ -281,14 +281,14 @@ class Downloader:
             try:
                 match self._file_type:
                     case "NPY" | "GEO_TIFF":
-                        # TODO: perform reshaping along years for non zarr file types
+                        # TODO: perform reshaping along times for non zarr file types
                         report_queue.put((
                             "INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index} {square_coords}"))
                         out_file = Path(chip_data_path)
                         out_file.write_bytes(chip)
 
                     case "NUMPY_NDARRAY":
-                        # TODO: perform reshaping along years for non zarr file types
+                        # TODO: perform reshaping along times for non zarr file types
                         report_queue.put((
                             "INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index} {square_coords}"))
                         np.save(chip_data_path, chip)

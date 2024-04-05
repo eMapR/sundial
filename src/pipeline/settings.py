@@ -64,7 +64,8 @@ GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
 # non configurable GEE, image, and meta data settings
 RANDOM_STATE = 42
 MASK_LABELS = ["cloud"]
-STRATA_ATTR_NAME = "strata"
+STRATA_LABEL = "strata"
+DATETIME_LABEL = "datetime"
 NO_DATA_VALUE = 0
 GEE_REQUEST_LIMIT = 40
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
@@ -110,10 +111,10 @@ SAMPLER_CONFIG = {
     "groupby_columns": None,
     # (list[str] | None) list of actions to perform on shapefile before sampling
     "preprocess_actions": None,
-    # (bool) whether to flatten annotations to single dimension
-    "flat_annotations": True,
+    # (str) Column to use for datetime value in geo file
+    "datetime_column": "year",
     # (int | None) time combination settings
-    "year_step": None,  # (int | None) number of years between each sample + 1
+    "time_step": None,  # (int | None) number of time steps between each sample + 1
 
     # gee strata settings
     # (dict | None) settings for strata generation (None for no strata generation
@@ -151,8 +152,8 @@ SAMPLER_CONFIG = {
     "pixel_edge_size": 256,
     # (str) projection of images
     "projection": "EPSG:5070",
-    # (int) n years to look back from observation date
-    "look_years": 2,
+    # (int) n time step to look back from observation date
+    "look_range": 2,
 
     # MP and GEE specific settings
     # (int) number of parallel workers to use for annotation generation
@@ -207,7 +208,8 @@ LOGGER_CONFIG = {
 }
 if EXPERIMENT_SUFFIX:
     LOGGER_CONFIG["experiment_name"] += f"_{EXPERIMENT_SUFFIX}"
-    CHECKPOINT_CONFIG["filename"] = f"{EXPERIMENT_SUFFIX}_" + CHECKPOINT_CONFIG["filename"]
+    CHECKPOINT_CONFIG["filename"] = f"{EXPERIMENT_SUFFIX}_" + \
+        CHECKPOINT_CONFIG["filename"]
 
 if __name__ == "__main__":
     # saving sampler and download configs

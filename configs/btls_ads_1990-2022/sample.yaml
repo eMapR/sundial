@@ -4,7 +4,7 @@ gee_workers: 42
 gee_stratafied_config: null
 groupby_columns: ["year"]
 io_limit: 32
-look_years: 6
+look_range: 6
 method: centroid_shift
 num_points: 16384
 num_workers: 16
@@ -26,4 +26,4 @@ scale: 30
 strata_columns: ['dca_cat']
 test_ratio: 0.02
 validate_ratio: 0.2
-year_step: 3
+time_step: 3

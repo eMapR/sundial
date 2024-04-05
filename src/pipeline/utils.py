@@ -11,7 +11,7 @@ from ltgee import LandTrendr
 from typing import Optional
 
 from .logger import get_logger
-from .settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD
+from .settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
 
 
 def lt_image_generator(
@@ -70,7 +70,7 @@ def zarr_reshape(
             dims=['y', 'x', "band"]
         ).astype(float)
         for y in years]
-    xarr = xr.concat(xr_list, dim="year")
+    xarr = xr.concat(xr_list, dim=DATETIME_LABEL)
 
     # adding strata data as attributes
     xarr.name = str(index)
@@ -83,7 +83,7 @@ def zarr_reshape(
     if pixel_edge_size < max(xarr["x"].size,  xarr["y"].size):
         xarr = clip_xy_xarray(xarr, pixel_edge_size)
 
-    return xarr.chunk(chunks={"year": 1})
+    return xarr.chunk(chunks={DATETIME_LABEL: 1})
 
 
 def clip_xy_xarray(xarr: xr.DataArray,
@@ -139,7 +139,7 @@ def get_utm_zone(point_coords: list[tuple[float]]) -> int:
 def parse_meta_data(
         meta_data: pd.DataFrame,
         index: int,
-        look_years: int,
+        look_range: int,
         start_month: int,
         start_day: int,
         end_month: int,
@@ -155,11 +155,11 @@ def parse_meta_data(
     square_coords = list(square.boundary.coords)
     point_coords = list(square.centroid.coords)
 
-    # generating start and end date from year attribute and back step
-    end_year = meta_data.iloc[index].loc["year"]
+    # generating start and end date from datetime attribute and back step
+    end_year = meta_data.iloc[index].loc[DATETIME_LABEL]
 
     end_date = datetime(end_year, end_month, end_day)
-    start_date = datetime(end_year - look_years, start_month, start_day)
+    start_date = datetime(end_year - look_range, start_month, start_day)
 
     data_vars = meta_data.iloc[index].to_dict()
     attributes = {k: v for k, v in data_vars.items()
@@ -192,6 +192,6 @@ def function_timer(func):
 @function_timer
 def get_xarr_mean_std(data: xr.Dataset):
     data = data.to_dataarray(dim="chip")
-    means = data.mean(dim=["chip", "year", "y", "x"])
-    stds = data.std(dim=["chip", "year", "y", "x"])
+    means = data.mean(dim=["chip", DATETIME_LABEL, "y", "x"])
+    stds = data.std(dim=["chip", DATETIME_LABEL, "y", "x"])
     return means.values.tolist(), stds.values.tolist()

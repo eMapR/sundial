@@ -41,7 +41,7 @@ class PreprocesNormalization(nn.Module):
 class ChipsDataset(Dataset):
     def __init__(self,
                  chip_size: int,
-                 year_step: int | None,
+                 time_step: int | None,
                  file_type: str,
                  sample_path: str,
                  chip_data_path: str,
@@ -51,7 +51,7 @@ class ChipsDataset(Dataset):
                  **kwargs):
         super().__init__(**kwargs)
         self.chip_size = chip_size
-        self.year_step = year_step
+        self.time_step = time_step
         self.file_type = file_type
         self.sample_path = sample_path
         self.chip_data_path = chip_data_path
@@ -90,10 +90,10 @@ class ChipsDataset(Dataset):
         # loading image idx
         if len(self.samples.shape) == 2:
             img_idx, year_idx = self.samples[idx]
-            slice = slice(year_idx, self.year_step)
+            slice = slice(year_idx, self.time_step)
         else:
             img_idx = self.samples[idx]
-            slice = slice(-self.year_step, None) if self.year_step else None
+            slice = slice(-self.time_step, None) if self.time_step else None
 
         # loading chip and slicing year if necessary
         chip = self.chip_loader(img_idx)
@@ -140,7 +140,7 @@ class ChipsDataModule(L.LightningDataModule):
         batch_size: int,
         num_workers: int,
         chip_size: int = SAMPLER_CONFIG["pixel_edge_size"],
-        year_step: int = SAMPLER_CONFIG["year_step"],
+        time_step: int = SAMPLER_CONFIG["time_step"],
         file_type: str = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
@@ -156,7 +156,7 @@ class ChipsDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.chip_size = chip_size
-        self.year_step = year_step
+        self.time_step = time_step
         self.file_type = file_type
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
@@ -174,7 +174,7 @@ class ChipsDataModule(L.LightningDataModule):
 
         self.dataset_config = {
             "chip_size": self.chip_size,
-            "year_step": self.year_step,
+            "time_step": self.time_step,
             "file_type": self.file_type,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,

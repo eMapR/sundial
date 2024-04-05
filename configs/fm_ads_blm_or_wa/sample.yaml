@@ -10,7 +10,7 @@ gee_stratafied_config:
     sources: ["ads_score"]
 groupby_columns: null
 io_limit: 32
-look_years: 38
+look_range: 38
 method: gee_stratified
 num_points: null
 num_workers: null
@@ -29,4 +29,4 @@ scale: 30
 strata_columns: null
 test_ratio: 0.0002
 validate_ratio: 0.2
-year_step: 3
+time_step: 3

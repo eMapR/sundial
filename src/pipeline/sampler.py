@@ -26,7 +26,8 @@ from .settings import (
     SAMPLER_CONFIG,
     RANDOM_STATE,
     META_DATA_PATH,
-    STRATA_ATTR_NAME,
+    STRATA_LABEL,
+    DATETIME_LABEL,
     NO_DATA_VALUE,
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
@@ -189,7 +190,8 @@ def preprocess_data(
         preprocess_actions: list[str, Literal[">", "<", "==", "!=", "replace"], Any],
         projection: Optional[str] = None,
         strata_list_path: Optional[str] = None,
-        strata_columns: Optional[list[str]] = None) -> gpd.GeoDataFrame:
+        strata_columns: Optional[list[str]] = None,
+        datetime_column: Optional[str] = None) -> gpd.GeoDataFrame:
     epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
     if projection is not None and epsg != projection:
         LOGGER.info(f"Reprojecting geo dataframe to {projection}...")
@@ -230,12 +232,16 @@ def preprocess_data(
             case _:
                 raise ValueError(f"Invalid filter operator: {action}")
 
+    if datetime_column is not None:
+        geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe\
+            .loc[:, datetime_column]
+
     if strata_columns is not None and strata_list_path is not None:
         LOGGER.info(f"Saving strata list to {strata_list_path}...")
-        geo_dataframe.loc[:, STRATA_ATTR_NAME] = geo_dataframe.loc[:, strata_columns].astype(
+        geo_dataframe.loc[:, STRATA_LABEL] = geo_dataframe.loc[:, strata_columns].astype(
             str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
-        strata_list = {STRATA_ATTR_NAME: np.sort(
-            geo_dataframe[STRATA_ATTR_NAME].unique()).tolist()}
+        strata_list = {STRATA_LABEL: np.sort(
+            geo_dataframe[STRATA_LABEL].unique()).tolist()}
         save_yaml(strata_list, strata_list_path)
 
     LOGGER.info(f"Saving processed geo dataframe to {GEO_PRE_PATH}...")
@@ -250,10 +256,10 @@ def stratified_sample(
     num_points: Optional[int] = None,
 ):
     if fraction is not None:
-        groupby = geo_dataframe.groupby(STRATA_ATTR_NAME)
+        groupby = geo_dataframe.groupby(STRATA_LABEL)
         sample = groupby.sample(frac=fraction)
     elif num_points is not None:
-        groupby = geo_dataframe.groupby(STRATA_ATTR_NAME)
+        groupby = geo_dataframe.groupby(STRATA_LABEL)
         sample = groupby.sample(n=num_points)
     else:
         sample = geo_dataframe
@@ -318,7 +324,7 @@ def generate_squares(
                 .set_crs("EPSG:4326")\
                 .to_crs(epsg)
             gdf = generate_centroid_squares(points, meter_edge_size)
-            gdf.loc[:, "year"] = gee_stratafied_config["end_date"].year
+            gdf.loc[:, DATETIME_LABEL] = gee_stratafied_config["end_date"].r
         case "centroid":
             gdf = generate_centroid_squares(
                 geo_dataframe,
@@ -339,16 +345,16 @@ def generate_squares(
 @function_timer
 def generate_time_combinations(
         num_samples: int,
-        num_years: int,
-        year_step: int) -> np.ndarray:
-    start = num_years % year_step
+        num_times: int,
+        time_step: int) -> np.ndarray:
+    start = num_times % time_step
     sample_arr = np.arange(num_samples)
-    year_arr = np.arange(num_years)[start::year_step]
+    time_arr = np.arange(num_times)[start::time_step]
 
-    sample_arr, year_arr = np.meshgrid(sample_arr, year_arr)
+    sample_arr, time_arr = np.meshgrid(sample_arr, time_arr)
     sample_arr = sample_arr.flatten()
-    year_arr = year_arr.flatten()
-    time_arr = np.column_stack((sample_arr, year_arr))
+    time_arr = time_arr.flatten()
+    time_arr = np.column_stack((sample_arr, time_arr))
 
     return time_arr
 
@@ -393,7 +399,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         target = sample_gdf.iloc[index]
         group = target[groupby_columns]
         square = target.geometry
-        default_value = strata_map[target[STRATA_ATTR_NAME]]
+        default_value = strata_map[target[STRATA_LABEL]]
 
         # rasterizing multipolygon and clipping to square
         xarr_anno_list = []
@@ -404,7 +410,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         for strata in strata_map:
             try:
                 mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
-                    (population_gdf[STRATA_ATTR_NAME] == strata)
+                    (population_gdf[STRATA_LABEL] == strata)
                 mp = population_gdf[mask].geometry
                 annotation = rasterizer(
                     mp, square, scale, NO_DATA_VALUE, default_value)
@@ -418,7 +424,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
             if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
                 annotation = clip_xy_xarray(annotation, pixel_edge_size)
             xarr_anno_list.append(annotation)
-        xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_ATTR_NAME)
+        xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_LABEL)
 
         # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index} to batch...")
@@ -450,7 +456,7 @@ def generate_annotation_data(
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    strata_map = sorted(load_yaml(strata_list_path)[STRATA_ATTR_NAME])
+    strata_map = sorted(load_yaml(strata_list_path)[STRATA_LABEL])
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -501,6 +507,7 @@ def sample():
                 "projection": SAMPLER_CONFIG["projection"],
                 "strata_list_path": STRATA_LIST_PATH,
                 "strata_columns": SAMPLER_CONFIG["strata_columns"],
+                "datetime_column": SAMPLER_CONFIG["datetime_column"],
             }
             geo_dataframe = preprocess_data(**sample_config)
 
@@ -536,11 +543,11 @@ def sample():
 
         if SAMPLER_CONFIG["sample_toggles"]["generate_time_combinations"]:
             LOGGER.info("Generating time combinations...")
-            num_years = SAMPLER_CONFIG["look_years"] + 1
+            num_times = SAMPLER_CONFIG["look_range"] + 1
             time_sample_config = {
                 "num_samples": num_samples,
-                "num_years": num_years,
-                "year_step": SAMPLER_CONFIG["year_step"]
+                "num_times": num_times,
+                "time_step": SAMPLER_CONFIG["time_step"]
             }
             samples = generate_time_combinations(**time_sample_config)
         elif SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
@@ -614,7 +621,7 @@ def download():
 
         LOGGER.info("Generating image chips...")
         parser_kwargs = SAMPLER_CONFIG["medoid_config"]
-        parser_kwargs["look_years"] = SAMPLER_CONFIG["look_years"]
+        parser_kwargs["look_range"] = SAMPLER_CONFIG["look_range"]
         downloader_kwargs = {
             "file_type": SAMPLER_CONFIG["file_type"],
             "overwrite": SAMPLER_CONFIG["overwrite"],
