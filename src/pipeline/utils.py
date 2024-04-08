@@ -8,7 +8,7 @@ import xarray as xr
 
 from datetime import datetime
 from ltgee import LandTrendr
-from typing import Optional
+from typing import Optional, Generator
 
 from .logger import get_logger
 from .settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
@@ -190,20 +190,34 @@ def function_timer(func):
 
 
 @function_timer
-def get_xarr_mean_std(data: xr.Dataset):
-    data = data.to_dataarray(dim="chip")
-    means = data.mean(dim=["chip", DATETIME_LABEL, "y", "x"])
-    stds = data.std(dim=["chip", DATETIME_LABEL, "y", "x"])
+def get_xarr_chip_mean_std(data: xr.Dataset) -> tuple[list[float], list[float]]:
+    data = data.to_dataarray()
+    means = data.mean(dim=["variable", DATETIME_LABEL, "y", "x"])
+    stds = data.std(dim=["variable", DATETIME_LABEL, "y", "x"])
     return means.values.tolist(), stds.values.tolist()
 
 
 @function_timer
+def get_xarr_anno_mean_std(data: xr.Dataset) -> tuple[list[float], list[float]]:
+    sums = data.sum(dim=["y", "x"]).to_dataarray()
+    means = sums.mean(dim="variable")
+    stds = sums.std(dim="variable")
+    return means.values.tolist(), stds.values.tolist()
+
+
+@function_timer
+def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
+    sums = data.sum(dim=["y", "x"])
+    totals = sums.to_dataarray().sum(dim="variable")
+    weights = totals.min() / totals
+    return totals.values.tolist(), weights.values.tolist()
+
+
+@function_timer
 def test_non_zero_sum(xarr: xr.Dataset,
-                      size: int):
-    count = len(xarr.variables)
-    tests = np.random.randint(0, count, size=size)
+                      size: int) -> Generator[tuple[str, int], None, None]:
+    tests = np.random.choice(xarr.variables, size=size).tolist()
     for test in tests:
-        test_str = str(test)
-        sum = xarr[test_str].sum().values
+        sum = xarr[test].sum().values
         assert sum > 0
-        yield test_str, int(sum)
+        yield test, int(sum)

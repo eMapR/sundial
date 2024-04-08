@@ -6,10 +6,10 @@ import tarfile
 
 from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
-from callbacks import *
-from dataloaders import *
-from models import *
+from callbacks import DefineActivationCallback, DefineCriterionCallback, LogSetupCallback, ModelSetupCallback
+from settings import CHECKPOINT_CONFIG, EARLY_STOPPING_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
 from utils import get_best_ckpt, tensors_to_tifs
 
 from pipeline.utils import function_timer
@@ -18,20 +18,20 @@ from pipeline.sampler import (
     annotate,
     download,
     calculate,
+    index,
 )
 from pipeline.settings import (
     load_yaml,
-    METHOD,
-    RANDOM_STATE,
-    CONFIG_PATH,
-    META_DATA_PATH,
+    BASE_CONFIG_PATH,
     CHECKPOINT_PATH,
+    EXPERIMENT_FULL_NAME,
+    EXPERIMENT_SUFFIX,
+    META_DATA_PATH,
+    METHOD,
+    METHOD_CONFIG_PATH,
     PREDICTION_PATH,
+    RANDOM_STATE,
     SAMPLER_CONFIG,
-    LOGGER_CONFIG,
-    CHECKPOINT_CONFIG,
-    EXPERIMENT_NAME,
-    EXPERIMENT_SUFFIX
 )
 
 
@@ -41,7 +41,8 @@ class SundialCLI(LightningCLI):
         # placeholders to avoid parsing errors
         parser.add_argument("--criterion", default={}, type=dict)
         parser.add_argument("--activation", default={}, type=dict)
-        parser.add_argument("--ckpt_monitor", default=None, type=str)
+        parser.add_argument("--early_stopping", default={}, type=dict)
+        parser.add_argument("--model_checkpoint", default=None, type=str)
 
 
 def train():
@@ -49,13 +50,11 @@ def train():
     torch.set_float32_matmul_precision("high")
 
     # setting up trainer defaults w/ paths from pipeline.settings
-    base_config_path = os.path.join(CONFIG_PATH, "base.yaml")
-    run_config_path = os.path.join(CONFIG_PATH, f"{METHOD}.yaml")
-    run_configs = load_yaml(os.path.join(CONFIG_PATH, f"{METHOD}.yaml"))
+    run_configs = load_yaml(METHOD_CONFIG_PATH)
 
     args = [METHOD,
-            f"--config={base_config_path}",
-            f"--config={run_config_path}"]
+            f"--config={BASE_CONFIG_PATH}",
+            f"--config={METHOD_CONFIG_PATH}"]
 
     # setting up default callbacks and ckpts for methods avoiding pL indirect
     trainer_defaults = {
@@ -66,26 +65,36 @@ def train():
             DefineActivationCallback(**run_configs.get("activation", {})),
         ],
         "log_every_n_steps": 16,
-        "logger": [
-            {"class_path": "lightning.pytorch.loggers.CometLogger",
-             "init_args": LOGGER_CONFIG}
-        ],
         "enable_progress_bar": True,
         "profiler": "simple"
     }
 
+    # set up comet logger if no logger is specified
+    if not run_configs["trainer"].get("logger"):
+        trainer_defaults["logger"] = {
+            "class_path": "lightning.pytorch.loggers.CometLogger",
+            "init_args": LOGGER_CONFIG}
+
     # setting method specific callbacks
     match METHOD:
         case "fit":
-            if ckpt_monitor := run_configs.get("ckpt_monitor"):
-                CHECKPOINT_CONFIG["monitor"] = ckpt_monitor
+            model_checkpoint = CHECKPOINT_CONFIG
+            if run_model_checkpoint := run_configs.get("model_checkpoint"):
+                model_checkpoint |= run_model_checkpoint
+            early_stopping = EARLY_STOPPING_CONFIG
+            if run_early_stopping := run_configs.get("early_stopping"):
+                early_stopping |= run_early_stopping
             trainer_defaults["callbacks"].extend([
-                ModelCheckpoint(**CHECKPOINT_CONFIG)
+                ModelCheckpoint(**model_checkpoint),
+                EarlyStopping(**early_stopping),
             ]),
         case "test" | "predict":
-            if run_configs.get("ckpt_path") is None:
+            if (ckpt_path := run_configs.get("ckpt_path")) is None:
                 ckpt_path = get_best_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
                 args.append(f"--ckpt_path={ckpt_path}")
+            else:
+                args.append(
+                    f"--ckpt_path={os.path.join(CHECKPOINT_PATH, ckpt_path)}")
 
     SundialCLI(
         seed_everything_default=RANDOM_STATE,
@@ -101,20 +110,18 @@ def train():
 
 @function_timer
 def package():
-    out_path = os.path.join("/tmp",
-                            EXPERIMENT_NAME)
-    os.makedirs(out_path)
-    tensors_to_tifs(
+    tensors_dir_path = tensors_to_tifs(
         PREDICTION_PATH,
-        out_path,
+        EXPERIMENT_FULL_NAME,
         META_DATA_PATH,
         SAMPLER_CONFIG["num_workers"]
     )
-    tar_path = os.path.join(os.path.expanduser("~"),
-                            EXPERIMENT_NAME)
-    with tarfile.open(f"{tar_path}.tar.gz", "w:gz") as tar:
-        tar.add(out_path, arcname=os.path.basename(out_path))
-    shutil.rmtree(out_path)
+    match PACKAGE_CONFIG["format"]:
+        case "tar":
+            tar_path = os.path.join(
+                os.path.expanduser("~"), EXPERIMENT_FULL_NAME)
+            with tarfile.open(f"{tar_path}.tar.gz", "w:gz") as tar:
+                tar.add(tensors_dir_path, arcname=EXPERIMENT_FULL_NAME)
 
 
 if __name__ == "__main__":
@@ -127,6 +134,8 @@ if __name__ == "__main__":
             download()
         case "calculate":
             calculate()
+        case "index":
+            index()
         case "fit" | "validate" | "test" | "predict":
             train()
         case "package":

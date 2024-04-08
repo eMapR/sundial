@@ -1,7 +1,7 @@
 trainer:
     callbacks:
-      - class_path: LogTrainCallback
-      - class_path: LogTrainBinaryExtCallback
+      - class_path: callbacks.LogTrainCallback
+      - class_path: callbacks.LogTrainBinaryExtCallback
       - class_path: StochasticWeightAveraging
         init_args:
             swa_lrs: 0.0001
@@ -24,8 +24,5 @@ lr_scheduler:
         gamma: 0.7
 criterion:
     class_path: FocalLoss
-    init_args:
-        reduction: sum
-    custom: false
 activation:
     class_path: Sigmoid

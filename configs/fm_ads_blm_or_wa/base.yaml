@@ -1,5 +1,5 @@
 model:
-    class_path: PrithviHeadless
+    class_path: models.prithvi.PrithviHeadless
     init_args:
         prithvi_params:
             model_args:
@@ -17,7 +17,7 @@ model:
             train_params:
                 mask_ratio: 0.75
 data:
-    class_path: ChipsDataModule
+    class_path: dataloaders.ChipsDataModule
     init_args:
         batch_size: 256
         num_workers: 16

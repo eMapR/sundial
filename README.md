@@ -1,5 +1,5 @@
 # Sundial
-Workflow / framework for machine learning with data sourced from Google Earth Engine on a bare metal machine.
+Workflow / framework for deep learning with data sourced from Google Earth Engine on a bare metal machine.
 
 ## Introduction
 
@@ -23,7 +23,8 @@ Welcome to Sundial!
         sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile.
         annotate:       Collects image annotations for experiment using sample polygons.
         download:       Downloads image chips for experiment using sample polygons.
-        calculate:      Calculate means and stds for experiment sample.
+        calculate:      Calculate means and stds for experiment sample and verify simple sums
+        index:          Creates indicies for training from chip and anno data.
 
         fit:            Train model using subset of data from sample.
         validate:       Validate model subset of using data from sample.
@@ -56,13 +57,16 @@ Welcome to Sundial!
         SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'
         SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'
         SUNDIAL_NODES:               Node within hpc to run job. Default: any node
+        SUNDIAL_GPU_PARTITION:       Partition within hpc to run gpu based jobs.
+        SUNDIAL_CPU_PARTITION:       Partition within hpc to run cpu based jobs.
+        SUNDIAL_PACKAGE_FORMAT:      Format to package predictions. Default: 'tar'
 ```
 
 ### 1. Setup directories and conda environment.
-This only works on x86_64 machines. Additional steps must be taken for ARM architectures. 
+This only works on x86_64 machines. Additional compiling steps must be taken for ARM architectures to use CUDA acceleration. See [Google Earth Documentation](https://developers.google.com/earth-engine/guides/auth) for mode details on authentication. The authenticate command may not work well with a terminal only environment. 
 ```console
-# Clone repository cd into it. Omit --recurse-submodules if you do not plan to use provided backbone.
-git clone --recurse-submodules https://github.com/eMapR/sundial.git
+# Clone repository cd into it. Backbones must be cloned from their respective repos into src/models/backbones. (eg Prithvi in the the subdir 'prithvi')
+git clone https://github.com/eMapR/sundial.git
 cd sundial
 
 # Create environment in one of two ways
@@ -74,7 +78,7 @@ make setup_env
 # activate environment
 conda activate sundial
 
-# Authenticate on Google Earth Engine
+# Authenticate on Google Earth Engine.
 earthengine authenticate
 ```
 
@@ -109,13 +113,20 @@ GEE is used to generate raster data based on polygons from the shapefile given i
 make download
 ```
 
-### 6. Train a model using the downloaded chips.
-Included in this repo is a simple segmentation model using a fully convolutional network built on Prithvi's foundation model as a backbone that needs to be finetuned. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there or use one that is prebuilt in lightning. Backbones are also stored in the backbones directory in src and can be imported in a similar way. Any paths to chip or annotation data created in the previous steps are automatically loaded.
+### 6. Optionally create splits and indicies for training and calculate basic stats for dataset.
+Model training data can be split in various ways depending on the config file. Generated annotations that may not satisfy quality standards may be filtered out at this stage. Counts, means, and standard deviations of the dataset can be calculated here.
+```console
+make index
+make calculate
+```
+
+### 7. Train a model using the downloaded chips.
+Included in this repo is a simple segmentation model using a fully convolutional network built on [Prithvi's foundation model](https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M) that needs to be cloned to models/backbones and finetuned. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there. Any paths to chip or annotation data created in the previous steps are automatically loaded.
 ```console
 make fit
 ```
 
-### 7. View logs.
+### 8. View logs.
 Comet, an ML cloud reporting service offered free for research, is used as the default logging package for images and training data. See [Lightning Comet Docs](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet) and [Comet Experiment Docs](https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/#experimentlog_metric) for more details. Environment variables needed can be found in src/settings.py. Alternatively, a separate logger can be written and included via config files.
 
 ## Config files

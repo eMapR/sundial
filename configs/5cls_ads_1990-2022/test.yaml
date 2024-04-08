@@ -1,8 +1,8 @@
 trainer:
     callbacks:
-      - class_path: LogTestCallback
-      - class_path: SaveTestCallback
-      - class_path: LogTrainPixelwiseExtCallback
+      - class_path: callbacks.LogTestCallback
+      - class_path: callbacks.SaveTestCallback
+      - class_path: callbacks.LogTrainPixelwiseExtCallback
     precision: 16-mixed
     devices: 1
 ckpt_path: null
@@ -11,7 +11,6 @@ criterion:
     class_path: CrossEntropyLoss
     init_args:
         reduction: sum
-        weight: [0.7, 1, 0.1, 0.5, 0.6]
 activation:
     class_path: Softmax
     init_args:

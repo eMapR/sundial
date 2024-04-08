@@ -5,20 +5,21 @@ import os
 import torch
 import rasterio
 import re
+import shutil
 
-from typing import Optional
+from typing import Optional, Any
 
 from pipeline.utils import function_timer
 
 
 def get_best_ckpt(dir_path: str | os.PathLike,
-                  experiment: Optional[str] = None):
-    glob_exp = f"{experiment}_" if experiment else ""
-    glob_pat = f"{glob_exp}epoch-*_val_loss-*.ckpt"
+                  experiment: Optional[str] = None) -> str | None:
+    glob_exp = experiment if experiment else ""
+    glob_pat = f"epoch-*_val_loss-*_{glob_exp}.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
     regex_exp = experiment if experiment else ".+"
-    regex_str = fr"(?:{regex_exp}_)?epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?\.ckpt"
+    regex_str = fr"epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
     regex = re.compile(regex_str)
 
     min_val_loss = float('inf')
@@ -43,6 +44,41 @@ def get_best_ckpt(dir_path: str | os.PathLike,
                 current_version = version
                 best_file = file
     return best_file
+
+
+def save_rgb_ir_tensor(chip: torch.Tensor, index: int, path: str):
+    times = list(range(chip.shape[1]-1, -1, -1))
+    for t in range(chip.shape[1]):
+        image = chip[0:3, t, :, :]
+        img_path = os.path.join(path, f"{index:07d}_rgb_t-{times[t]}_chip.pt")
+        torch.save(image, img_path)
+
+        image = chip[3:6, t, :, :]
+        img_path = os.path.join(path, f"{index:07d}_ir_t-{times[t]}_chip.pt")
+        torch.save(image, img_path)
+
+
+def log_rbg_ir_image(chip: torch.Tensor, index: int, logger: Any):
+    rgb = chip[0:3].flip(0).permute(1, 2, 3, 0)
+    ir = chip[3:6].permute(1, 2, 3, 0)
+    rgb_max = torch.max(rgb).item()
+    rgb_min = torch.min(rgb).item()
+    ir_max = torch.max(ir).item()
+    ir_min = torch.min(ir).item()
+    times = list(range(chip.shape[1]-1, -1, -1))
+    for t in range(chip.shape[1]):
+        image = rgb[t, :, :, :]
+        logger.log_image(
+            image_data=image.detach().cpu(),
+            name=f"{index:07d}_rgb_t-{times[t]}_chip",
+            image_minmax=(rgb_min, rgb_max)
+        )
+        image = ir[t, :, :, :]
+        logger.log_image(
+            image_data=image.detach().cpu(),
+            name=f"{index:07d}_ir_t-{times[t]}_chip",
+            image_minmax=(ir_min, ir_max)
+        )
 
 
 def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
@@ -76,9 +112,13 @@ def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
 
 @function_timer
 def tensors_to_tifs(prediction_path: str,
-                    output_path: str,
+                    output_name: str,
                     meta_data_path: str,
-                    num_workers: int = 1):
+                    num_workers: int = 1) -> str:
+    output_path = os.path.join("/tmp", output_name)
+    if os.path.exists(output_path) and os.path.isdir(output_path):
+        shutil.rmtree(output_path)
+    os.makedirs(output_path)
     pattern = os.path.join(prediction_path, "*.pt")
     files = glob.glob(pattern)
     meta_data = gpd.read_file(meta_data_path)
@@ -108,3 +148,4 @@ def tensors_to_tifs(prediction_path: str,
 
     meta = meta_data.iloc[file_idxes].reset_index()
     meta.to_file(os.path.join(output_path, "meta_data"))
+    return output_path

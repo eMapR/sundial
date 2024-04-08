@@ -1,6 +1,6 @@
 trainer:
     callbacks:
-      - class_path: LogTrainCallback
+      - class_path: callbacks.LogTrainCallback
     max_epochs: 1024
     strategy: ddp
     devices: 1

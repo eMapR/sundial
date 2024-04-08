@@ -1,5 +1,5 @@
 trainer:
     callbacks:
-      - class_path: SaveTestCallback
+      - class_path: callbacks.SaveTestCallback
 ckpt_path: null
 

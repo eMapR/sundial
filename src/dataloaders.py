@@ -22,6 +22,7 @@ from pipeline.settings import (
     SAMPLER_CONFIG,
     FILE_EXT_MAP
 )
+from settings import DATALOADER_CONFIG
 
 
 class PreprocesNormalization(nn.Module):
@@ -43,6 +44,7 @@ class ChipsDataset(Dataset):
                  chip_size: int,
                  time_step: int | None,
                  file_type: str,
+                 chip_diff: bool,
                  sample_path: str,
                  chip_data_path: str,
                  anno_data_path: str | None,
@@ -53,6 +55,7 @@ class ChipsDataset(Dataset):
         self.chip_size = chip_size
         self.time_step = time_step
         self.file_type = file_type
+        self.chip_diff = chip_diff
         self.sample_path = sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
@@ -63,19 +66,21 @@ class ChipsDataset(Dataset):
             means, stds) if means and stds else None
         self.samples = np.load(self.sample_path)
 
-        if self.file_type == "zarr":
-            self.chips = xr.open_zarr(self.chip_data_path)
-            self.chip_loader = lambda name: self._zarr_loader(self.chips, name)
-            if self.anno_data_path is not None:
-                self.annos = xr.open_zarr(self.anno_data_path)
-                self.anno_loader = lambda name: self._zarr_loader(
-                    self.annos, name)
-        if self.file_type == "tif":
-            self.chip_loader = lambda name: \
-                self._tif_loader(self.chip_data_path, name)
-            if self.anno_data_path is not None:
-                self.anno_loader = lambda name: \
-                    self._tif_loader(self.anno_data_path, name)
+        match self.file_type:
+            case "zarr":
+                self.chips = xr.open_zarr(self.chip_data_path)
+                self.chip_loader = lambda name: self._zarr_loader(
+                    self.chips, name)
+                if self.anno_data_path is not None:
+                    self.annos = xr.open_zarr(self.anno_data_path)
+                    self.anno_loader = lambda name: self._zarr_loader(
+                        self.annos, name)
+            case "tif":
+                self.chip_loader = lambda name: \
+                    self._tif_loader(self.chip_data_path, name)
+                if self.anno_data_path is not None:
+                    self.anno_loader = lambda name: \
+                        self._tif_loader(self.anno_data_path, name)
 
     def get_strata(self, idx):
         strata = self.anno_loader(str(self.samples[idx]))
@@ -105,6 +110,10 @@ class ChipsDataset(Dataset):
 
         # reshaping gee data (D H W C) to pytorch format (C D H W)
         chip = chip.permute(3, 0, 1, 2)
+
+        # calculating chip differences if specified
+        if self.chip_diff:
+            chip = chip[:, 1:, :, :] - chip[:, :-1, :, :]
 
         # normalizing chip to precalculated means and stds
         if self.normalizer is not None:
@@ -137,18 +146,19 @@ class ChipsDataset(Dataset):
 class ChipsDataModule(L.LightningDataModule):
     def __init__(
         self,
-        batch_size: int,
-        num_workers: int,
-        chip_size: int = SAMPLER_CONFIG["pixel_edge_size"],
-        time_step: int = SAMPLER_CONFIG["time_step"],
-        file_type: str = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
+        batch_size: int = DATALOADER_CONFIG["batch_size"],
+        num_workers: int = DATALOADER_CONFIG["num_workers"],
+        chip_size: int = DATALOADER_CONFIG["chip_size"],
+        time_step: int = DATALOADER_CONFIG["time_step"],
+        file_type: str = DATALOADER_CONFIG["file_type"],
+        chip_diff: bool = DATALOADER_CONFIG["chip_diff"],
         train_sample_path: str = TRAIN_SAMPLE_PATH,
         validate_sample_path: str = VALIDATE_SAMPLE_PATH,
         test_sample_path: str = TEST_SAMPLE_PATH,
         predict_sample_path: str = PREDICT_SAMPLE_PATH,
         chip_data_path: str = CHIP_DATA_PATH,
         anno_data_path: str = ANNO_DATA_PATH,
-        stat_data_path: str = STAT_DATA_PATH,
+        stat_data_path: str | None = STAT_DATA_PATH,
 
         **kwargs
     ):
@@ -158,6 +168,7 @@ class ChipsDataModule(L.LightningDataModule):
         self.chip_size = chip_size
         self.time_step = time_step
         self.file_type = file_type
+        self.chip_diff = chip_diff
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
@@ -165,20 +176,20 @@ class ChipsDataModule(L.LightningDataModule):
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
         self.stat_data_path = stat_data_path
+        self.means = None
+        self.stds = None
 
         # loading means and stds from stat_data_path
-        if self.stat_data_path is not None and os.path.exists(self.stat_data_path):
+        if stat_data_path and os.path.exists(self.stat_data_path):
             stats = load_yaml(self.stat_data_path)
-            self.means = stats["means"]
-            self.stds = stats["stds"]
-        else:
-            self.means = None
-            self.stds = None
+            self.means = stats["chip_means"]
+            self.stds = stats["chip_stds"]
 
         self.dataset_config = {
             "chip_size": self.chip_size,
             "time_step": self.time_step,
             "file_type": self.file_type,
+            "chip_diff": self.chip_diff,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
             "means": self.means,

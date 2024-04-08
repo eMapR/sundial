@@ -1,7 +1,7 @@
 trainer:
     callbacks:
-      - class_path: LogTrainCallback
-      - class_path: LogTrainPixelwiseExtCallback
+      - class_path: callbacks.LogTrainCallback
+      - class_path: callbacks.LogTrainPixelwiseExtCallback
       - class_path: StochasticWeightAveraging
         init_args:
             swa_lrs: 0.0001
@@ -10,7 +10,7 @@ trainer:
     strategy: auto
     devices: 1
     num_nodes: 1
-    accumulate_grad_batches: 8
+    accumulate_grad_batches: 16
     precision: bf16-mixed
     gradient_clip_val: 5
 optimizer:
@@ -25,10 +25,8 @@ lr_scheduler:
 criterion:
     class_path: CrossEntropyLoss
     init_args:
-        reduction: sum
-        weight: [0.7, 1.5, 0.1, 0.3, 0.4]
+        weight: [1.0, 0.18237304, 0.39916356, 0.22545021, 0.41653142]
 activation:
     class_path: Softmax
     init_args:
         dim: 1
-

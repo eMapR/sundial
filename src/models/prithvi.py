@@ -3,73 +3,8 @@ import torch
 
 from torch import nn
 
-
-class SundialPLBase(L.LightningModule):
-    def forward(self, chips):
-        tokens = self.backbone(chips)
-        features = self.neck(tokens)
-        logits = self.head(features)
-
-        return logits
-
-    def training_step(self, batch):
-        chips, annotations, _ = batch
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        return {"loss": loss}
-
-    def validation_step(self, batch):
-        chips, annotations, _ = batch
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        # reactivating logits for metric logging
-        classes = self.activation(logits)
-
-        return {"loss": loss, "classes": classes}
-
-    def test_step(self, batch):
-        chips, annotations, _ = batch
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        # reactivating logits for metric logging
-        classes = self.activation(logits)
-
-        return {"loss": loss, "classes": classes}
-
-    def predict_step(self, batch):
-        chips, _ = batch
-        logits = self(chips)
-        classes = self.activation(logits)
-
-        return {"classes": classes}
-
-
-class UpscaleNeck(nn.Module):
-    def __init__(self, embed_dim: int, depth: int):
-        super().__init__()
-
-        def build_block(in_ch, out_ch): return nn.Sequential(
-            nn.ConvTranspose2d(
-                in_channels=in_ch,
-                out_channels=out_ch,
-                kernel_size=2,
-                stride=2),
-            nn.BatchNorm2d(out_ch),
-            nn.GELU(),
-            nn.ConvTranspose2d(
-                in_channels=in_ch,
-                out_channels=out_ch,
-                kernel_size=2,
-                stride=2),)
-
-        self.block = nn.Sequential(
-            *[build_block(embed_dim, embed_dim) for _ in range(depth)])
-
-    def forward(self, x):
-        return self.block(x)
+from models.base import SundialPLBase
+from models.necks import UpscaleNeck
 
 
 class PrithviBackbone(nn.Module):
@@ -85,7 +20,7 @@ class PrithviBackbone(nn.Module):
         self.prithvi_freeze = prithvi_freeze
 
         # Initializing Prithvi Backbone per prithvi documentation
-        from backbones.prithvi.Prithvi import MaskedAutoencoderViT
+        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
         if self.prithvi_freeze:
@@ -98,17 +33,17 @@ class PrithviBackbone(nn.Module):
 
     def forward(self, chips):
         # gathering features
-        tokens, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
+        latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
 
         # removing class token and reshaping to 2D representation
-        tokens = tokens[:, 1:, :]
-        tokens = tokens.view(
-            tokens.shape[0],
+        latent = latent[:, 1:, :]
+        latent = latent.view(
+            latent.shape[0],
             -1,
             self.view_size,
             self.view_size)
 
-        return tokens
+        return latent
 
 
 class PrithviFCN(SundialPLBase):
@@ -142,15 +77,6 @@ class PrithviFCN(SundialPLBase):
         self.head = FCNHead(embed_dim, self.num_classes)
 
 
-class PrithviFCNDiff(PrithviFCN):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def forward(self, chips) -> torch.Any:
-        chips = chips[:, :, 1:, :, :] - chips[:, :, :-1, :, :]
-        return super().forward(chips)
-
-
 class PrithviUNet(SundialPLBase):
     def __init__(self,
                  num_classes: int,
@@ -178,19 +104,21 @@ class PrithviUNet(SundialPLBase):
         self.neck = UpscaleNeck(embed_dim, self.upscale_depth)
 
         # Initializing U-Net Head
-        from heads.unet.unet.unet_model import UNet
+        from models.heads.unet.unet.unet_model import UNet
         self.head = UNet(embed_dim, self.num_classes)
 
 
 class PrithviHeadless(L.LightningModule):
     def __init__(self,
+                 view_size: int | None,
                  prithvi_params: dict,
                  **kwargs):
         super().__init__(**kwargs)
+        self.view_size = view_size
         self.prithvi_params = prithvi_params
 
         # initialize prithvi backbone
-        from backbones.prithvi.Prithvi import MaskedAutoencoderViT
+        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
 
@@ -209,11 +137,36 @@ class PrithviHeadless(L.LightningModule):
 
     def test_step(self, batch):
         chips, _ = batch
-        loss, _, _ = self(chips)
-        return {"loss": loss}
+        loss, pred, _ = self(chips)
+
+        return {"loss": loss, "pred": pred}
 
     def predict_step(self, batch):
         chips, _ = batch
-        features, _, _ = self.model.forward_encoder(
-            chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
-        return {"features": features}
+        latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
+        return {"latent": latent}
+
+
+class PrithviHeadlessCDiff(L.LightningModule):
+    def __init__(self,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None):
+        self.model = PrithviBackbone(
+            view_size=view_size,
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path)
+        assert view_size % 2 == 0
+        self.center = view_size // 2
+        self.center_slice = slice(self.center - 1, self.center + 1)
+        self.mse = nn.MSELoss(reduction="none")
+
+    def predict_step(self, batch):
+        latent = self.model(batch)
+        center = latent[:, :, self.center_slice, self.center_slice]
+        center_mean = torch.mean(center, dim=(2, 3), keepdim=True)
+        rmse = torch.mean(torch.sqrt(
+            self.mse(center, center_mean)), dim=1, keepdim=True)
+        return {"latent": latent, "rmse": rmse}
