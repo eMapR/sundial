@@ -27,9 +27,9 @@ Welcome to Sundial!
         index:          Creates indicies for training from chip and anno data.
 
         fit:            Train model using subset of data from sample.
-        validate:       Validate model subset of using data from sample.
+        validate:       Validate model using subset of data from sample.
         test:           Test model using subset of data from sample.
-        predict:        Predict an image from subset of data from sample.
+        predict:        Predict an image using subset of data from sample.
         package:        Convert predictions to GeoTIFF if not already in format and compress for download.
 
         status:         Check status of all jobs for user.

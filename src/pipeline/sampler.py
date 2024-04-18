@@ -34,7 +34,7 @@ from .settings import (
     METHOD,
     NO_DATA_VALUE,
     PREDICT_SAMPLE_PATH,
-    RANDOM_STATE,
+    RANDOM_SEED,
     SAMPLER_CONFIG,
     STAT_DATA_PATH,
     STRATA_LABEL,
@@ -115,7 +115,7 @@ def gee_generate_random_points(
     return ee.FeatureCollection.randomPoints(
         region=geometry,
         points=num_points,
-        seed=RANDOM_STATE,
+        seed=RANDOM_SEED,
     )
 
 
@@ -659,7 +659,7 @@ def calculate():
                     chip_data)
                 stat["chip_count"] = len(chip_data.variables)
                 stat["chip_verify"] = {
-                    i: s for i, s in test_non_zero_sum(chip_data, RANDOM_STATE)}
+                    i: s for i, s in test_non_zero_sum(chip_data, RANDOM_SEED)}
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verify annotation data...")
                     anno_data = xr.open_zarr(ANNO_DATA_PATH)
@@ -671,7 +671,7 @@ def calculate():
                     stat["anno_means"], stat["anno_stds"] = get_xarr_anno_mean_std(
                         anno_data)
                     stat["anno_verify"] = {
-                        i: s for i, s in test_non_zero_sum(anno_data, RANDOM_STATE)}
+                        i: s for i, s in test_non_zero_sum(anno_data, RANDOM_SEED)}
             case _:
                 raise ValueError(
                     f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
@@ -697,6 +697,7 @@ def index():
             "anno_data": anno_data,
             "postprocess_actions": SAMPLER_CONFIG["postprocess_actions"],
         }
+        # TODO: resample data so sample ratio stays consistent postprocessing
         samples = postprocess_data(**sample_config)
     np.save(ALL_SAMPLE_PATH, samples)
 
@@ -738,5 +739,5 @@ def index():
             STAT_DATA_PATH)
     else:
         LOGGER.info("Saving sample data indices to paths...")
-        np.save(TRAIN_SAMPLE_PATH, samples)
+        np.save(PREDICT_SAMPLE_PATH, samples)
         update_yaml({"train_count": len(samples)}, STAT_DATA_PATH)

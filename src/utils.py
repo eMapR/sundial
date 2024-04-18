@@ -46,6 +46,51 @@ def get_best_ckpt(dir_path: str | os.PathLike,
     return best_file
 
 
+def get_latest_ckpt(dir_path: str | os.PathLike,
+                    experiment: Optional[str] = None) -> str | None:
+    glob_exp = experiment if experiment else ""
+    glob_pat = f"epoch-*_val_loss-*_{glob_exp}.ckpt"
+    files = glob.glob(os.path.join(dir_path, glob_pat))
+
+    regex_exp = experiment if experiment else ".+"
+    regex_str = fr"epoch-(\d+)_val_loss-(?:\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
+    regex = re.compile(regex_str)
+
+    max_epoch = -1
+    current_version = -1
+    latest_file = None
+
+    for file in files:
+        match = regex.search(file)
+        if match:
+            epoch, version = match.groups()
+            if version is None:
+                version = -2
+            else:
+                version = int(version)
+            epoch = int(epoch)
+
+            if epoch > max_epoch or (epoch == max_epoch and version > current_version):
+                max_epoch = epoch
+                current_version = version
+                latest_file = file
+    return latest_file
+
+
+def clean_dir_files(directory: str | os.PathLike):
+    if not os.path.exists(directory):
+        print(f"The directory {directory} does not exist.")
+        return
+
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(f"Failed to delete {file_path}. Reason: {e}")
+
+
 def save_rgb_ir_tensor(chip: torch.Tensor, index: int, path: str):
     times = list(range(chip.shape[1]-1, -1, -1))
     for t in range(chip.shape[1]):
@@ -71,12 +116,14 @@ def log_rbg_ir_image(chip: torch.Tensor, index: int, logger: Any):
         logger.log_image(
             image_data=image.detach().cpu(),
             name=f"{index:07d}_rgb_t-{times[t]}_chip",
+            image_scale=2.0,
             image_minmax=(rgb_min, rgb_max)
         )
         image = ir[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
             name=f"{index:07d}_ir_t-{times[t]}_chip",
+            image_scale=2.0,
             image_minmax=(ir_min, ir_max)
         )
 

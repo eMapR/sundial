@@ -44,13 +44,13 @@ default:
 	echo "        sample:         Generates chip sample polygons using Google Earth Engine and provided shapefile."
 	echo "        annotate:       Collects image annotations for experiment using sample polygons."
 	echo "        download:       Downloads image chips for experiment using sample polygons."
-	echo "        calculate:      Calculate means and stds for experiment sample and verify simple sums"
 	echo "        index:          Creates indicies for training from chip and anno data."
+	echo "        calculate:      Calculate means and stds for experiment sample and verify simple sums"
 	echo
 	echo "        fit:            Train model using subset of data from sample."
-	echo "        validate:       Validate model subset of using data from sample."
+	echo "        validate:       Validate model using subset of data from sample."
 	echo "        test:           Test model using subset of data from sample."
-	echo "        predict:        Predict an image from subset of data from sample."
+	echo "        predict:        Predict an image using subset of data from sample."
 	echo "        package:        Convert predictions to GeoTIFF if not already in format and compress for download."
 	echo
 	echo "        status:         Check status of all jobs for user."
@@ -155,47 +155,47 @@ sample: _sample
 	$(MAKE) -s _run
 
 annotate: _annotate
-	echo "Collecting image annotations for $(SUNDIAL_EXPERIMENT_BASE_NAME). This might take a sec...";
+	echo "Collecting image annotations for $(SUNDIAL_EXPERIMENT_FULL_NAME). This might take a sec...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 download: _download
-	echo "Downloading image chips for $(SUNDIAL_EXPERIMENT_BASE_NAME). Sit tight...";
+	echo "Downloading image chips for $(SUNDIAL_EXPERIMENT_FULL_NAME). Sit tight...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 calculate: _calculate
-	echo "Calculating metrics for $(SUNDIAL_EXPERIMENT_BASE_NAME)...";
+	echo "Calculating metrics for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 index: _index
-	echo "Creating indicies for $(SUNDIAL_EXPERIMENT_BASE_NAME)...";
+	echo "Creating indicies for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
 fit: _fit
-	echo "Training model... This may take a while...";
+	echo "Training model for $(SUNDIAL_EXPERIMENT_FULL_NAME)... This may take a while...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 validate: _validate
-	echo "Validating model... Go ahead and hold your breath...";
+	echo "Validating model for $(SUNDIAL_EXPERIMENT_FULL_NAME)... Go ahead and hold your breath...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 test: _test
-	echo "Testing model... Use 'make test_err' to check for critical errors...";
+	echo "Testing model for $(SUNDIAL_EXPERIMENT_FULL_NAME)... Use 'make test_err' to check for critical errors...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 predict: _predict
-	echo "Predicting image using model... Lets see if this works!";
+	echo "Making predictions for $(SUNDIAL_EXPERIMENT_FULL_NAME)... Lets see if this works!";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_GPU_PARTITION))
 	$(MAKE) -s _run
 
 package: _package
-	echo "Packaging predictions for $(SUNDIAL_EXPERIMENT_BASE_NAME)...";
+	echo "Packaging predictions for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 

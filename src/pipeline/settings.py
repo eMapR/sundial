@@ -68,7 +68,7 @@ GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
 GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
 
 # non configurable GEE, image, and meta data settings
-RANDOM_STATE = 42
+RANDOM_SEED = 42
 MASK_LABELS = ["cloud"]
 STRATA_LABEL = "strata"
 DATETIME_LABEL = "datetime"
@@ -118,9 +118,9 @@ SAMPLER_CONFIG = {
     # (list[str] | None) columns to group by for annotations generation in addition to strata columns
     "groupby_columns": None,
     # (dict) list of actions to perform on shapefile before sampling
-    "preprocess_actions": {},
+    "preprocess_actions": [],
     # (dict) list of actions to perform on chip and anno data after sampling
-    "postprocess_actions": {},
+    "postprocess_actions": [],
     # (str) Column to use for datetime value in geo file
     "datetime_column": "year",
     # (int | None) number of time steps between each sample + 1, or number of years to include in model including observation year

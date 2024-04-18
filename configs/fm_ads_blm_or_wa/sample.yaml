@@ -2,7 +2,7 @@ file_type: ZARR
 fraction: null
 gee_workers: 42
 gee_stratafied_config:
-    num_points: 4096
+    num_points: 8192
     num_strata: 32
     scale: 1000
     start_date: 1985-07-15
@@ -23,10 +23,11 @@ sample_toggles:
     preprocess_data: false
     stratified_sample: false
     generate_squares: true
+    postprocess_data: false
     generate_time_combinations: true
     generate_train_test_splits: true
 scale: 30
 strata_columns: null
 test_ratio: 0.0002
 validate_ratio: 0.2
-time_step: 3
+time_step: 5

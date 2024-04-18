@@ -1,5 +1,8 @@
+import torch
+
 from torch import nn
 from torchvision.ops import sigmoid_focal_loss
+from typing import Any
 
 
 class JacardLoss(nn.Module):
@@ -153,3 +156,41 @@ class FocalTverskyLoss(nn.Module):
         FocalTversky = (1 - Tversky)**self.gamma
 
         return FocalTversky
+
+
+class BCEWithLogitsLoss(nn.BCEWithLogitsLoss):
+    def __init__(self,
+                 weight: list[float] | None = None,
+                 size_average: Any | None = None,
+                 reduce: Any | None = None,
+                 reduction: str = 'mean',
+                 pos_weight: list[float] | None = None,
+                 device: torch.device | None = None):
+        if weight is not None:
+            weight = torch.tensor(weight, device=device)
+        if pos_weight is not None:
+            pos_weight = torch.tensor(pos_weight, device=device)
+        super().__init__(weight=weight,
+                         size_average=size_average,
+                         reduce=reduce,
+                         reduction=reduction,
+                         pos_weight=pos_weight)
+
+
+class CrossEntropyLoss(nn.CrossEntropyLoss):
+    def __init__(self,
+                 weight: list[float] | None = None,
+                 size_average: Any | None = None,
+                 ignore_index: int = -100,
+                 reduce: Any | None = None,
+                 reduction: str = 'mean',
+                 label_smoothing: float = 0,
+                 device: torch.device | None = None):
+        if weight is not None:
+            weight = torch.tensor(weight, device=device)
+        super().__init__(weight=weight,
+                         size_average=size_average,
+                         ignore_index=ignore_index,
+                         reduce=reduce,
+                         reduction=reduction,
+                         label_smoothing=label_smoothing)

@@ -24,15 +24,15 @@ DATALOADER_CONFIG = {
     "num_workers": 16,
     "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
     "time_step": SAMPLER_CONFIG["time_step"],
-    "chip_diff": False,
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
+    "transform_config": {},
 }
 
 # default early stopping settings
 EARLY_STOPPING_CONFIG = {
     "monitor": "val_loss",
     "min_delta": 0.0,
-    "patience": 16,
+    "patience": 32,
     "verbose": True,
     "mode": "min",
     "strict": True,
@@ -46,7 +46,7 @@ EARLY_STOPPING_CONFIG = {
 # default lightning model checkpoint save settings
 CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
-    "filename": "epoch-{epoch:04d}_val_loss-{val_loss:.2f}",
+    "filename": "epoch-{epoch:04d}_val_loss-{val_loss:.3f}",
     "monitor": "val_loss",
     "save_top_k": 16,
     "auto_insert_metric_name": False,
@@ -70,6 +70,7 @@ LOGGER_CONFIG = {
     "auto_metric_step_rate": 16,
     "log_git_metadata": False,
     "log_git_patch": False,
+    "display_summary_level": 0
 }
 
 if __name__ == "__main__":
@@ -97,12 +98,12 @@ if __name__ == "__main__":
                 }
             case "test":
                 run_config = {
-                    "ckpt_path": None,
+                    "ckpt_path": "best",
                     "verbose": True,
                 }
             case "predict":
                 run_config = {
-                    "ckpt_path": None,
+                    "ckpt_path": "best",
                     "data": {
                         "init_args": {
                             "anno_data_path": None

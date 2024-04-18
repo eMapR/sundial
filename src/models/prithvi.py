@@ -24,7 +24,7 @@ class PrithviBackbone(nn.Module):
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
         if self.prithvi_freeze:
-            self.model.eval()
+            self.eval()
         if self.prithvi_path is not None:
             checkpoint = torch.load(self.prithvi_path)
             del checkpoint['pos_embed']
@@ -126,23 +126,23 @@ class PrithviHeadless(L.LightningModule):
         return self.model.forward(chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
 
     def training_step(self, batch):
-        chips, _ = batch
+        chips, _, _ = batch
         loss, _, _ = self(chips)
         return {"loss": loss}
 
     def validation_step(self, batch):
-        chips, _ = batch
+        chips, _, _ = batch
         loss, _, _ = self(chips)
         return {"loss": loss}
 
     def test_step(self, batch):
-        chips, _ = batch
+        chips, _, _ = batch
         loss, pred, _ = self(chips)
 
         return {"loss": loss, "pred": pred}
 
     def predict_step(self, batch):
-        chips, _ = batch
+        chips, _, _ = batch
         latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
         return {"latent": latent}
 
@@ -152,7 +152,9 @@ class PrithviHeadlessCDiff(L.LightningModule):
                  view_size: int,
                  prithvi_params: dict,
                  prithvi_freeze: bool = True,
-                 prithvi_path: str = None):
+                 prithvi_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.model = PrithviBackbone(
             view_size=view_size,
             prithvi_params=prithvi_params,
@@ -164,9 +166,10 @@ class PrithviHeadlessCDiff(L.LightningModule):
         self.mse = nn.MSELoss(reduction="none")
 
     def predict_step(self, batch):
-        latent = self.model(batch)
+        chips, _, _ = batch
+        latent = self.model(chips)
         center = latent[:, :, self.center_slice, self.center_slice]
         center_mean = torch.mean(center, dim=(2, 3), keepdim=True)
         rmse = torch.mean(torch.sqrt(
-            self.mse(center, center_mean)), dim=1, keepdim=True)
+            self.mse(latent, center_mean)), dim=1, keepdim=True)
         return {"latent": latent, "rmse": rmse}

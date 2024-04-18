@@ -1,6 +1,0 @@
-model:
-    init_args:
-        prithvi_params:
-            train_params:
-                mask_ratio: 0.0
-verbose: true

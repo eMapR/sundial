@@ -1,7 +1,6 @@
 import ee
 import pandas as pd
 import numpy as np
-import os
 import time
 import utm
 import xarray as xr
@@ -156,7 +155,7 @@ def parse_meta_data(
     point_coords = list(square.centroid.coords)
 
     # generating start and end date from datetime attribute and back step
-    end_year = meta_data.iloc[index].loc[DATETIME_LABEL]
+    end_year = int(meta_data.iloc[index].loc[DATETIME_LABEL])
 
     end_date = datetime(end_year, end_month, end_day)
     start_date = datetime(end_year - look_range, start_month, start_day)

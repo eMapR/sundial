@@ -1,6 +1,5 @@
 import comet_ml
 import os
-import shutil
 import torch
 import tarfile
 
@@ -10,7 +9,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 from callbacks import DefineActivationCallback, DefineCriterionCallback, LogSetupCallback, ModelSetupCallback
 from settings import CHECKPOINT_CONFIG, EARLY_STOPPING_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
-from utils import get_best_ckpt, tensors_to_tifs
+from utils import get_best_ckpt, get_latest_ckpt, tensors_to_tifs
 
 from pipeline.utils import function_timer
 from pipeline.sampler import (
@@ -30,7 +29,7 @@ from pipeline.settings import (
     METHOD,
     METHOD_CONFIG_PATH,
     PREDICTION_PATH,
-    RANDOM_STATE,
+    RANDOM_SEED,
     SAMPLER_CONFIG,
 )
 
@@ -42,11 +41,11 @@ class SundialCLI(LightningCLI):
         parser.add_argument("--criterion", default={}, type=dict)
         parser.add_argument("--activation", default={}, type=dict)
         parser.add_argument("--early_stopping", default={}, type=dict)
-        parser.add_argument("--model_checkpoint", default=None, type=str)
+        parser.add_argument("--model_checkpoint", default={}, type=dict)
 
 
 def train():
-    # setting lower precision for GH200/cuda gpus to clear warning.
+    # setting lower precision for GH200/cuda gpus
     torch.set_float32_matmul_precision("high")
 
     # setting up trainer defaults w/ paths from pipeline.settings
@@ -65,8 +64,7 @@ def train():
             DefineActivationCallback(**run_configs.get("activation", {})),
         ],
         "log_every_n_steps": 16,
-        "enable_progress_bar": True,
-        "profiler": "simple"
+        "enable_progress_bar": False,
     }
 
     # set up comet logger if no logger is specified
@@ -89,15 +87,26 @@ def train():
                 EarlyStopping(**early_stopping),
             ]),
         case "test" | "predict":
-            if (ckpt_path := run_configs.get("ckpt_path")) is None:
-                ckpt_path = get_best_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
-                args.append(f"--ckpt_path={ckpt_path}")
-            else:
-                args.append(
-                    f"--ckpt_path={os.path.join(CHECKPOINT_PATH, ckpt_path)}")
+            ckpt_path = run_configs.get("ckpt_path", False)
+            match ckpt_path:
+                case "best":
+                    ckpt_path = get_best_ckpt(
+                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                    args.append(f"--ckpt_path={ckpt_path}")
+                case "latest":
+                    ckpt_path = get_latest_ckpt(
+                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                case False:
+                    ckpt_path = get_best_ckpt(
+                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                case None:
+                    pass
+                case _:
+                    args.append(
+                        f"--ckpt_path={os.path.join(CHECKPOINT_PATH, ckpt_path)}")
 
     SundialCLI(
-        seed_everything_default=RANDOM_STATE,
+        seed_everything_default=RANDOM_SEED,
         args=args,
         trainer_defaults=trainer_defaults,
         save_config_callback=LogSetupCallback,

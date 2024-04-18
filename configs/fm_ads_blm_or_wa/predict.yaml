@@ -1,7 +1,1 @@
-model:
-    init_args:
-        prithvi_params:
-            train_params:
-                mask_ratio: 0.0
-ckpt_path: null
-
+ckpt_path: "best"

@@ -1,10 +1,14 @@
+model:
+    init_args:
+        prithvi_path: null
 trainer:
     callbacks:
       - class_path: callbacks.LogTestCallback
       - class_path: callbacks.SaveTestCallback
-      - class_path: callbacks.LogTrainPixelwiseExtCallback
+    #   - class_path: callbacks.PackageCallback
     precision: bf16-mixed
     devices: 1
+ckpt_path: "best"
 criterion:
     class_path: CrossEntropyLoss
     init_args:

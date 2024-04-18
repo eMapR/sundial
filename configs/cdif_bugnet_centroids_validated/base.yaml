@@ -1,8 +1,6 @@
 model:
-    class_path: models.prithvi.PrithviUNet
+    class_path: models.prithvi.PrithviHeadlessCDiff
     init_args:
-        num_classes: 5
-        upscale_depth: 2
         view_size: 16
         prithvi_path: src/models/backbones/prithvi/Prithvi_100M.pt
         prithvi_params:
@@ -14,7 +12,7 @@ model:
                 embed_dim: 768
                 img_size: 256
                 in_chans: 6
-                num_frames: 6
+                num_frames: 3
                 num_heads: 12
                 patch_size: 16
                 tubelet_size: 1
@@ -22,8 +20,7 @@ model:
 data:
     class_path: dataloaders.ChipsDataModule
     init_args:
-        batch_size: 16
+        batch_size: 32
         num_workers: 16 
         chip_size: 256
-        time_step: 7
-        stat_data_path: null
+        time_step: 3

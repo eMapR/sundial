@@ -1,3 +1,7 @@
+model:
+    init_args:
+        prithvi_path: null
 trainer:
     callbacks:
       - class_path: callbacks.SaveTestCallback
+ckpt_path: "best"

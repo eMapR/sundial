@@ -7,12 +7,12 @@ model:
                 decoder_embed_dim: 512
                 decoder_num_heads: 16
                 depth: 12
-                embed_dim: 768
+                embed_dim: 1024
                 img_size: 256
                 in_chans: 6
-                num_frames: 3
+                num_frames: 5
                 num_heads: 12
-                patch_size: 16
+                patch_size: 4
                 tubelet_size: 1
             train_params:
                 mask_ratio: 0.75

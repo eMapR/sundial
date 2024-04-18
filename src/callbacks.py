@@ -1,7 +1,7 @@
 import copy
 import importlib
+import inspect
 import lightning as L
-import losses
 import os
 import tarfile
 import torch
@@ -50,11 +50,8 @@ class DrawPrithviONNXCallback(L.Callback):
 class DefineCriterionCallback(L.Callback):
     def __init__(self,
                  class_path: Optional[str] = None,
-                 init_args: Optional[dict] = {},
-                 custom: Optional[bool] = False,
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+                 init_args: Optional[dict] = {}):
+        super().__init__()
         self.class_path = class_path
         self.init_args = init_args
 
@@ -62,51 +59,39 @@ class DefineCriterionCallback(L.Callback):
               trainer: L.Trainer,
               pl_module: L.LightningModule,
               stage: str) -> None:
-        # TODO: Add support for multiple criterions
-        match self.class_path:
-            case "BCEWithLogitsLoss":
-                if self.init_args.get("weight") is not None:
-                    self.init_args["weight"] = torch.tensor(
-                        self.init_args["weight"], device=pl_module.device)
-                if self.init_args["pos_weight"] is not None:
-                    self.init_args["pos_weight"] = torch.tensor(
-                        self.init_args["pos_weight"], device=pl_module.device)
-                criterion = torch.nn.BCEWithLogitsLoss(**self.init_args)
-            case "CrossEntropyLoss":
-                if self.init_args.get("weight") is not None:
-                    self.init_args["weight"] = torch.tensor(
-                        self.init_args["weight"], device=pl_module.device)
-                criterion = torch.nn.CrossEntropyLoss(**self.init_args)
-            case None:
-                return
-            case _:
-                paths = self.class_path.rsplit(".", 1)
-                if len(paths) == 1:
-                    modules = [losses, torch.nn]
+        if self.class_path:
+            # TODO: Add support for multiple criterions
+            class_path = self.class_path.rsplit(".", 1)
+            match len(class_path):
+                case 1:
+                    modules = ["losses", "torch.nn"]
+                    success = False
                     for module in modules:
                         try:
-                            criterion_class = getattr(module, self.class_path)
-                            criterion = criterion_class(**self.init_args)
-                            return
+                            criterion_mod = importlib.import_module(module)
+                            criterion_cls = getattr(
+                                criterion_mod, self.class_path)
+                            if "device" in inspect.signature(criterion_cls).parameters:
+                                self.init_args |= {"device": pl_module.device}
+                            success = True
+                            break
                         except AttributeError:
                             pass
-                    raise AttributeError(
-                        f"Criterion class {self.class_path} not found in torch.nn or src.losses")
-                else:
-                    module, class_name = paths
-                    criterion_module = importlib.import_module(module)
-                    criterion_class = getattr(criterion_module, class_name)
-                    criterion = criterion_class(**self.init_args)
-        pl_module.criterion = criterion
+                    if not success:
+                        raise AttributeError(
+                            f"Criterion class {self.class_path} not found in torch.nn or src.losses")
+                case 2:
+                    module_path, class_name = class_path
+                    criterion_mod = importlib.import_module(module_path)
+                    criterion_cls = getattr(criterion_mod, class_name)
+            pl_module.criterion = criterion_cls(**self.init_args)
 
 
 class DefineActivationCallback(L.Callback):
     def __init__(self,
                  class_path: Optional[str] = None,
-                 init_args: Optional[dict] = None,
-                 *args,
-                 **kwargs):
-        super().__init__(*args, **kwargs)
+                 init_args: Optional[dict] = None):
+        super().__init__()
         self.class_path = class_path
         self.init_args = init_args
 
@@ -114,16 +99,17 @@ class DefineActivationCallback(L.Callback):
               trainer: L.Trainer,
               pl_module: L.LightningModule,
               stage: str) -> None:
-        paths = self.class_path.rsplit(".", 1)
-        if len(paths) == 1:
-            module = torch.nn
-            class_name = self.class_path
-        else:
-            module_path, class_name = paths
-            module = importlib.import_module(module_path)
-        activation_class = getattr(module, class_name)
-        activation = activation_class(**self.init_args)
-        pl_module.activation = activation
+        if self.class_path:
+            paths = self.class_path.rsplit(".", 1)
+            if len(paths) == 1:
+                module = torch.nn
+                class_name = self.class_path
+            else:
+                module_path, class_name = paths
+                module = importlib.import_module(module_path)
+            activation_class = getattr(module, class_name)
+            activation = activation_class(**self.init_args)
+            pl_module.activation = activation
 
 
 class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
@@ -213,35 +199,13 @@ class LogTrainMulticlassExtCallback(L.Callback):
                                 dataloader_idx: int = 0):
         _, annotations, _ = batch
         classes = outputs["classes"]
+        preds = torch.argmax(classes, dim=1)
+        target = torch.argmax(annotations, dim=1)
 
         metrics = {
-            "accuracy": multiclass_accuracy(classes, annotations, pl_module.num_classes),
-            "jaccard_index": multiclass_jaccard_index(classes, annotations, pl_module.num_classes),
-            "precision": multiclass_precision(classes, annotations, pl_module.num_classes),
-            "ssim": structural_similarity_index_measure(classes, annotations, pl_module.num_classes),
-        }
-
-        pl_module.log_dict(
-            dictionary=metrics,
-            logger=True,
-            prog_bar=False,
-            sync_dist=True
-        )
-
-
-class LogTrainPixelwiseExtCallback(L.Callback):
-    def on_validation_batch_end(self,
-                                trainer: L.Trainer,
-                                pl_module: L.LightningModule,
-                                outputs: torch.Tensor,
-                                batch: torch.Tensor,
-                                batch_idx: int,
-                                dataloader_idx: int = 0):
-        _, annotations, _ = batch
-        classes = outputs["classes"]
-
-        # TODO: expand binary accuracy and precision to pixel level
-        metrics = {
+            "accuracy": multiclass_accuracy(preds, target, pl_module.num_classes),
+            "jaccard_index": multiclass_jaccard_index(preds, target, pl_module.num_classes),
+            "precision": multiclass_precision(preds, target, pl_module.num_classes),
             "ssim": structural_similarity_index_measure(classes, annotations, pl_module.num_classes),
         }
 
@@ -299,6 +263,7 @@ class LogTestCallback(L.Callback):
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_c{c+1}_anno",
+                    image_scale=2.0,
                     image_minmax=(0, 1)
                 )
 
@@ -308,6 +273,7 @@ class LogTestCallback(L.Callback):
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
                     name=f"{index:07d}_c{c+1}_pred",
+                    image_scale=2.0,
                     image_minmax=(0, 1)
                 )
 
@@ -359,7 +325,7 @@ class SaveTestCallback(L.Callback):
                              batch: torch.Tensor,
                              batch_idx: int,
                              dataloader_idx: int = 0):
-        _, indices = batch
+        _, _, indices = batch
         classes = outputs["classes"]
         for i in range(classes.shape[0]):
             index = indices[i]
@@ -382,7 +348,6 @@ class PackageCallback(L.Callback):
             tar.add(tensors_dir_path, arcname=EXPERIMENT_FULL_NAME)
         pl_module.logger.experiment.log_asset(tar_path, overwrite=True)
 
-
     def on_test_end(self,
                     trainer: L.Trainer,
                     pl_module: L.LightningModule):
@@ -402,18 +367,18 @@ class LogSaveCDiffCallback(L.Callback):
                              batch: torch.Tensor,
                              batch_idx: int,
                              dataloader_idx: int = 0):
-        chips, indices = batch
+        chips, _, indices = batch
         latents = outputs["latent"]
         rmses = outputs["rmse"]
 
         # unnormalize chips for loggings
-        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
+        if trainer.predict_dataloaders.dataset.means is not None and trainer.predict_dataloaders.dataset.stds is not None:
             means = torch.tensor(
-                trainer.test_dataloaders.dataset.means,
+                trainer.predict_dataloaders.dataset.means,
                 dtype=torch.float,
                 device=pl_module.device).view(-1, 1, 1, 1)
             stds = torch.tensor(
-                trainer.test_dataloaders.dataset.stds,
+                trainer.predict_dataloaders.dataset.stds,
                 dtype=torch.float,
                 device=pl_module.device).view(-1, 1, 1, 1)
             chips = chips * stds + means
@@ -436,7 +401,8 @@ class LogSaveCDiffCallback(L.Callback):
             pl_module.logger.experiment.log_image(
                 image_data=rmse.detach().cpu(),
                 name=f"{index:07d}_rmse",
-                image_minmax=(0, 1)
+                image_minmax=(0, 1),
+                image_scale=32.0
             )
             path = os.path.join(PREDICTION_PATH, f"{index:07d}_rmse.pt")
             torch.save(rmse, path)

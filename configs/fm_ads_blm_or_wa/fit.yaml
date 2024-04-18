@@ -5,7 +5,7 @@ trainer:
     strategy: ddp
     devices: 1
     num_nodes: 2
-    accumulate_grad_batches: 4
+    accumulate_grad_batches: 8
     precision: bf16-mixed
     gradient_clip_val: 5
 optimizer:

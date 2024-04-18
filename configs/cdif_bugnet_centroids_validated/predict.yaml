@@ -1,0 +1,6 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogSaveCDiffCallback
+      - class_path: callbacks.PackageCallback
+    precision: bf16-mixed
+    devices: 1
