@@ -1,0 +1,36 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTrainCallback
+      - class_path: callbacks.LogTrainMulticlassExtCallback
+      - class_path: StochasticWeightAveraging
+        init_args:
+            swa_lrs: 0.0001
+            device: null
+    max_epochs: 256
+    strategy: ddp_find_unused_parameters_true
+    devices: 1
+    num_nodes: 1
+    accumulate_grad_batches: 8
+    precision: bf16-mixed
+    gradient_clip_val: 5
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: 0.0001
+lr_scheduler:
+    class_path: torch.optim.lr_scheduler.CosineAnnealingLR
+    init_args:
+        T_max : 16
+criterion:
+    class_path: CrossEntropyLoss
+    init_args:
+        weight:
+            - 1.0
+            - 0.7501836884643645
+            - 0.0025064164014390413
+            - 0.013133015191078297
+            - 0.04686549694180829
+activation:
+    class_path: Softmax
+    init_args:
+        dim: 1

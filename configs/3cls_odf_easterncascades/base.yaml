@@ -1,6 +1,8 @@
 model:
-    class_path: models.prithvi.PrithviHeadlessCDiff
+    class_path: models.prithvi.PrithviUNet
     init_args:
+        num_classes: 5
+        upscale_depth: 2
         view_size: 16
         prithvi_path: src/models/backbones/prithvi/Prithvi_100M.pt
         prithvi_params:

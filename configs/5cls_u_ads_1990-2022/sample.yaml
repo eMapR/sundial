@@ -15,7 +15,7 @@ postprocess_actions:
       action: sum
       operator: ">="
       targets: 8192
-predict_ratio: 0.5
+predict_ratio: 0.0
 preprocess_actions:
     - column: dca_cat
       action: "!="
@@ -35,6 +35,5 @@ sample_toggles:
     generate_train_test_splits: true
 scale: 30
 strata_columns: ['dca_cat']
-test_ratio: 0.2
+test_ratio: 0.1
 validate_ratio: 0.2
-time_step: 7

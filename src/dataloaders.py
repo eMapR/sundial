@@ -45,7 +45,7 @@ class ChipsDataset(Dataset):
         self.samples = np.load(self.sample_path)
         self.means = kwargs.get("means")
         self.stds = kwargs.get("stds")
-        
+
         self._init_loaders(file_type)
         self._init_transformers(transform_config)
         self._num_transformers = len(
@@ -264,7 +264,7 @@ class ChipsDataModule(L.LightningDataModule):
                     **self.dataset_config | {"sample_path": self.train_sample_path})
 
                 validate_transform_config = {
-                    "transforms": [t for t in self.transform_config["transforms"] if t.get("preprocess")],
+                    "transforms": [t for t in self.transform_config.get("transforms", []) if t.get("preprocess")],
                 }
                 self.validate_ds = ChipsDataset(
                     **self.dataset_config | {

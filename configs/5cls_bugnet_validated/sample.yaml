@@ -3,27 +3,29 @@ file_type: ZARR
 fraction: null
 gee_workers: 42
 gee_stratafied_config: null
-groupby_columns: []
+groupby_columns: ["LT_YOD"]
 io_limit: 32
-look_range: 2
-method: centroid
-num_points: 1
+look_range: 6
+method: centroid_shift
+num_points: null
 num_workers: 64
 overwrite: false
 pixel_edge_size: 256
 postprocess_actions: []
 predict_ratio: 0.0
-preprocess_actions: []
+preprocess_actions:
+    - column: agent
+      action: replace
+      targets: [["road", "thinning", "unknown"], "other"]
 projection: EPSG:5070
 sample_toggles:
     preprocess_data: true
-    stratified_sample: true
+    stratified_sample: false
     generate_squares: true
     postprocess_data: false
     generate_time_combinations: false
-    generate_train_test_splits: false
+    generate_train_test_splits: true
 scale: 30
-strata_columns: ["LT_YOD", 'landCover1', 'percentage', 'agent']
-test_ratio: 0.0
-validate_ratio: 0.0
-time_step: 3
+strata_columns: ["agent"]
+test_ratio: 0.02
+validate_ratio: 0.2

@@ -149,7 +149,7 @@ SAMPLER_CONFIG = {
     # (float | None) ratio of test samples from validate samples
     "test_ratio": 2e-1,
     # (float | None) ratio of predict samples from test samples
-    "predict_ratio": 5e-1,
+    "predict_ratio": 0.0,
 
     # image and downloadng settings
     # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE

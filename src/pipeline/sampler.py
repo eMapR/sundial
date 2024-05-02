@@ -4,6 +4,7 @@ import multiprocessing as mp
 import numpy as np
 import operator
 import os
+import pandas as pd
 import random
 import xarray as xr
 
@@ -206,51 +207,48 @@ def preprocess_data(
         geo_dataframe = geo_dataframe.to_crs(projection)
         epsg = projection
 
+    mask = pd.Series(True, index=geo_dataframe.index)
     for preprocess in preprocess_actions:
         column = preprocess.get("column")
         action = preprocess.get("action")
         target = preprocess.get("targets")
         match action:
             case ">":
-                geo_dataframe = geo_dataframe.loc[geo_dataframe[column] > target]
+                mask &= geo_dataframe[column] > target
             case "<":
-                geo_dataframe = geo_dataframe.loc[geo_dataframe[column] < target]
+                mask &= geo_dataframe[column] < target
             case "==":
                 if isinstance(target, str) or isinstance(target, int):
-                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column] == target]
+                    mask &= geo_dataframe[column] == target
                 elif isinstance(target, list):
-                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column].isin(
-                        target)]
+                    mask &= geo_dataframe[column].isin(target)
                 else:
                     raise ValueError(
                         f"Invalid filter target type: {type(target)}")
             case "!=":
                 if isinstance(target, str) or isinstance(target, int):
-                    geo_dataframe = geo_dataframe.loc[geo_dataframe[column] != target]
+                    mask &= geo_dataframe[column] != target
                 elif isinstance(target, list):
-                    geo_dataframe = geo_dataframe.loc[~geo_dataframe[column].isin(
-                        target)]
+                    mask &= ~(geo_dataframe[column].isin(target))
                 else:
                     raise ValueError(
                         f"Invalid filter target type: {type(target)}")
             case "replace":
-                ogs, new = target
-                geo_dataframe.loc[:, column] = geo_dataframe\
-                    .loc[:, column].replace(ogs, new)
+                geo_dataframe.loc[:, column] = geo_dataframe[column].replace(
+                    *target)
             case "unique":
-                geo_dataframe = geo_dataframe.loc[
-                    ~geo_dataframe[column].duplicated(keep=False)]
+                mask &= ~(geo_dataframe[column].duplicated(keep=False))
             case _:
                 raise ValueError(f"Invalid filter operator: {action}")
 
+    geo_dataframe = geo_dataframe[mask].copy()
     if datetime_column is not None:
-        geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe\
-            .loc[:, datetime_column]
+        geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe[datetime_column]
 
     if strata_columns is not None and strata_list_path is not None:
         LOGGER.info(f"Saving strata list to {strata_list_path}...")
-        geo_dataframe.loc[:, STRATA_LABEL] = geo_dataframe.loc[:, strata_columns].astype(
-            str).apply(lambda x: '__'.join(x).replace(" ", "_"), axis=1)
+        geo_dataframe.loc[:, STRATA_LABEL] = geo_dataframe[strata_columns]\
+            .apply(lambda x: '__'.join(x.astype(str)).replace(" ", "_"), axis=1)
         strata_list = geo_dataframe.groupby(STRATA_LABEL).size().to_dict()
         save_yaml(strata_list, strata_list_path)
     return geo_dataframe
@@ -684,14 +682,14 @@ def calculate():
 
 @function_timer
 def index():
-    chip_data = xr.open_zarr(CHIP_DATA_PATH)
-    anno_data = xr.open_zarr(ANNO_DATA_PATH) if \
-        os.path.exists(ANNO_DATA_PATH) else None
-    num_samples = len(chip_data)
+    num_samples = len(gpd.read_file(META_DATA_PATH))
     samples = np.arange(num_samples)
 
     if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
         LOGGER.info("Postprocessing data in geo file...")
+        chip_data = xr.open_zarr(CHIP_DATA_PATH)
+        anno_data = xr.open_zarr(ANNO_DATA_PATH) if \
+            os.path.exists(ANNO_DATA_PATH) else None
         sample_config = {
             "chip_data": chip_data,
             "anno_data": anno_data,
@@ -714,30 +712,29 @@ def index():
     if SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
         LOGGER.info(
             "Splitting sample data into training, validation, test, and predict sets...")
+        assert SAMPLER_CONFIG["validate_ratio"] > 0.0, "Validation ratio must be greater than 0.0"
         train, validate = train_test_split(
             samples, test_size=SAMPLER_CONFIG["validate_ratio"])
-        validate, test = train_test_split(
-            validate, test_size=SAMPLER_CONFIG["test_ratio"])
-        test, predict = train_test_split(
-            test, test_size=SAMPLER_CONFIG["predict_ratio"])
+        paths = [TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH]
+        idx_lsts = [train, validate]
+
+        if SAMPLER_CONFIG["test_ratio"] > 0.0:
+            validate, test = train_test_split(
+                validate, test_size=SAMPLER_CONFIG["test_ratio"])
+            paths.append(TEST_SAMPLE_PATH)
+            idx_lsts.append(test)
 
         LOGGER.info("Saving sample data splits to paths...")
-        idx_lsts = [train, validate, test, predict]
-        paths = [TRAIN_SAMPLE_PATH,
-                 VALIDATE_SAMPLE_PATH,
-                 TEST_SAMPLE_PATH,
-                 PREDICT_SAMPLE_PATH]
         for path, idx_lst in zip(paths, idx_lsts):
             np.save(path, idx_lst)
         update_yaml(
             {
                 "train_count": len(train),
                 "validate_count": len(validate),
-                "test_count": len(test),
-                "predict_count": len(predict),
+                "test_count": len(test)
             },
             STAT_DATA_PATH)
     else:
         LOGGER.info("Saving sample data indices to paths...")
         np.save(PREDICT_SAMPLE_PATH, samples)
-        update_yaml({"train_count": len(samples)}, STAT_DATA_PATH)
+        update_yaml({"predict_count": len(samples)}, STAT_DATA_PATH)
