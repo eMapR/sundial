@@ -90,7 +90,7 @@ class DefineCriterionCallback(L.Callback):
 class DefineActivationCallback(L.Callback):
     def __init__(self,
                  class_path: Optional[str] = None,
-                 init_args: Optional[dict] = None):
+                 init_args: Optional[dict] = {}):
         super().__init__()
         self.class_path = class_path
         self.init_args = init_args
@@ -206,7 +206,7 @@ class LogTrainMulticlassExtCallback(L.Callback):
             "accuracy": multiclass_accuracy(preds, target, pl_module.num_classes),
             "jaccard_index": multiclass_jaccard_index(preds, target, pl_module.num_classes),
             "precision": multiclass_precision(preds, target, pl_module.num_classes),
-            "ssim": structural_similarity_index_measure(classes, annotations, pl_module.num_classes),
+            "ssim": structural_similarity_index_measure(preds, target, pl_module.num_classes),
         }
 
         pl_module.log_dict(
@@ -271,7 +271,7 @@ class LogTestCallback(L.Callback):
             for c in range(pred.shape[0]):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
-                    image_data=image.detach().cpu(),
+                    image_data=image.to(torch.float32).detach().cpu(),
                     name=f"{index:07d}_c{c+1}_pred",
                     image_scale=2.0,
                     image_minmax=(0, 1)

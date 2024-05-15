@@ -14,8 +14,8 @@ from pipeline.utils import function_timer
 
 def get_best_ckpt(dir_path: str | os.PathLike,
                   experiment: Optional[str] = None) -> str | None:
-    glob_exp = experiment if experiment else ""
-    glob_pat = f"epoch-*_val_loss-*_{glob_exp}.ckpt"
+    glob_exp = "_" + experiment if experiment else ""
+    glob_pat = f"epoch-*_val_loss-*{glob_exp}.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
     regex_exp = experiment if experiment else ".+"
@@ -48,8 +48,8 @@ def get_best_ckpt(dir_path: str | os.PathLike,
 
 def get_latest_ckpt(dir_path: str | os.PathLike,
                     experiment: Optional[str] = None) -> str | None:
-    glob_exp = experiment if experiment else ""
-    glob_pat = f"epoch-*_val_loss-*_{glob_exp}.ckpt"
+    glob_exp = "_" + experiment if experiment else ""
+    glob_pat = f"epoch-*_val_loss-*{glob_exp}.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
     regex_exp = experiment if experiment else ".+"

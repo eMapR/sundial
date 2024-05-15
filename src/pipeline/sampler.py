@@ -58,6 +58,14 @@ from .utils import (
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)
+OPS_MAP = {
+    ">": operator.gt,
+    "<": operator.lt,
+    ">=": operator.ge,
+    "<=": operator.le,
+    "==": operator.eq,
+    "!=": operator.ne,
+}
 
 
 def gee_get_ads_score_image(
@@ -212,34 +220,23 @@ def preprocess_data(
         column = preprocess.get("column")
         action = preprocess.get("action")
         target = preprocess.get("targets")
-        match action:
-            case ">":
-                mask &= geo_dataframe[column] > target
-            case "<":
-                mask &= geo_dataframe[column] < target
-            case "==":
-                if isinstance(target, str) or isinstance(target, int):
-                    mask &= geo_dataframe[column] == target
-                elif isinstance(target, list):
+        if action in OPS_MAP:
+            mask &= OPS_MAP[action](geo_dataframe[column], target)
+        else:
+            match action:
+                case "in":
+                    assert isinstance(target, list)
                     mask &= geo_dataframe[column].isin(target)
-                else:
-                    raise ValueError(
-                        f"Invalid filter target type: {type(target)}")
-            case "!=":
-                if isinstance(target, str) or isinstance(target, int):
-                    mask &= geo_dataframe[column] != target
-                elif isinstance(target, list):
+                case "notin":
+                    assert isinstance(target, list)
                     mask &= ~(geo_dataframe[column].isin(target))
-                else:
-                    raise ValueError(
-                        f"Invalid filter target type: {type(target)}")
-            case "replace":
-                geo_dataframe.loc[:, column] = geo_dataframe[column].replace(
-                    *target)
-            case "unique":
-                mask &= ~(geo_dataframe[column].duplicated(keep=False))
-            case _:
-                raise ValueError(f"Invalid filter operator: {action}")
+                case "replace":
+                    geo_dataframe.loc[:, column] = geo_dataframe[column].replace(
+                        *target)
+                case "unique":
+                    mask &= ~(geo_dataframe[column].duplicated(keep=False))
+                case _:
+                    raise ValueError(f"Invalid filter operator: {action}")
 
     geo_dataframe = geo_dataframe[mask].copy()
     if datetime_column is not None:
@@ -265,19 +262,11 @@ def postprocess_data(
         "targets": int, float, str, list]]):
     pre_calc = {"chip": {}, "anno": {}}
     data_map = {"chip": chip_data, "anno": anno_data}
-    ops_map = {
-        ">": operator.gt,
-        "<": operator.lt,
-        ">=": operator.ge,
-        "<=": operator.le,
-        "==": operator.eq,
-        "!=": operator.ne,
-    }
 
     for postprocess in postprocess_actions:
         data = postprocess["data"]
         action = postprocess["action"]
-        compare = ops_map[postprocess["operator"]]
+        compare = OPS_MAP[postprocess["operator"]]
         target = postprocess["targets"]
         match action:
             case "sum":
@@ -715,17 +704,19 @@ def index():
         assert SAMPLER_CONFIG["validate_ratio"] > 0.0, "Validation ratio must be greater than 0.0"
         train, validate = train_test_split(
             samples, test_size=SAMPLER_CONFIG["validate_ratio"])
-        paths = [TRAIN_SAMPLE_PATH, VALIDATE_SAMPLE_PATH]
-        idx_lsts = [train, validate]
+        idx_payload = {
+            TRAIN_SAMPLE_PATH: train,
+            VALIDATE_SAMPLE_PATH: validate
+        }
 
         if SAMPLER_CONFIG["test_ratio"] > 0.0:
             validate, test = train_test_split(
                 validate, test_size=SAMPLER_CONFIG["test_ratio"])
-            paths.append(TEST_SAMPLE_PATH)
-            idx_lsts.append(test)
+            idx_payload[VALIDATE_SAMPLE_PATH] = validate
+            idx_payload[TEST_SAMPLE_PATH] = test
 
         LOGGER.info("Saving sample data splits to paths...")
-        for path, idx_lst in zip(paths, idx_lsts):
+        for path, idx_lst in idx_payload.items():
             np.save(path, idx_lst)
         update_yaml(
             {

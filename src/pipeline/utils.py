@@ -6,7 +6,7 @@ import utm
 import xarray as xr
 
 from datetime import datetime
-from ltgee import LandTrendr
+from ltgee import LandsatComposite
 from typing import Optional, Generator
 
 from .logger import get_logger
@@ -26,20 +26,18 @@ def lt_image_generator(
         even_odd = True
     square = ee.Geometry.Polygon(
         square_coords, proj=projection, evenOdd=even_odd)
-    lt = LandTrendr(
+    collection = LandsatComposite(
         start_date=start_date,
         end_date=end_date,
         area_of_interest=square,
         mask_labels=mask_labels,
-        run=False
     )
-    collection = lt.build_sr_collection()
-    size = collection.size().getInfo()
+    size = 1 + end_date.year - start_date.year
 
     old_band_names = [f"{str(i)}_{band}" for i in range(size)
-                      for band in lt._band_names]
+                      for band in collection._band_names]
     new_band_names = [f"{str(start_date.year + i)}_{band}" for i in range(size)
-                      for band in lt._band_names]
+                      for band in collection._band_names]
 
     image = collection\
         .toBands()\
@@ -61,8 +59,8 @@ def zarr_reshape(
     # unflattening the array to shape (year, x, y, band)
     years, bands = zip(*[b.split('_')
                        for b in arr.dtype.names if b != "overlap"])
-    years = set(years)
-    bands = set(bands)
+    years = sorted(list(set(years)))
+    bands = sorted(list(set(bands)))
     xr_list = [
         xr.DataArray(
             np.dstack([arr[f"{y}_{b}"] for b in bands]),

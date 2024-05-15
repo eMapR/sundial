@@ -44,7 +44,7 @@ class SundialCLI(LightningCLI):
         parser.add_argument("--model_checkpoint", default={}, type=dict)
 
 
-def train():
+def run():
     # setting lower precision for GH200/cuda gpus
     torch.set_float32_matmul_precision("high")
 
@@ -63,8 +63,6 @@ def train():
             DefineCriterionCallback(**run_configs.get("criterion", {})),
             DefineActivationCallback(**run_configs.get("activation", {})),
         ],
-        "log_every_n_steps": 16,
-        "enable_progress_bar": False,
     }
 
     # set up comet logger if no logger is specified
@@ -92,7 +90,6 @@ def train():
                 case "best":
                     ckpt_path = get_best_ckpt(
                         CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
-                    args.append(f"--ckpt_path={ckpt_path}")
                 case "latest":
                     ckpt_path = get_latest_ckpt(
                         CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
@@ -102,8 +99,10 @@ def train():
                 case None:
                     pass
                 case _:
-                    args.append(
-                        f"--ckpt_path={os.path.join(CHECKPOINT_PATH, ckpt_path)}")
+                    ckpt_path = os.path.join(CHECKPOINT_PATH, ckpt_path)
+            if ckpt_path is None:
+                ckpt_path = "null"
+            args.append(f"--ckpt_path={ckpt_path}")
 
     SundialCLI(
         seed_everything_default=RANDOM_SEED,
@@ -146,6 +145,6 @@ if __name__ == "__main__":
         case "index":
             index()
         case "fit" | "validate" | "test" | "predict":
-            train()
+            run()
         case "package":
             package()

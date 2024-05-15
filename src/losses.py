@@ -1,8 +1,9 @@
 import torch
 
 from torch import nn
+from torchmetrics.functional.image import structural_similarity_index_measure
 from torchvision.ops import sigmoid_focal_loss
-from typing import Any
+from typing import Any, Literal, Sequence, Tuple
 
 
 class JacardLoss(nn.Module):
@@ -43,51 +44,7 @@ class DiceLoss(nn.Module):
         return 1 - dice
 
 
-class DiceBCELoss(nn.Module):
-    def __init__(self,
-                 smooth: int = 1):
-        super(DiceBCELoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice_loss = 1 - (2.*intersection + self.smooth) / \
-            (inputs.sum() + targets.sum() + self.smooth)
-        BCE = nn.functional.binary_cross_entropy(
-            inputs, targets, reduction='mean')
-        Dice_BCE = BCE + dice_loss
-
-        return Dice_BCE
-
-
 class FocalLoss(nn.Module):
-    def __init__(self,
-                 alpha: float = 0.8,
-                 gamma: int = 2,
-                 smooth: int = 1):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.smooth = smooth
-
-    def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        BCE = nn.functional.binary_cross_entropy(
-            inputs, targets, reduction='mean')
-        BCE_EXP = nn.functional.exp(-BCE)
-        focal_loss = self.alpha * (1-BCE_EXP)**self.gamma * BCE
-
-        return focal_loss
-
-
-class TVFocalLoss(nn.Module):
     def __init__(self,
                  alpha: float = 0.25,
                  gamma: int = 2,
@@ -98,11 +55,12 @@ class TVFocalLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, inputs, targets):
-        return sigmoid_focal_loss(inputs=inputs,
+        loss = sigmoid_focal_loss(inputs=inputs,
                                   targets=targets,
                                   alpha=self.alpha,
                                   gamma=self.gamma,
                                   reduction=self.reduction)
+        return loss
 
 
 class TverskyLoss(nn.Module):
@@ -117,8 +75,8 @@ class TverskyLoss(nn.Module):
 
     def forward(self, inputs, targets):
         inputs = nn.functional.sigmoid(inputs)
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
+        # inputs = inputs.view(-1)
+        # targets = targets.view(-1)
 
         TP = (inputs * targets).sum()
         FP = ((1-targets) * inputs).sum()
@@ -141,19 +99,13 @@ class FocalTverskyLoss(nn.Module):
         self.beta = beta
         self.gamma = gamma
         self.smooth = smooth
+        self.tversky = TverskyLoss(
+            alpha=alpha, beta=beta, smooth=smooth
+        )
 
     def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        TP = (inputs * targets).sum()
-        FP = ((1-targets) * inputs).sum()
-        FN = (targets * (1-inputs)).sum()
-
-        Tversky = (TP + self.smooth) / (TP + self.alpha *
-                                        FP + self.beta*FN + self.smooth)
-        FocalTversky = (1 - Tversky)**self.gamma
+        tversky = self.tversky(inputs, targets)
+        FocalTversky = (1 - tversky)**self.gamma
 
         return FocalTversky
 
@@ -194,3 +146,36 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                          reduce=reduce,
                          reduction=reduction,
                          label_smoothing=label_smoothing)
+
+
+class SSIMLoss(nn.Module):
+    def __init__(self,
+                 gaussian_kernel: bool = True,
+                 sigma: float | Sequence[float] = 1.5,
+                 kernel_size: int | Sequence[int] = 11,
+                 reduction: Literal['elementwise_mean',
+                                    'sum', 'none'] | None = "elementwise_mean",
+                 data_range: float | Tuple[float, float] | None = None,
+                 k1: float = 0.01,
+                 k2: float = 0.03):
+        super().__init__()
+        self.gaussian_kernel = gaussian_kernel
+        self.sigma = sigma
+        self.kernel_size = kernel_size
+        self.reduction = reduction
+        self.data_range = data_range
+        self.k1 = k1
+        self.k2 = k2
+
+    def forward(self, inputs, targets):
+        inputs = nn.functional.sigmoid(inputs)
+        loss = structural_similarity_index_measure(preds=inputs,
+                                                   target=targets,
+                                                   gaussian_kernel=self.gaussian_kernel,
+                                                   sigma=self.sigma,
+                                                   kernel_size=self.kernel_size,
+                                                   reduction=self.reduction,
+                                                   data_range=self.data_range,
+                                                   k1=self.k1,
+                                                   k2=self.k2)
+        return 1 - loss

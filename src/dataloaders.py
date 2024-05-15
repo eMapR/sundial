@@ -48,14 +48,11 @@ class ChipsDataset(Dataset):
 
         self._init_loaders(file_type)
         self._init_transformers(transform_config)
-        self._num_transformers = len(
-            self.transformers) if self.transformers else 1
-        self._len = len(self.samples) * self._num_transformers
 
     def __getitem__(self, idx):
         # loading image idx
-        sample_idx = idx // self._num_transformers
-        transform_idx = idx % self._num_transformers
+        sample_idx = idx // self.num_transforms
+        transform_idx = idx % self.num_transforms
         if len(self.samples.shape) == 2:
             img_idx, time_idx = self.samples[sample_idx]
             slicer = slice(time_idx, self.time_step)
@@ -95,7 +92,7 @@ class ChipsDataset(Dataset):
         return chip, annotation, img_idx
 
     def __len__(self):
-        return self._len
+        return len(self.samples) * self.num_transforms
 
     def _init_loaders(self, file_type: str):
         match file_type:
@@ -134,7 +131,7 @@ class ChipsDataset(Dataset):
 
         if transform_config.get("include_original"):
             self.transformers.append(torch.nn.Identity())
-            self.apply_to_anno.append(False)
+            self.apply_to_anno.append(True)
 
         for transform in transform_config.get("transforms", []):
             class_path = transform.get("class_path")
@@ -168,10 +165,13 @@ class ChipsDataset(Dataset):
                 module_path, class_name = composition_path.rsplit(".", 1)
                 composition_cls = getattr(
                     importlib.import_module(module_path), class_name)
-                self.transformers = [composition_cls(self.transformers)]
-                self.preprocessors = [composition_cls(self.preprocessors)]
+                self.preprocessors = composition_cls(*self.preprocessors)
+                self.transformers = [composition_cls(*self.transformers)]
                 self.apply_to_anno = [all(self.apply_to_anno)]
-                self.num_transforms = 1
+
+        self.num_transforms = len(self.transformers)
+        if self.num_transforms == 0:
+            self.num_transforms = 1
 
     def get_annotation(self, idx):
         annotation = self.anno_loader(str(self.samples[idx]))
@@ -252,7 +252,7 @@ class ChipsDataModule(L.LightningDataModule):
             "batch_size": self.batch_size,
             "num_workers": self.num_workers,
             "pin_memory": True,
-            "drop_last": True,
+            "drop_last": False,
             "prefetch_factor": 2,
             "persistent_workers": True
         }
@@ -285,7 +285,7 @@ class ChipsDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            **self.dataloader_config | {"dataset": self.training_ds, "shuffle": True})
+            **self.dataloader_config | {"dataset": self.training_ds, "shuffle": True, "drop_last": True})
 
     def val_dataloader(self):
         return DataLoader(
@@ -293,8 +293,8 @@ class ChipsDataModule(L.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            **self.dataloader_config | {"dataset": self.test_ds, "drop_last": False})
+            **self.dataloader_config | {"dataset": self.test_ds})
 
     def predict_dataloader(self):
         return DataLoader(
-            **self.dataloader_config | {"dataset": self.predict_ds, "drop_last": False})
+            **self.dataloader_config | {"dataset": self.predict_ds})

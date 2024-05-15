@@ -19,9 +19,14 @@ class GeoNormalization(nn.Module):
         return (x - self.means) / self.stds
 
 
-class TimeStepDifference(nn.Module):
+class FirstOrderDifference(nn.Module):
     def forward(self, x):
         return x[:, 1:, :, :] - x[:, :-1, :, :]
+
+
+class SecondOrderDifference(nn.Module):
+    def forward(self, x):
+        return x[:, 2:, :, :] - 2 * x[:, 1:-1, :, :] + x[:, :-2, :, :]
 
 
 class GeoColorJitter(nn.Module):
