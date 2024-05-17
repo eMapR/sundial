@@ -27,7 +27,12 @@ class FirstOrderDifference(nn.Module):
 class SecondOrderDifference(nn.Module):
     def forward(self, x):
         return x[:, 2:, :, :] - 2 * x[:, 1:-1, :, :] + x[:, :-2, :, :]
+    
 
+class BinaryStep(nn.Module):
+    def forward(self, x):
+        return torch.where(x > 0, 1.0, 0.0)
+    
 
 class GeoColorJitter(nn.Module):
     def __init__(self,

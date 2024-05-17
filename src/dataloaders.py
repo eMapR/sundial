@@ -33,6 +33,7 @@ class ChipsDataset(Dataset):
                  chip_data_path: str,
                  anno_data_path: str | None,
                  transform_config: Optional[dict] = {},
+                 preprocess_config: Optional[dict] = {},
                  **kwargs):
         super().__init__()
         self.chip_size = chip_size
@@ -47,6 +48,7 @@ class ChipsDataset(Dataset):
         self.stds = kwargs.get("stds")
 
         self._init_loaders(file_type)
+        self._init_preprocessors(preprocess_config)
         self._init_transformers(transform_config)
 
     def __getitem__(self, idx):
@@ -71,25 +73,30 @@ class ChipsDataset(Dataset):
         # reshaping gee data (D H W C) to pytorch format (C D H W)
         chip = chip.permute(3, 0, 1, 2)
 
+        # preprocessing chip if specified
+        if self.chip_preprocessor:
+            chip = self.chip_preprocessor(chip)
+
         # transforming chip if specified
         if self.transformers:
             seed = datetime.datetime.now().timestamp()
             torch.manual_seed(seed)
-            chip = self.transformers[transform_idx](chip)
-
-        # preprocessing chip if specified
-        if self.preprocessors:
-            chip = self.preprocessors(chip)
+            transform = self.transformers[transform_idx]["transform"]
+            apply_to_anno = self.transformers[transform_idx]["apply_to_anno"]
+            chip = transform(chip)
 
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
-            annotation = self.get_annotation(sample_idx)
-            if self.transformers and self.apply_to_anno[transform_idx]:
+            anno = self.get_annotation(sample_idx)
+            # preprocessing chip if specified
+            if self.anno_preprocessor:
+                anno = self.anno_preprocessor(anno)
+            if self.transformers and apply_to_anno:
                 torch.manual_seed(seed)
-                annotation = self.transformers[transform_idx](annotation)
+                anno = transform(anno)
         else:
-            annotation = torch.empty(0)
-        return chip, annotation, img_idx
+            anno = torch.empty(0)
+        return chip, anno, img_idx
 
     def __len__(self):
         return len(self.samples) * self.num_transforms
@@ -125,53 +132,68 @@ class ChipsDataset(Dataset):
         return image
 
     def _init_transformers(self, transform_config: dict):
-        self.apply_to_anno = []
         self.transformers = []
-        self.preprocessors = []
 
         if transform_config.get("include_original"):
-            self.transformers.append(torch.nn.Identity())
-            self.apply_to_anno.append(True)
+            self.transformers.append({
+                "transform": torch.nn.Identity(),
+                "apply_to_anno": True
+            })
 
         for transform in transform_config.get("transforms", []):
-            class_path = transform.get("class_path")
-            transform_path = class_path.rsplit(".", 1)
-            match len(transform_path):
-                case 1:
-                    transform_cls = getattr(
-                        importlib.import_module("transforms"), class_path)
-                    transformer = transform_cls(
-                        **transform.get("init_args", {}))
-                case 2:
-                    module_path, class_name = transform_path
-                    transform_cls = getattr(
-                        importlib.import_module(module_path), class_name)
-                    transformer = transform_cls(
-                        **transform.get("init_args", {}))
-            if transform.get("preprocess"):
-                self.preprocessors.append(transformer)
-            else:
-                self.transformers.append(transformer)
-                self.apply_to_anno.append(
-                    transform.get("apply_to_anno", False))
+            transformer = self._dynamic_transform_import(transform)
+            self.transformers.append({
+                "transform": transformer,
+                "apply_to_anno": transform.get("apply_to_anno", False)
+            })
 
         composition = transform_config.get("composition", {})
         composition_path = composition.get("class_path")
         match composition_path:
             case None:
-                self.preprocessors = torch.nn.Sequential(
-                    *self.preprocessors)
+                pass
             case _:
                 module_path, class_name = composition_path.rsplit(".", 1)
                 composition_cls = getattr(
                     importlib.import_module(module_path), class_name)
-                self.preprocessors = composition_cls(*self.preprocessors)
-                self.transformers = [composition_cls(*self.transformers)]
-                self.apply_to_anno = [all(self.apply_to_anno)]
+                self.transformers = [{
+                    "transform": composition_cls(*self.transformers),
+                    "apply_to_anno": all([t["apply_to_anno"] for t in self.transformers])
+                }]
 
-        self.num_transforms = len(self.transformers)
-        if self.num_transforms == 0:
-            self.num_transforms = 1
+        num_transforms = len(self.transformers)
+        self.num_transforms = 1 if num_transforms == 0 else num_transforms
+
+    def _init_preprocessors(self, preprocess_config: dict):
+        chip = []
+        anno = []
+
+        for preprocess in preprocess_config.get("preprocesses", []):
+            preprocessor = self._dynamic_transform_import(preprocess)
+            targets = preprocess.get("targets", [])
+            if "chip" in targets:
+                chip.append(preprocessor)
+            if "anno" in targets:
+                anno.append(preprocessor)
+
+        self.chip_preprocessor = torch.nn.Sequential(*chip) if chip else None
+        self.anno_preprocessor = torch.nn.Sequential(*anno) if anno else None
+
+    def _dynamic_transform_import(self, transform: dict):
+        class_path = transform.get("class_path")
+        transform_path = class_path.rsplit(".", 1)
+        match len(transform_path):
+            case 1:
+                transform_cls = getattr(
+                    importlib.import_module("transforms"), class_path)
+                return transform_cls(
+                    **transform.get("init_args", {}))
+            case 2:
+                module_path, class_name = transform_path
+                transform_cls = getattr(
+                    importlib.import_module(module_path), class_name)
+                return transform_cls(
+                    **transform.get("init_args", {}))
 
     def get_annotation(self, idx):
         annotation = self.anno_loader(str(self.samples[idx]))
@@ -197,6 +219,7 @@ class ChipsDataModule(L.LightningDataModule):
             chip_size: int = DATALOADER_CONFIG["chip_size"],
             time_step: int = DATALOADER_CONFIG["time_step"],
             file_type: str = DATALOADER_CONFIG["file_type"],
+            preprocess_config: dict = DATALOADER_CONFIG["preprocess_config"],
             transform_config: dict = DATALOADER_CONFIG["transform_config"],
             train_sample_path: str = TRAIN_SAMPLE_PATH,
             validate_sample_path: str = VALIDATE_SAMPLE_PATH,
@@ -211,6 +234,7 @@ class ChipsDataModule(L.LightningDataModule):
         self.chip_size = chip_size
         self.time_step = time_step
         self.file_type = file_type
+        self.preprocess_config = preprocess_config
         self.transform_config = transform_config
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
@@ -223,17 +247,17 @@ class ChipsDataModule(L.LightningDataModule):
         # loading means and stds from stat_data_path
         if stat_data_path and os.path.exists(self.stat_data_path):
             stats = load_yaml(self.stat_data_path)
-            if not transform_config.get("transforms"):
-                transform_config = {"transforms": []}
+            if not self.preprocess_config.get("preprocesses"):
+                self.preprocess_config = {"preprocesses": []}
             means = stats.get("chip_means")
             stds = stats.get("chip_stds")
-            transform_config["transforms"].insert(0, {
+            self.preprocess_config["preprocesses"].insert(0, {
                 "class_path": "GeoNormalization",
                 "init_args": {
                     "means": means,
                     "stds": stds
                 },
-                "preprocess": True,
+                "targets": ["chip"]
             })
         else:
             means = None
@@ -243,7 +267,7 @@ class ChipsDataModule(L.LightningDataModule):
             "chip_size": self.chip_size,
             "time_step": self.time_step,
             "file_type": self.file_type,
-            "transform_config": self.transform_config,
+            "preprocess_config": self.preprocess_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
         }
@@ -261,15 +285,19 @@ class ChipsDataModule(L.LightningDataModule):
         match stage:
             case "fit":
                 self.training_ds = ChipsDataset(
-                    **self.dataset_config | {"sample_path": self.train_sample_path})
+                    **self.dataset_config | {
+                        "sample_path": self.train_sample_path,
+                        "transform_config": self.transform_config
+                    })
 
-                validate_transform_config = {
-                    "transforms": [t for t in self.transform_config.get("transforms", []) if t.get("preprocess")],
+                validate_preprocess_config = {
+                    "preprocesses": [t for t in self.preprocess_config.get("preprocesses", []) if t.get("validate", True)],
                 }
+
                 self.validate_ds = ChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.validate_sample_path,
-                        "transform_config": validate_transform_config})
+                        "preprocess_config": validate_preprocess_config})
 
             case "validate":
                 self.validate_ds = ChipsDataset(

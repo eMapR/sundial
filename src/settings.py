@@ -25,14 +25,15 @@ DATALOADER_CONFIG = {
     "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
     "time_step": SAMPLER_CONFIG["time_step"],
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
-    "transform_config": {},
+    "preprocess_config": {"preprocesses": []},
+    "transform_config": {"transforms": []},
 }
 
 # default early stopping settings
 EARLY_STOPPING_CONFIG = {
     "monitor": "val_loss",
     "min_delta": 0.0,
-    "patience": 32,
+    "patience": 128,
     "verbose": True,
     "mode": "min",
     "strict": True,
@@ -74,40 +75,13 @@ LOGGER_CONFIG = {
 }
 
 if __name__ == "__main__":
-    save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
-
-    # creating run configs for base, fit, validate, test, and predict
-    for method in ["base", "fit", "validate", "test", "predict"]:
-        config_path = os.path.join(CONFIG_PATH, f"{method}.yaml")
-        match method:
-            case "base":
-                run_config = {
+    run_config = {
                     "model": None,
                     "data": {
                         "class_path": "ChipsDataModule",
                         "init_args": DATALOADER_CONFIG
                     }
                 }
-            case "fit":
-                run_config = {
-                    "max_epochs": 256,
-                }
-            case "validate":
-                run_config = {
-                    "verbose": True,
-                }
-            case "test":
-                run_config = {
-                    "ckpt_path": "best",
-                    "verbose": True,
-                }
-            case "predict":
-                run_config = {
-                    "ckpt_path": "best",
-                    "data": {
-                        "init_args": {
-                            "anno_data_path": None
-                        }
-                    }
-                }
-        save_yaml(run_config, config_path)
+    config_path = os.path.join(CONFIG_PATH, f"base.yaml")
+    save_yaml(run_config, config_path)
+    save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)

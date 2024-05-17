@@ -86,17 +86,6 @@ FILE_EXT_MAP = {
 
 # configs relating to sampler methods
 SAMPLER_CONFIG = {
-    # sampling settings
-    # (dict) toggles for subprocesses within the sampler
-    "sample_toggles": {
-        "preprocess_data": True,
-        "stratify_data": True,
-        "generate_squares": True,
-        "postprocess_data": False,
-        "generate_time_combinations": False,
-        "generate_train_test_splits": True,
-    },
-
     # date information for medoid composites
     # (dict | None) image generator / parser kwargs for download
     "medoid_config": {
@@ -109,13 +98,11 @@ SAMPLER_CONFIG = {
     # sampling settings
     # (str) method to use for sampling
     "method": "centroid",
-    # (float) fraction of total points to sample to pull from
-    "fraction": 2.0e-2,
-    # (int | None) number of points to sample. This is used if fraction is None
-    "num_points": None,
+    # (float| int | None) number of points to sample. If float, a fraction of sample = n is used.
+    "num_points": 2.0e-2,
     # (list[str] | None) columns in provided geo_raw_path to use for strata
     "strata_columns": None,
-    # (list[str] | None) columns to group by for annotations generation in addition to strata columns
+    # (list[str] | None) columns to group by for annotation generation in addition to strata columns
     "groupby_columns": None,
     # (dict) list of actions to perform on shapefile before sampling
     "preprocess_actions": [],
@@ -123,6 +110,8 @@ SAMPLER_CONFIG = {
     "postprocess_actions": [],
     # (str) Column to use for datetime value in geo file
     "datetime_column": "year",
+    # (bool) Toggle for splitting time range at one location into multiple samples
+    "generate_time_combinations": False,
     # (int | None) number of time steps between each sample + 1, or number of years to include in model including observation year
     "time_step": None,
 
@@ -133,7 +122,7 @@ SAMPLER_CONFIG = {
         "num_points": None,
         # (int) number of strata to generate per data source
         "num_strata": None,
-        # (int) scale to perform stratification
+        # (int) scale of images to perform stratification
         "scale": None,
         # (int) start date to filter source images
         "start_date": None,
@@ -148,8 +137,6 @@ SAMPLER_CONFIG = {
     "validate_ratio": 2e-1,
     # (float | None) ratio of test samples from validate samples
     "test_ratio": 2e-1,
-    # (float | None) ratio of predict samples from test samples
-    "predict_ratio": 0.0,
 
     # image and downloadng settings
     # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE
@@ -164,6 +151,12 @@ SAMPLER_CONFIG = {
     "projection": "EPSG:5070",
     # (int) n time step to look back from observation date (i.e. 2 = 3 years total including observation year)
     "look_range": 2,
+    # (str) function in pipeline/utils to parse metadata
+    "meta_data_parser": "parse_meta_data",
+    # (str) function in pipeline/utils to generate expression in google earth engine
+    "image_expr_generator": "lt_medoid_image_generator",
+    # (str) function in pipeline/utils to reshape resulting download from GEE
+    "image_reshaper": "zarr_reshape",
 
     # MP and GEE specific settings
     # (int) number of parallel workers to use for annotation generation

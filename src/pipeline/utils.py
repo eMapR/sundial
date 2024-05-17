@@ -9,11 +9,11 @@ from datetime import datetime
 from ltgee import LandsatComposite
 from typing import Optional, Generator
 
-from .logger import get_logger
-from .settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
+from pipeline.logger import get_logger
+from pipeline.settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
 
 
-def lt_image_generator(
+def lt_medoid_image_generator(
         square_coords: list[tuple[float, float]],
         start_date: datetime,
         end_date: datetime,

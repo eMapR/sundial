@@ -1,5 +1,6 @@
 import ee
 import geopandas as gpd
+import importlib
 import multiprocessing as mp
 import numpy as np
 import operator
@@ -18,9 +19,9 @@ from shapely.ops import transform
 from sklearn.model_selection import train_test_split
 from typing import Optional
 
-from .downloader import Downloader
-from .logger import get_logger
-from .settings import (
+from pipeline.downloader import Downloader
+from pipeline.logger import get_logger
+from pipeline.settings import (
     load_yaml,
     save_yaml,
     update_yaml,
@@ -50,11 +51,8 @@ from .utils import (
     get_class_weights,
     get_xarr_anno_mean_std,
     get_xarr_chip_mean_std,
-    lt_image_generator,
     pad_xy_xarray,
-    parse_meta_data,
     test_non_zero_sum,
-    zarr_reshape,
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)
@@ -286,14 +284,14 @@ def postprocess_data(
 @function_timer
 def stratified_sample(
         geo_dataframe: gpd.GeoDataFrame,
-        fraction: Optional[float] = None,
-        num_points: Optional[int] = None):
-    if fraction is not None:
+        num_points: Optional[float | int] = None):
+    if num_points is not None:
         groupby = geo_dataframe.groupby(STRATA_LABEL)
-        sample = groupby.sample(frac=fraction)
-    elif num_points is not None:
-        groupby = geo_dataframe.groupby(STRATA_LABEL)
-        sample = groupby.sample(n=num_points)
+        match num_points:
+            case num if isinstance(num, float):
+                sample = groupby.sample(frac=num)
+            case num if isinstance(num, int):
+                sample = groupby.sample(n=num)
     else:
         sample = geo_dataframe
     sample = sample.reset_index().rename(columns={'index': 'meta_index'})
@@ -332,9 +330,8 @@ def generate_centroid_shift_squares(
 def generate_squares(
         geo_dataframe: gpd.GeoDataFrame,
         method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
-        meta_data_path: str,
         meter_edge_size: int | float,
-        gee_stratafied_config: Optional[dict] = None) -> tuple[gpd.GeoDataFrame, int]:
+        gee_stratafied_config: Optional[dict] = None) -> gpd.GeoDataFrame:
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "convering_grid":
@@ -368,10 +365,7 @@ def generate_squares(
         case _:
             raise ValueError(f"Invalid method: {method}")
 
-    LOGGER.info(f"Saving squares geo dataframe to {meta_data_path}...")
-    gdf.to_file(meta_data_path)
-
-    return len(gdf), gdf
+    return gdf
 
 
 @function_timer
@@ -530,7 +524,7 @@ def sample():
         LOGGER.info("Loading geo file into GeoDataFrame...")
         geo_dataframe = gpd.read_file(GEO_RAW_PATH)
 
-        if SAMPLER_CONFIG["sample_toggles"]["preprocess_data"]:
+        if SAMPLER_CONFIG["preprocess_actions"]:
             LOGGER.info("Preprocessing data in geo file...")
             sample_config = {
                 "geo_dataframe": geo_dataframe,
@@ -544,25 +538,25 @@ def sample():
             LOGGER.info(f"Saving processed geo dataframe to {GEO_PRE_PATH}...")
             geo_dataframe.to_file(GEO_PRE_PATH)
 
-        if SAMPLER_CONFIG["sample_toggles"]["stratified_sample"]:
-            LOGGER.info("Stratifying data in geo file...")
+        if SAMPLER_CONFIG["num_points"]:
+            LOGGER.info("Performing stratified sample of data in geo file...")
             group_config = {
                 "geo_dataframe": geo_dataframe,
-                "fraction": SAMPLER_CONFIG["fraction"],
                 "num_points": SAMPLER_CONFIG["num_points"],
             }
             geo_dataframe = stratified_sample(**group_config)
 
-        if SAMPLER_CONFIG["sample_toggles"]["generate_squares"]:
-            LOGGER.info("Generating squares...")
-            square_config = {
-                "geo_dataframe": geo_dataframe,
-                "method": SAMPLER_CONFIG["method"],
-                "meta_data_path": META_DATA_PATH,
-                "meter_edge_size": SAMPLER_CONFIG["scale"] * SAMPLER_CONFIG["pixel_edge_size"],
-                "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
-            }
-            _, _ = generate_squares(**square_config)
+        LOGGER.info("Generating square polygons...")
+        square_config = {
+            "geo_dataframe": geo_dataframe,
+            "method": SAMPLER_CONFIG["method"],
+            "meter_edge_size": SAMPLER_CONFIG["scale"] * SAMPLER_CONFIG["pixel_edge_size"],
+            "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
+        }
+        geo_dataframe = generate_squares(**square_config)
+
+        LOGGER.info(f"Saving squares geo dataframe to {META_DATA_PATH}...")
+        geo_dataframe.to_file(META_DATA_PATH)
 
     except Exception as e:
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")
@@ -573,7 +567,7 @@ def sample():
 def annotate():
     try:
         LOGGER.info("Loading geo files into GeoDataFrame...")
-        if os.path.exists(GEO_PRE_PATH):
+        if SAMPLER_CONFIG["preprocess_actions"] and os.path.exists(GEO_PRE_PATH):
             population_gdf = gpd.read_file(GEO_PRE_PATH)
         else:
             population_gdf = gpd.read_file(GEO_RAW_PATH)
@@ -614,9 +608,9 @@ def download():
             "projection": SAMPLER_CONFIG["projection"],
             "chip_data_path": CHIP_DATA_PATH,
             "meta_data": gdf,
-            "meta_data_parser": parse_meta_data,
-            "image_expr_generator": lt_image_generator,
-            "image_reshaper": zarr_reshape,
+            "meta_data_parser": getattr(importlib.import_module("pipeline.utils"), SAMPLER_CONFIG["meta_data_parser"]),
+            "image_expr_generator": getattr(importlib.import_module("pipeline.utils"), SAMPLER_CONFIG["image_expr_generator"]),
+            "image_reshaper": getattr(importlib.import_module("pipeline.utils"), SAMPLER_CONFIG["image_reshaper"]),
             "num_workers": SAMPLER_CONFIG["gee_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
             "logger": LOGGER,
@@ -637,22 +631,27 @@ def calculate():
             case "ZARR":
                 LOGGER.info(f"Verifying chip data...")
                 chip_data = xr.open_zarr(CHIP_DATA_PATH)
+
                 if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
                     if os.path.exists(ALL_SAMPLE_PATH):
                         all_samples = [str(i)
                                        for i in np.load(ALL_SAMPLE_PATH)]
                         chip_data = chip_data[all_samples]
+
                 stat["chip_means"], stat["chip_stds"] = get_xarr_chip_mean_std(
                     chip_data)
                 stat["chip_count"] = len(chip_data.variables)
                 stat["chip_verify"] = {
                     i: s for i, s in test_non_zero_sum(chip_data, RANDOM_SEED)}
+
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verify annotation data...")
                     anno_data = xr.open_zarr(ANNO_DATA_PATH)
+
                     if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
                         if os.path.exists(ALL_SAMPLE_PATH):
                             anno_data = anno_data[all_samples]
+
                     stat["anno_totals"], stat["anno_weights"] = get_class_weights(
                         anno_data)
                     stat["anno_means"], stat["anno_stds"] = get_xarr_anno_mean_std(
@@ -674,7 +673,7 @@ def index():
     num_samples = len(gpd.read_file(META_DATA_PATH))
     samples = np.arange(num_samples)
 
-    if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
+    if SAMPLER_CONFIG["postprocess_actions"]:
         LOGGER.info("Postprocessing data in geo file...")
         chip_data = xr.open_zarr(CHIP_DATA_PATH)
         anno_data = xr.open_zarr(ANNO_DATA_PATH) if \
@@ -688,7 +687,7 @@ def index():
         samples = postprocess_data(**sample_config)
     np.save(ALL_SAMPLE_PATH, samples)
 
-    if SAMPLER_CONFIG["sample_toggles"]["generate_time_combinations"]:
+    if SAMPLER_CONFIG["generate_time_combinations"]:
         LOGGER.info("Generating time combinations...")
         num_times = SAMPLER_CONFIG["look_range"] + 1
         time_sample_config = {
@@ -698,7 +697,7 @@ def index():
         }
         samples = generate_time_combinations(**time_sample_config)
 
-    if SAMPLER_CONFIG["sample_toggles"]["generate_train_test_splits"]:
+    if SAMPLER_CONFIG["validate_ratio"]:
         LOGGER.info(
             "Splitting sample data into training, validation, test, and predict sets...")
         assert SAMPLER_CONFIG["validate_ratio"] > 0.0, "Validation ratio must be greater than 0.0"
@@ -709,7 +708,7 @@ def index():
             VALIDATE_SAMPLE_PATH: validate
         }
 
-        if SAMPLER_CONFIG["test_ratio"] > 0.0:
+        if SAMPLER_CONFIG["test_ratio"] and SAMPLER_CONFIG["test_ratio"] > 0.0:
             validate, test = train_test_split(
                 validate, test_size=SAMPLER_CONFIG["test_ratio"])
             idx_payload[VALIDATE_SAMPLE_PATH] = validate
