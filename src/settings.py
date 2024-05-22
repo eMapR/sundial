@@ -29,34 +29,17 @@ DATALOADER_CONFIG = {
     "transform_config": {"transforms": []},
 }
 
-# default early stopping settings
-EARLY_STOPPING_CONFIG = {
-    "monitor": "val_loss",
-    "min_delta": 0.0,
-    "patience": 128,
-    "verbose": True,
-    "mode": "min",
-    "strict": True,
-    "check_finite": True,
-    "stopping_threshold": None,
-    "divergence_threshold": None,
-    "check_on_train_epoch_end": False,
-    "log_rank_zero_only": False
-}
-
 # default lightning model checkpoint save settings
 CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
-    "filename": "epoch-{epoch:04d}_val_loss-{val_loss:.3f}",
+    "filename": "{epoch:04d}",
     "monitor": "val_loss",
     "save_top_k": 16,
-    "auto_insert_metric_name": False,
+    "auto_insert_metric_name": True,
     "save_weights_only": False,
     "every_n_epochs": 1,
     "enable_version_counter": True
 }
-if EXPERIMENT_SUFFIX:
-    CHECKPOINT_CONFIG["filename"] += f"_{EXPERIMENT_SUFFIX}"
 
 # default lightning logger settings
 LOGGER_CONFIG = {
@@ -76,12 +59,12 @@ LOGGER_CONFIG = {
 
 if __name__ == "__main__":
     run_config = {
-                    "model": None,
-                    "data": {
-                        "class_path": "ChipsDataModule",
-                        "init_args": DATALOADER_CONFIG
-                    }
-                }
+        "model": None,
+        "data": {
+            "class_path": "ChipsDataModule",
+            "init_args": DATALOADER_CONFIG
+        }
+    }
     config_path = os.path.join(CONFIG_PATH, f"base.yaml")
     save_yaml(run_config, config_path)
     save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)

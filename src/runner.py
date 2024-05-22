@@ -5,10 +5,9 @@ import tarfile
 
 from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 from callbacks import DefineActivationCallback, DefineCriterionCallback, LogSetupCallback, ModelSetupCallback
-from settings import CHECKPOINT_CONFIG, EARLY_STOPPING_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
+from settings import CHECKPOINT_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
 from utils import get_best_ckpt, get_latest_ckpt, tensors_to_tifs
 
 from pipeline.utils import function_timer
@@ -40,7 +39,6 @@ class SundialCLI(LightningCLI):
         # placeholders to avoid parsing errors
         parser.add_argument("--criterion", default={}, type=dict)
         parser.add_argument("--activation", default={}, type=dict)
-        parser.add_argument("--early_stopping", default={}, type=dict)
         parser.add_argument("--model_checkpoint", default={}, type=dict)
 
 
@@ -77,12 +75,11 @@ def run():
             model_checkpoint = CHECKPOINT_CONFIG
             if run_model_checkpoint := run_configs.get("model_checkpoint"):
                 model_checkpoint |= run_model_checkpoint
-            early_stopping = EARLY_STOPPING_CONFIG
-            if run_early_stopping := run_configs.get("early_stopping"):
-                early_stopping |= run_early_stopping
+            model_checkpoint["filename"] += f"_{{{model_checkpoint['monitor']}:.3f}}"
+            if EXPERIMENT_SUFFIX:
+                model_checkpoint["filename"] += f"_{EXPERIMENT_SUFFIX}"
             trainer_defaults["callbacks"].extend([
                 ModelCheckpoint(**model_checkpoint),
-                EarlyStopping(**early_stopping),
             ]),
         case "test" | "predict":
             ckpt_path = run_configs.get("ckpt_path", False)

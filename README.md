@@ -121,7 +121,7 @@ make calculate
 ```
 
 ### 7. Train a model using the downloaded chips.
-Included in this repo is a simple segmentation model using a fully convolutional network built on [Prithvi's foundation model](https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M) that needs to be cloned to models/backbones and finetuned. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there. Any paths to chip or annotation data created in the previous steps are automatically loaded. A checkpoint module and early stopping modeule is also by default included as callbacks. To modify, change 'model_checkpoint' and 'early_stopping' in the fit.yaml file.
+Included in this repo is a simple segmentation model using a fully convolutional network built on [Prithvi's foundation model](https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M) that needs to be cloned to models/backbones and finetuned. Using the CLI, you can mix and match models. See [Pytorch Lightning Docs](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) for more details on config files. For now the runner will import models by name from the models module. Write additional models there. Any paths to chip or annotation data created in the previous steps are automatically loaded. A checkpoint module is also by default included as callbacks. To modify, change 'model_checkpoint' and 'early_stopping' in the fit.yaml file.
 ```console
 make fit
 ```

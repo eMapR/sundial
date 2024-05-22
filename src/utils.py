@@ -1,3 +1,4 @@
+import cupy as cp
 import geopandas as gpd
 import glob
 import multiprocessing as mp
@@ -7,19 +8,32 @@ import rasterio
 import re
 import shutil
 
+from cupyx.scipy.ndimage import distance_transform_edt
 from typing import Optional, Any
 
 from pipeline.utils import function_timer
 
 
+def distance_transform(targets: torch.tensor):
+    distances = torch.zeros_like(targets, device=targets.device)
+    cx = cp.from_dlpack(targets)
+    for k in range(targets.shape[0]):
+        if cp.any(cx[k] > 0):
+            distance = distance_transform_edt(1 - cx[k]) * (1 - cx[k]) \
+                - (distance_transform_edt(cx[k]) - 1) * cx[k]
+            distances[k] = torch.tensor(
+                distance, dtype=targets.dtype, device=targets.device)
+    return distances
+
+
 def get_best_ckpt(dir_path: str | os.PathLike,
                   experiment: Optional[str] = None) -> str | None:
     glob_exp = "_" + experiment if experiment else ""
-    glob_pat = f"epoch-*_val_loss-*{glob_exp}.ckpt"
+    glob_pat = f"epoch=*_*=*{glob_exp}.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
     regex_exp = experiment if experiment else ".+"
-    regex_str = fr"epoch-(\d+)_val_loss-(\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
+    regex_str = fr"epoch=(\d+)_(?:.*)=(\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
     regex = re.compile(regex_str)
 
     min_val_loss = float('inf')
@@ -49,11 +63,11 @@ def get_best_ckpt(dir_path: str | os.PathLike,
 def get_latest_ckpt(dir_path: str | os.PathLike,
                     experiment: Optional[str] = None) -> str | None:
     glob_exp = "_" + experiment if experiment else ""
-    glob_pat = f"epoch-*_val_loss-*{glob_exp}.ckpt"
+    glob_pat = f"epoch=*_*=*{glob_exp}.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
     regex_exp = experiment if experiment else ".+"
-    regex_str = fr"epoch-(\d+)_val_loss-(?:\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
+    regex_str = fr"epoch=(\d+)_(?:.*)=(?:\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
     regex = re.compile(regex_str)
 
     max_epoch = -1
