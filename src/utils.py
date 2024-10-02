@@ -1,7 +1,9 @@
 import cupy as cp
 import geopandas as gpd
 import glob
+import matplotlib.pyplot as plt
 import multiprocessing as mp
+import numpy as np
 import os
 import torch
 import rasterio
@@ -9,7 +11,8 @@ import re
 import shutil
 
 from cupyx.scipy.ndimage import distance_transform_edt
-from typing import Optional, Any
+from sklearn.manifold import TSNE
+from typing import Any, Optional
 
 from pipeline.utils import function_timer
 
@@ -24,6 +27,34 @@ def distance_transform(targets: torch.tensor):
             distances[k] = torch.tensor(
                 distance, dtype=targets.dtype, device=targets.device)
     return distances
+
+
+def log_tsne_plot(tensor: torch.Tensor,
+                  plot_name: str,
+                  logger: Any,
+                  figsize: tuple[int]) -> None:
+    """
+    Perform t-SNE on the elements in the first dimension of the tensor
+    and save the plot as a PNG file.
+
+    Args:
+    - tensor (torch.Tensor): Input tensor
+    """
+    # Perform t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    tsne_results = tsne.fit_transform(tensor.cpu().numpy())
+
+    # Plot the results
+    plt.figure(figsize=figsize)
+    plt.scatter(tsne_results[:, 0], tsne_results[:, 1])
+    for i in range(tsne_results.shape[0]):
+        plt.annotate(f'{i}', (tsne_results[i, 0], tsne_results[i, 1]))
+    plt.title(plot_name)
+    plt.xlabel('t-SNE 1')
+    plt.ylabel('t-SNE 2')
+
+    # Save the plot as a PNG file
+    logger.log_figure(figure_name=plot_name, figure=plt)
 
 
 def get_best_ckpt(dir_path: str | os.PathLike,

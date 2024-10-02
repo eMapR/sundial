@@ -112,7 +112,7 @@ SAMPLER_CONFIG = {
     "datetime_column": "year",
     # (bool) Toggle for splitting time range at one location into multiple samples
     "generate_time_combinations": False,
-    # (int | None) number of time steps between each sample + 1, or number of years to include in model including observation year
+    # (int | None) number of time steps between each sample, or number of years to include in model including observation year
     "time_step": None,
 
     # gee strata settings

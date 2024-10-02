@@ -68,6 +68,9 @@ def zarr_reshape(
         ).astype(float)
         for y in years]
     xarr = xr.concat(xr_list, dim=DATETIME_LABEL)
+    
+    # transposing to match torch convention
+    xarr = xarr.transpose("band", DATETIME_LABEL, "x", "y")
 
     # adding strata data as attributes
     xarr.name = str(index)

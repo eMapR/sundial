@@ -1,11 +1,13 @@
-import datetime
+import geopandas as gpd
 import importlib
 import lightning as L
 import numpy as np
 import os
+import re
 import torch
 import xarray as xr
 
+from datetime import datetime
 from rioxarray import open_rasterio
 from torch.utils.data import Dataset, DataLoader
 from typing import Literal, Optional
@@ -16,6 +18,7 @@ from pipeline.settings import (
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
     STAT_DATA_PATH,
+    META_DATA_PATH,
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
     TEST_SAMPLE_PATH,
@@ -24,7 +27,7 @@ from pipeline.settings import (
 from settings import DATALOADER_CONFIG
 
 
-class ChipsDataset(Dataset):
+class GenericChipsDataset(Dataset):
     def __init__(self,
                  chip_size: int,
                  time_step: int | None,
@@ -32,6 +35,8 @@ class ChipsDataset(Dataset):
                  sample_path: str,
                  chip_data_path: str,
                  anno_data_path: str | None,
+                 split_tif: int | None = None,
+                 extension_config: Optional[dict] = {},
                  transform_config: Optional[dict] = {},
                  preprocess_config: Optional[dict] = {},
                  **kwargs):
@@ -42,12 +47,21 @@ class ChipsDataset(Dataset):
         self.sample_path = sample_path
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
+        self.split_tif = split_tif
 
-        self.samples = np.load(self.sample_path)
+        sample_type = os.path.splitext(self.sample_path)
+        match sample_type[-1]:
+            case ".npy":
+                self.samples = np.load(self.sample_path)
+            case ".txt" | ".text":
+                with open(self.sample_path, 'r') as file:
+                    self.samples = file.read().splitlines()
+                
         self.means = kwargs.get("means")
         self.stds = kwargs.get("stds")
 
-        self._init_loaders(file_type)
+        self._init_loaders(self.file_type)
+        self._init_extensions(extension_config)
         self._init_preprocessors(preprocess_config)
         self._init_transformers(transform_config)
 
@@ -55,23 +69,23 @@ class ChipsDataset(Dataset):
         # loading image idx
         sample_idx = idx // self.num_transforms
         transform_idx = idx % self.num_transforms
-        if len(self.samples.shape) == 2:
-            img_idx, time_idx = self.samples[sample_idx]
-            slicer = slice(time_idx, self.time_step)
+        if not isinstance(self.samples, list) and len(self.samples.shape) == 2:
+            img_name, time_idx = self.samples[sample_idx]
+            slicer = slice(time_idx, time_idx + self.time_step)
         else:
-            img_idx = self.samples[sample_idx]
+            img_name = self.samples[sample_idx]
             slicer = slice(-self.time_step, None) if self.time_step else None
+        
+        # parsing img name for index
+        if isinstance(img_name, str):
+            img_idx = int(re.search(r'chip_(\d+)\.tif', img_name).group(1))
+        else:
+            img_idx = img_name
 
         # loading chip and slicing time if necessary
-        chip = self.chip_loader(img_idx)
+        chip = self.chip_loader(img_name)
         if slicer is not None:
-            chip = self.slice_time(chip, slicer)
-
-        # converting to tensor
-        chip = torch.as_tensor(chip.to_numpy(), dtype=torch.float)
-
-        # reshaping gee data (D H W C) to pytorch format (C D H W)
-        chip = chip.permute(3, 0, 1, 2)
+            chip = chip[:, slicer, :, :]
 
         # preprocessing chip if specified
         if self.chip_preprocessor:
@@ -79,7 +93,7 @@ class ChipsDataset(Dataset):
 
         # transforming chip if specified
         if self.transformers:
-            seed = datetime.datetime.now().timestamp()
+            seed = datetime.now().timestamp()
             torch.manual_seed(seed)
             transform = self.transformers[transform_idx]["transform"]
             apply_to_anno = self.transformers[transform_idx]["apply_to_anno"]
@@ -87,7 +101,7 @@ class ChipsDataset(Dataset):
 
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
-            anno = self.get_annotation(sample_idx)
+            anno = self.anno_loader(img_name)
             # preprocessing chip if specified
             if self.anno_preprocessor:
                 anno = self.anno_preprocessor(anno)
@@ -96,7 +110,14 @@ class ChipsDataset(Dataset):
                 anno = transform(anno)
         else:
             anno = torch.empty(0)
-        return chip, anno, img_idx
+        ret = (chip, anno, idx)
+        if self.extensions:
+            for ext in self.extensions:
+                if ext.meta_data:
+                    ret += (ext.get_item(img_idx, self.meta_data),)
+                else:
+                    ret += (ext.get_item(img_idx),)
+        return ret
 
     def __len__(self):
         return len(self.samples) * self.num_transforms
@@ -113,23 +134,29 @@ class ChipsDataset(Dataset):
                         self.annos, name)
             case "tif":
                 self.chip_loader = lambda name: \
-                    self._tif_loader(self.chip_data_path, name)
+                    self._tif_loader(self.chip_data_path, name, self.split_tif)
                 if self.anno_data_path is not None:
                     self.anno_loader = lambda name: \
-                        self._tif_loader(self.anno_data_path, name)
+                        self._tif_loader(self.anno_data_path, name, None)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
         chip = xarr[str(name)]
         if self.chip_size < max(chip["x"].size, chip["y"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
-        return chip
+            
+        return torch.tensor(chip.to_numpy(), dtype=torch.float)
 
-    def _tif_loader(self, data_path: str, name: int):
-        image_path = os.path.join(data_path, f"{name}.tif")
-        with open_rasterio(image_path) as src:
-            image = src.read()
-        # TODO: implement multiple tif files for multiple time steps
-        return image
+    def _tif_loader(self, data_path: str, name: int, split_tif: int | None):
+        image_path = os.path.join(data_path, name)
+        with open_rasterio(image_path) as chip:
+            if self.chip_size < max(chip["x"].size, chip["y"].size):
+                chip = clip_xy_xarray(chip, self.chip_size)
+            
+            chip = torch.tensor(chip.to_numpy(), dtype=torch.float)
+            if split_tif:
+                chip = chip.reshape(-1, self.split_tif, chip.shape[-2], chip.shape[-1])
+            
+            return chip
 
     def _init_transformers(self, transform_config: dict):
         self.transformers = []
@@ -178,6 +205,14 @@ class ChipsDataset(Dataset):
 
         self.chip_preprocessor = torch.nn.Sequential(*chip) if chip else None
         self.anno_preprocessor = torch.nn.Sequential(*anno) if anno else None
+        
+    def _init_extensions(self, extension_config: dict):
+        if extension_config.get("load_meta_data"):
+            self.meta_data = gpd.read_file(META_DATA_PATH)
+        extensions = extension_config.get("extensions")
+        self.extensions = []
+        for extension in extensions:
+            self.extensions.append(self._dynamic_extension_import(extension))
 
     def _dynamic_transform_import(self, transform: dict):
         class_path = transform.get("class_path")
@@ -194,24 +229,47 @@ class ChipsDataset(Dataset):
                     importlib.import_module(module_path), class_name)
                 return transform_cls(
                     **transform.get("init_args", {}))
+                
+    def _dynamic_extension_import(self, loader: dict):
+        class_path = loader.get("class_path")
+        loader_path = class_path.rsplit(".", 1)
+        module_path, class_name = loader_path
+        loader_cls = getattr(
+            importlib.import_module(module_path), class_name)
+        return loader_cls(
+            **loader.get("init_args", {}))
+        
 
-    def get_annotation(self, idx):
-        annotation = self.anno_loader(str(self.samples[idx]))
-        if self.chip_size < max(annotation["x"].size, annotation["y"].size):
-            annotation = clip_xy_xarray(annotation, self.chip_size)
-        return torch.as_tensor(annotation.to_numpy(), dtype=torch.float)
-
-    def slice_time(self, xarr: xr.Dataset, slicer: slice):
-        return xarr.sel(datetime=slicer)
-
-    def indexed_transformer(self,
-                            x: torch.tensor,
-                            index: int):
-        transform = self.transforms[index]
-        return transform(x)
+class LatLotFromMeta():
+    meta_data = True
+    
+    def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
+        point = meta_data.iloc[idx].geometry
+        return torch.tensor([point.y, point.x], dtype=torch.float)
 
 
-class ChipsDataModule(L.LightningDataModule):
+class YearDayFromMeta():
+    meta_data = True
+    
+    def __init__(self,
+                 year_col: str,
+                 dates: list[str | datetime]):
+        self.year_col = year_col
+        self.dates = dates
+    
+    def get_day_of_year(self, month_day: str, year: int):
+        date_str = f"{year}-{month_day}"
+        date = datetime.strptime(date_str, "%Y-%m-%d")
+
+        day_of_year = date.timetuple().tm_yday
+        return day_of_year
+    
+    def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
+        year = meta_data[self.year_col].iloc[idx]
+        return torch.tensor([(year, self.get_day_of_year(date, year)) for date in self.dates], dtype=torch.float)
+
+
+class GenericChipsDataModule(L.LightningDataModule):
     def __init__(
             self,
             batch_size: int = DATALOADER_CONFIG["batch_size"],
@@ -219,6 +277,8 @@ class ChipsDataModule(L.LightningDataModule):
             chip_size: int = DATALOADER_CONFIG["chip_size"],
             time_step: int = DATALOADER_CONFIG["time_step"],
             file_type: str = DATALOADER_CONFIG["file_type"],
+            split_tif: int | None = DATALOADER_CONFIG["split_tif"],
+            extension_config: dict = DATALOADER_CONFIG["extension_config"],
             preprocess_config: dict = DATALOADER_CONFIG["preprocess_config"],
             transform_config: dict = DATALOADER_CONFIG["transform_config"],
             train_sample_path: str = TRAIN_SAMPLE_PATH,
@@ -227,13 +287,16 @@ class ChipsDataModule(L.LightningDataModule):
             predict_sample_path: str = PREDICT_SAMPLE_PATH,
             chip_data_path: str = CHIP_DATA_PATH,
             anno_data_path: str = ANNO_DATA_PATH,
-            stat_data_path: str | None = STAT_DATA_PATH):
+            stat_data_path: str | None = STAT_DATA_PATH,
+            **kwargs):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.chip_size = chip_size
         self.time_step = time_step
         self.file_type = file_type
+        self.split_tif = split_tif
+        self.extension_config = extension_config
         self.preprocess_config = preprocess_config
         self.transform_config = transform_config
         self.train_sample_path = train_sample_path
@@ -267,10 +330,12 @@ class ChipsDataModule(L.LightningDataModule):
             "chip_size": self.chip_size,
             "time_step": self.time_step,
             "file_type": self.file_type,
+            "split_tif": self.split_tif,
+            "extension_config": self.extension_config,
             "preprocess_config": self.preprocess_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
-        }
+        } | kwargs
 
         self.dataloader_config = {
             "batch_size": self.batch_size,
@@ -284,7 +349,7 @@ class ChipsDataModule(L.LightningDataModule):
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
         match stage:
             case "fit":
-                self.training_ds = ChipsDataset(
+                self.training_ds = GenericChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.train_sample_path,
                         "transform_config": self.transform_config
@@ -294,21 +359,21 @@ class ChipsDataModule(L.LightningDataModule):
                     "preprocesses": [t for t in self.preprocess_config.get("preprocesses", []) if t.get("validate", True)],
                 }
 
-                self.validate_ds = ChipsDataset(
+                self.validate_ds = GenericChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.validate_sample_path,
                         "preprocess_config": validate_preprocess_config})
 
             case "validate":
-                self.validate_ds = ChipsDataset(
+                self.validate_ds = GenericChipsDataset(
                     **self.dataset_config | {"sample_path": self.validate_sample_path})
 
             case "test":
-                self.test_ds = ChipsDataset(
+                self.test_ds = GenericChipsDataset(
                     **self.dataset_config | {"sample_path": self.test_sample_path})
 
             case "predict":
-                self.predict_ds = ChipsDataset(
+                self.predict_ds = GenericChipsDataset(
                     **self.dataset_config | {"sample_path": self.predict_sample_path, "anno_data_path": None})
 
     def train_dataloader(self):

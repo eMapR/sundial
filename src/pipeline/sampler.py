@@ -371,10 +371,10 @@ def generate_squares(
 @function_timer
 def generate_time_combinations(
         samples: np.array,
-        num_times: int,
+        look_range: int,
         time_step: int) -> np.ndarray:
-    start = num_times % time_step
-    time_arr = np.arange(num_times)[start::time_step]
+    start = look_range % time_step
+    time_arr = np.arange(look_range)[start::time_step]
 
     sample_arr, time_arr = np.meshgrid(samples, time_arr)
     sample_arr = sample_arr.flatten()
@@ -689,10 +689,9 @@ def index():
 
     if SAMPLER_CONFIG["generate_time_combinations"]:
         LOGGER.info("Generating time combinations...")
-        num_times = SAMPLER_CONFIG["look_range"] + 1
         time_sample_config = {
             "samples": samples,
-            "num_times": num_times,
+            "look_range": SAMPLER_CONFIG["look_range"],
             "time_step": SAMPLER_CONFIG["time_step"]
         }
         samples = generate_time_combinations(**time_sample_config)

@@ -25,6 +25,8 @@ DATALOADER_CONFIG = {
     "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
     "time_step": SAMPLER_CONFIG["time_step"],
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
+    "split_tif": None,
+    "extension_config": {"extensions": []},
     "preprocess_config": {"preprocesses": []},
     "transform_config": {"transforms": []},
 }

@@ -297,7 +297,7 @@ class Downloader:
                         square_name_batch.append(square_coords)
                         batch_size += 1
 
-                        # reshaping from (D*C, H, W) to (D, H, W, D)
+                        # reshaping from (D*C, H, W) to (C, D, H, W)
                         report_queue.put((
                             "INFO", f"Reshaping square {chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {index} {square_coords}"))
                         xarr_chip = self._image_reshaper(chip,

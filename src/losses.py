@@ -28,6 +28,18 @@ class Reducer(nn.Module):
         return self.reduction(inputs, self.dim, self.keepdim)
 
 
+class RMSELoss(nn.Module):
+    def __init__(self,
+                 size_average=None,
+                 reduce=None,
+                 reduction='mean'):
+        super().__init__()
+        self.mse = nn.MSELoss(size_average, reduce, reduction)
+        
+    def forward(self, inputs, targets):
+        return torch.sqrt(self.mse(inputs, targets))
+
+
 class JaccardLoss(nn.Module):
     def __init__(self,
                  epsilon: int = 1e-6,
