@@ -53,7 +53,6 @@ BASE_CONFIG_PATH = os.path.join(CONFIG_PATH, "base.yaml")
 
 # sample and data paths
 META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data")
-STRATA_LIST_PATH = os.path.join(SAMPLE_PATH, "strata_data.yaml")
 STAT_DATA_PATH = os.path.join(SAMPLE_PATH, "stat_data.yaml")
 CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data")
 ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data")
@@ -63,13 +62,12 @@ VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.npy")
 PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
 TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
 
-# zipped shapefile and source data paths
+# shapefile and source data paths
 GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
-GEO_PRE_PATH = os.path.join(SAMPLE_PATH, "geo_file")
+GEO_POP_PATH = os.path.join(SAMPLE_PATH, "gpop_data")
 
 # non configurable GEE, image, and meta data settings
 RANDOM_SEED = 42
-MASK_LABELS = ["cloud"]
 STRATA_LABEL = "strata"
 DATETIME_LABEL = "datetime"
 NO_DATA_VALUE = 0

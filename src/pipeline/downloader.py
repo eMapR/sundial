@@ -308,7 +308,7 @@ class Downloader:
                                                          attributes,
                                                          **self._reshaper_kwargs)
 
-                        # collecting xr data arrays into list for batch writing
+                        # collecting xr data arrays into list for batch writing into xr dataset
                         report_queue.put(
                             ("INFO", f"Appending xarr chip {xarr_chip.shape} to consumer {consumer_index} chip batch {batch_index}... {index} {square_coords}"))
                         xarr_chip_batch.append(xarr_chip)

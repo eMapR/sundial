@@ -48,6 +48,9 @@ class GenericChipsDataset(Dataset):
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
         self.split_tif = split_tif
+        self.extension_config = extension_config
+        self.transform_config = transform_config
+        self.preprocess_config = preprocess_config
 
         sample_type = os.path.splitext(self.sample_path)
         match sample_type[-1]:
@@ -60,10 +63,10 @@ class GenericChipsDataset(Dataset):
         self.means = kwargs.get("means")
         self.stds = kwargs.get("stds")
 
-        self._init_loaders(self.file_type)
-        self._init_extensions(extension_config)
-        self._init_preprocessors(preprocess_config)
-        self._init_transformers(transform_config)
+        self._init_loaders()
+        self._init_extensions()
+        self._init_preprocessors()
+        self._init_transformers()
 
     def __getitem__(self, idx):
         # loading image idx
@@ -78,7 +81,7 @@ class GenericChipsDataset(Dataset):
         
         # parsing img name for index
         if isinstance(img_name, str):
-            img_idx = int(re.search(r'chip_(\d+)\.tif', img_name).group(1))
+            img_idx = int(re.search(r'.*(\d+).*', img_name).group(1))
         else:
             img_idx = img_name
 
@@ -122,8 +125,8 @@ class GenericChipsDataset(Dataset):
     def __len__(self):
         return len(self.samples) * self.num_transforms
 
-    def _init_loaders(self, file_type: str):
-        match file_type:
+    def _init_loaders(self):
+        match self.file_type:
             case "zarr":
                 self.chips = xr.open_zarr(self.chip_data_path)
                 self.chip_loader = lambda name: self._zarr_loader(
@@ -147,7 +150,7 @@ class GenericChipsDataset(Dataset):
         return torch.tensor(chip.to_numpy(), dtype=torch.float)
 
     def _tif_loader(self, data_path: str, name: int, split_tif: int | None):
-        image_path = os.path.join(data_path, name)
+        image_path = os.path.join(data_path, f"{name}.tif")
         with open_rasterio(image_path) as chip:
             if self.chip_size < max(chip["x"].size, chip["y"].size):
                 chip = clip_xy_xarray(chip, self.chip_size)
@@ -157,24 +160,27 @@ class GenericChipsDataset(Dataset):
                 chip = chip.reshape(-1, self.split_tif, chip.shape[-2], chip.shape[-1])
             
             return chip
+        
+    def _npy_loader(self, data_path: str, name: int):
+        pass
 
-    def _init_transformers(self, transform_config: dict):
+    def _init_transformers(self):
         self.transformers = []
 
-        if transform_config.get("include_original"):
+        if self.transform_config.get("include_original"):
             self.transformers.append({
                 "transform": torch.nn.Identity(),
                 "apply_to_anno": True
             })
 
-        for transform in transform_config.get("transforms", []):
+        for transform in self.transform_config.get("transforms", []):
             transformer = self._dynamic_transform_import(transform)
             self.transformers.append({
                 "transform": transformer,
                 "apply_to_anno": transform.get("apply_to_anno", False)
             })
 
-        composition = transform_config.get("composition", {})
+        composition = self.transform_config.get("composition", {})
         composition_path = composition.get("class_path")
         match composition_path:
             case None:
@@ -191,11 +197,11 @@ class GenericChipsDataset(Dataset):
         num_transforms = len(self.transformers)
         self.num_transforms = 1 if num_transforms == 0 else num_transforms
 
-    def _init_preprocessors(self, preprocess_config: dict):
+    def _init_preprocessors(self):
         chip = []
         anno = []
 
-        for preprocess in preprocess_config.get("preprocesses", []):
+        for preprocess in self.preprocess_config.get("preprocesses", []):
             preprocessor = self._dynamic_transform_import(preprocess)
             targets = preprocess.get("targets", [])
             if "chip" in targets:
@@ -206,10 +212,10 @@ class GenericChipsDataset(Dataset):
         self.chip_preprocessor = torch.nn.Sequential(*chip) if chip else None
         self.anno_preprocessor = torch.nn.Sequential(*anno) if anno else None
         
-    def _init_extensions(self, extension_config: dict):
-        if extension_config.get("load_meta_data"):
+    def _init_extensions(self):
+        if self.extension_config.get("load_meta_data"):
             self.meta_data = gpd.read_file(META_DATA_PATH)
-        extensions = extension_config.get("extensions")
+        extensions = self.extension_config.get("extensions")
         self.extensions = []
         for extension in extensions:
             self.extensions.append(self._dynamic_extension_import(extension))
@@ -238,35 +244,6 @@ class GenericChipsDataset(Dataset):
             importlib.import_module(module_path), class_name)
         return loader_cls(
             **loader.get("init_args", {}))
-        
-
-class LatLotFromMeta():
-    meta_data = True
-    
-    def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
-        point = meta_data.iloc[idx].geometry
-        return torch.tensor([point.y, point.x], dtype=torch.float)
-
-
-class YearDayFromMeta():
-    meta_data = True
-    
-    def __init__(self,
-                 year_col: str,
-                 dates: list[str | datetime]):
-        self.year_col = year_col
-        self.dates = dates
-    
-    def get_day_of_year(self, month_day: str, year: int):
-        date_str = f"{year}-{month_day}"
-        date = datetime.strptime(date_str, "%Y-%m-%d")
-
-        day_of_year = date.timetuple().tm_yday
-        return day_of_year
-    
-    def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
-        year = meta_data[self.year_col].iloc[idx]
-        return torch.tensor([(year, self.get_day_of_year(date, year)) for date in self.dates], dtype=torch.float)
 
 
 class GenericChipsDataModule(L.LightningDataModule):

@@ -4,38 +4,15 @@ import torch
 from torch import nn
 
 from models.base import SundialPLBase
-from models.necks import UpscaleNeck
 
 
-class PrithviBackbone(nn.Module):
+class PrithviReshape(nn.Module):
     def __init__(self,
-                 view_size: int,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None):
-        super().__init__()
-        self.view_size = view_size
-        self.prithvi_path = prithvi_path
-        self.prithvi_params = prithvi_params
-        self.prithvi_freeze = prithvi_freeze
-
-        # Initializing Prithvi Backbone per prithvi documentation
-        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        self.model = MaskedAutoencoderViT(
-            **self.prithvi_params["model_args"])
-        if self.prithvi_freeze:
-            self.eval()
-        if self.prithvi_path is not None:
-            checkpoint = torch.load(self.prithvi_path)
-            del checkpoint['pos_embed']
-            del checkpoint['decoder_pos_embed']
-            _ = self.model.load_state_dict(checkpoint, strict=False)
-
-    def forward(self, chips):
-        # gathering features
-        latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
-
-        # removing class token and reshaping to 2D representation
+                view_size):
+            super().__init__()
+            self.view_size = view_size
+    
+    def forward(self, latent):
         latent = latent[:, 1:, :]
         latent = latent.view(
             latent.shape[0],
@@ -44,6 +21,41 @@ class PrithviBackbone(nn.Module):
             self.view_size)
 
         return latent
+
+
+class PrithviBackbone(nn.Module):
+    def __init__(self,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 reshape: bool = True):
+        super().__init__()
+        self.view_size = view_size
+        self.prithvi_path = prithvi_path
+        self.prithvi_params = prithvi_params
+        self.prithvi_freeze = prithvi_freeze
+
+        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
+        self.model = MaskedAutoencoderViT(
+            **self.prithvi_params["model_args"])
+        if self.prithvi_freeze:
+            self.eval()
+        if self.prithvi_path is not None:
+            checkpoint = torch.load(self.prithvi_path)
+            del checkpoint['pos_embed']
+            for k, v in checkpoint.items():
+                if "decoder" in k:
+                    del v
+            _ = self.model.load_state_dict(checkpoint, strict=False)
+        if reshape:
+            self.reshaper = PrithviReshape(self.view_size)
+        else:
+            self.reshaper = nn.Identity()
+
+    def forward(self, chips):
+        latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
+        return self.reshaper(latent)
 
 
 class PrithviFCN(SundialPLBase):
@@ -60,24 +72,83 @@ class PrithviFCN(SundialPLBase):
         self.upscale_depth = upscale_depth
         self.view_size = view_size
 
-        # Initializing backbone
         self.backbone = PrithviBackbone(
             view_size=view_size,
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
 
-        # Initializing upscaling neck
-        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
-            prithvi_params["model_args"]["num_frames"]
-        self.neck = UpscaleNeck(embed_dim, self.upscale_depth)
-
-        # Initializing FCNHead
         from torchvision.models.segmentation.fcn import FCNHead
-        self.head = FCNHead(embed_dim, self.num_classes)
+        self.head = nn.Sequential(
+            Upscaler(prithvi_params["model_args"]["embed_dim"], self.upscale_depth),
+            FCNHead(prithvi_params["model_args"]["embed_dim"], self.num_classes)
+        )
 
 
 class PrithviUNet(SundialPLBase):
+    def __init__(self,
+                 num_classes: int,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.view_size = view_size
+
+        self.backbone = PrithviBackbone(
+            view_size=view_size,
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path)
+
+        from models.decoders.unet import UNet
+        self.head = UNet(prithvi_params["model_args"]["embed_dim"], self.num_classes)
+
+
+class PrithviGlobalBackbone(nn.Module):
+    def __init__(self,
+                 view_size: int,
+                 prithvi_params: dict,
+                 prithvi_freeze: bool = True,
+                 prithvi_path: str = None,
+                 reshape: bool = True):
+        super().__init__()
+        self.view_size = view_size
+        self.prithvi_path = prithvi_path
+        self.prithvi_params = prithvi_params
+        self.prithvi_freeze = prithvi_freeze
+
+        from models.backbones.prithvi.PrithviGlobal import MaskedAutoencoderViT
+        self.model = MaskedAutoencoderViT(
+            **self.prithvi_params["model_args"])
+        if self.prithvi_freeze:
+            self.eval()
+        if self.prithvi_path is not None:
+            checkpoint = torch.load(self.prithvi_path)
+            for k, v in checkpoint.items():
+                if "decoder" in k:
+                    del v
+            _ = self.model.load_state_dict(checkpoint, strict=False)
+            _ = self.model.load_state_dict(checkpoint, strict=False)
+        if reshape:
+            self.reshaper = PrithviReshape(self.view_size)
+        else:
+            self.reshaper = nn.Identity()
+
+    def forward(self,
+                chips: torch.Tensor,
+                temporal_coords: torch.Tensor,
+                location_coords: torch.Tensor):
+        latent, _, _ = self.model.forward_encoder(chips,
+                                                  temporal_coords,
+                                                  location_coords,
+                                                  mask_ratio=0.0)
+        return self.reshaper(latent)
+
+
+class PrithviGlobalFCN(SundialPLBase):
     def __init__(self,
                  num_classes: int,
                  upscale_depth: int,
@@ -91,85 +162,40 @@ class PrithviUNet(SundialPLBase):
         self.upscale_depth = upscale_depth
         self.view_size = view_size
 
-        # Initializing backbone
-        self.backbone = PrithviBackbone(
+        self.backbone = PrithviGlobalBackbone(
             view_size=view_size,
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
 
-        # Initializing upscaling neck
-        embed_dim = prithvi_params["model_args"]["embed_dim"] * \
-            prithvi_params["model_args"]["num_frames"]
-        self.neck = UpscaleNeck(embed_dim, self.upscale_depth)
-
-        # Initializing U-Net Head
-        from models.heads.unet.unet.unet_model import UNet
-        self.head = UNet(embed_dim, self.num_classes)
-
-
-class PrithviHeadless(L.LightningModule):
+        from torchvision.models.segmentation.fcn import FCNHead
+        self.head = nn.Sequential(
+            Upscaler(prithvi_params["model_args"]["embed_dim"], self.upscale_depth),
+            FCNHead(prithvi_params["model_args"]["embed_dim"], self.num_classes)
+        )
+        
+class PrithviGlobalAttentionUNet(SundialPLBase):
     def __init__(self,
-                 view_size: int | None,
-                 prithvi_params: dict,
-                 **kwargs):
+        num_classes: int,
+        view_size: int,
+        prithvi_params: dict,
+        prithvi_freeze: bool = True,
+        prithvi_path: str = None,
+        **kwargs):
         super().__init__(**kwargs)
+        self.num_classes = num_classes
         self.view_size = view_size
-        self.prithvi_params = prithvi_params
 
-        # initialize prithvi backbone
-        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        self.model = MaskedAutoencoderViT(
-            **self.prithvi_params["model_args"])
-
-    def forward(self, chips):
-        return self.model.forward(chips, mask_ratio=self.prithvi_params["train_params"]["mask_ratio"])
-
-    def training_step(self, batch):
-        chips, _, _ = batch
-        loss, _, _ = self(chips)
-        return {"loss": loss}
-
-    def validation_step(self, batch):
-        chips, _, _ = batch
-        loss, _, _ = self(chips)
-        return {"loss": loss}
-
-    def test_step(self, batch):
-        chips, _, _ = batch
-        loss, pred, _ = self(chips)
-
-        return {"loss": loss, "pred": pred}
-
-    def predict_step(self, batch):
-        chips, _, _ = batch
-        latent, _, _ = self.model.forward_encoder(chips, mask_ratio=0.0)
-        return {"latent": latent}
-
-
-class PrithviHeadlessCDiff(L.LightningModule):
-    def __init__(self,
-                 view_size: int,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.model = PrithviBackbone(
+        self.backbone = PrithviGlobalBackbone(
             view_size=view_size,
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
-        assert view_size % 2 == 0
-        self.center = view_size // 2
-        self.center_slice = slice(self.center - 1, self.center + 1)
-        self.mse = nn.MSELoss(reduction="none")
 
-    def predict_step(self, batch):
-        chips, _, _ = batch
-        latent = self.model(chips)
-        center = latent[:, :, self.center_slice, self.center_slice]
-        center_mean = torch.mean(center, dim=(2, 3), keepdim=True)
-        rmse = torch.mean(torch.sqrt(
-            self.mse(latent, center_mean)), dim=1, keepdim=True)
-        return {"latent": latent, "rmse": rmse}
+        from models.decoders.attention_unet import AttentionUNet, DownsampleBlock
+        from models.decoders.utils import Upsampler
+        self.head = nn.Sequential(
+            Upsampler(prithvi_params["model_args"]["embed_dim"], 64),
+            AttentionUNet(64, 64),
+            DownsampleBlock(64, self.num_classes)
+        )

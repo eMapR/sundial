@@ -36,7 +36,7 @@ CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "{epoch:04d}",
     "monitor": "val_loss",
-    "save_top_k": 16,
+    "save_top_k": 8,
     "auto_insert_metric_name": True,
     "save_weights_only": False,
     "every_n_epochs": 1,
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     run_config = {
         "model": None,
         "data": {
-            "class_path": "ChipsDataModule",
+            "class_path": "GenericChipsDataModule",
             "init_args": DATALOADER_CONFIG
         }
     }

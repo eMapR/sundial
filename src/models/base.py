@@ -3,9 +3,8 @@ import lightning as L
 
 class SundialPLBase(L.LightningModule):
     def forward(self, chips):
-        tokens = self.backbone(*chips)
-        features = self.neck(tokens)
-        logits = self.head(features)
+        embeddings = self.backbone(*chips)
+        logits = self.head(embeddings)
 
         return logits
 

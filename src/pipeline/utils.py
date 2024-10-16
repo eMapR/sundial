@@ -7,10 +7,10 @@ import xarray as xr
 
 from datetime import datetime
 from ltgee import LandsatComposite
-from typing import Optional, Generator
+from typing import Optional, Generator, Tuple
 
 from pipeline.logger import get_logger
-from pipeline.settings import MASK_LABELS, NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
+from pipeline.settings import NO_DATA_VALUE, LOG_PATH, METHOD, DATETIME_LABEL
 
 
 def lt_medoid_image_generator(
@@ -19,11 +19,9 @@ def lt_medoid_image_generator(
         end_date: datetime,
         scale: int,
         projection: str,
-        mask_labels: list[str] = MASK_LABELS) -> ee.Image:
-    if projection is None or projection != "EPSG:4326":
-        even_odd = False
-    else:
-        even_odd = True
+        mask_labels: list[str] = ["snow", "cloud", "shadow"]) -> ee.Image:
+    # TODO: actually parse the projection string
+    even_odd = (projection == "EPSG:4326")
     square = ee.Geometry.Polygon(
         square_coords, proj=projection, evenOdd=even_odd)
     collection = LandsatComposite(
@@ -39,9 +37,11 @@ def lt_medoid_image_generator(
     new_band_names = [f"{str(start_date.year + i)}_{band}" for i in range(size)
                       for band in collection._band_names]
 
+    # TODO: fix hacky filter bounds to reprojections
     image = collection\
         .toBands()\
         .select(old_band_names, new_band_names)\
+        .divide(10000)\
         .reproject(crs=projection, scale=scale)\
         .clipToBoundsAndScale(geometry=square, scale=scale)
 
@@ -152,7 +152,7 @@ def parse_meta_data(
                                datetime | None,
                                dict]:
     square = meta_data.iloc[index].loc["geometry"]
-    square_coords = list(square.boundary.coords)
+    square_coords = list(square.exterior.coords)
     point_coords = list(square.centroid.coords)
 
     # generating start and end date from datetime attribute and back step
@@ -188,6 +188,29 @@ def function_timer(func):
         return result
     return timer
 
+
+def train_validate_test_split(samples: Tuple[float], 
+                              ratios: list[int],
+                              random_seed: float | int) -> np.array:
+    assert len(ratios) == 2 or len(ratios) == 3, "Ratios must be a list or array of 2 ors 3 elements (val, test) or (train, val, test)"
+    assert (np.isclose(sum(ratios), 1.0) and len(ratios) == 3) or (sum(ratios) < 1.0 and len(ratios) == 2), "Ratios must sum to 1 if train is included or is < 1 otherwise"
+
+    if len(ratios) == 2:
+        ratios = (1 - sum(ratios),) + tuple(ratios)
+
+    n_total = len(samples)
+    indices = np.arange(n_total)
+    np.random.seed(random_seed)
+    np.random.shuffle(indices)
+
+    train_end = int(ratios[0] * n_total)
+    val_end = train_end + int(ratios[1] * n_total)
+
+    train = samples[:train_end,...]
+    val = samples[train_end:val_end,...]
+    test = samples[val_end:,...]
+
+    return train, val, test
 
 @function_timer
 def get_xarr_chip_mean_std(data: xr.Dataset) -> tuple[list[float], list[float]]:

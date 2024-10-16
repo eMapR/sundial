@@ -127,9 +127,11 @@ class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
                     stage: str) -> None:
         config = copy.deepcopy(self.config)
         del config["trainer"]["logger"]
+        
         config["config"] = [str(s) for s in config["config"]]
-        config["trainer"]["callbacks"] = [{k: vars(v) if hasattr(
-            v, "__dict__") else v for k, v in vars(c).items()} for c in config["trainer"]["callbacks"]]
+        if config["trainer"]["callbacks"]:
+            config["trainer"]["callbacks"] = [{k: vars(v) if hasattr(
+                v, "__dict__") else v for k, v in vars(c).items()} for c in config["trainer"]["callbacks"]]
 
         stat_data = load_yaml(STAT_DATA_PATH)
         if "chip_verify" in stat_data:

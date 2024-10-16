@@ -25,22 +25,23 @@ from pipeline.settings import (
     load_yaml,
     save_yaml,
     update_yaml,
+    DATETIME_LABEL,
+    METHOD,
+    NO_DATA_VALUE,
+    RANDOM_SEED,
+    STRATA_LABEL,
+)
+from pipeline.settings import (
     ALL_SAMPLE_PATH,
     ANNO_DATA_PATH,
     CHIP_DATA_PATH,
-    DATETIME_LABEL,
-    GEO_PRE_PATH,
+    GEO_POP_PATH,
     GEO_RAW_PATH,
     LOG_PATH,
     META_DATA_PATH,
-    METHOD,
-    NO_DATA_VALUE,
     PREDICT_SAMPLE_PATH,
-    RANDOM_SEED,
     SAMPLER_CONFIG,
     STAT_DATA_PATH,
-    STRATA_LABEL,
-    STRATA_LIST_PATH,
     TEST_SAMPLE_PATH,
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
@@ -53,6 +54,7 @@ from .utils import (
     get_xarr_chip_mean_std,
     pad_xy_xarray,
     test_non_zero_sum,
+    train_validate_test_split
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)
@@ -195,7 +197,6 @@ def gee_download_features(
             f"Failed to convert feature collection to GeoDataFrame: {e}")
         raise e
 
-
 @function_timer
 def preprocess_data(
         geo_dataframe: gpd.GeoDataFrame,
@@ -204,7 +205,6 @@ def preprocess_data(
             "action": Literal[">", "<", "==", "!=", "replace"],
             "targets": int, float, str, list]],
         projection: Optional[str] = None,
-        strata_list_path: Optional[str] = None,
         strata_columns: Optional[list[str]] = None,
         datetime_column: Optional[str] = None) -> gpd.GeoDataFrame:
     epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
@@ -240,12 +240,10 @@ def preprocess_data(
     if datetime_column is not None:
         geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe[datetime_column]
 
-    if strata_columns is not None and strata_list_path is not None:
-        LOGGER.info(f"Saving strata list to {strata_list_path}...")
+    if strata_columns is not None:
         geo_dataframe.loc[:, STRATA_LABEL] = geo_dataframe[strata_columns]\
             .apply(lambda x: '__'.join(x.astype(str)).replace(" ", "_"), axis=1)
-        strata_list = geo_dataframe.groupby(STRATA_LABEL).size().to_dict()
-        save_yaml(strata_list, strata_list_path)
+
     return geo_dataframe
 
 
@@ -294,7 +292,7 @@ def stratified_sample(
                 sample = groupby.sample(n=num)
     else:
         sample = geo_dataframe
-    sample = sample.reset_index().rename(columns={'index': 'meta_index'})
+    sample = sample.reset_index().rename(columns={'index': 'geo_file_index'})
     return sample
 
 
@@ -303,26 +301,7 @@ def generate_centroid_squares(
         geo_dataframe: gpd.GeoDataFrame,
         meter_edge_size: int) -> gpd.GeoDataFrame:
     geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
-        .apply(lambda p: p.centroid.buffer(meter_edge_size//2).envelope)
-    return geo_dataframe
-
-
-def centroid_shift_helper(
-        polygon: Polygon,
-        meter_edge_size: int) -> Polygon:
-    centroid = polygon.centroid
-    d = random.randint(-meter_edge_size//2, meter_edge_size//2)
-    centroid_shift = transform(lambda x, y, z=None: (x+d, y+d), centroid)
-    centroid_shift = centroid_shift.buffer(meter_edge_size//2).envelope
-    return centroid_shift
-
-
-@function_timer
-def generate_centroid_shift_squares(
-        geo_dataframe: gpd.GeoDataFrame,
-        meter_edge_size: int) -> gpd.GeoDataFrame:
-    geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
-        .apply(lambda p: centroid_shift_helper(p, meter_edge_size))
+        .apply(lambda p: p.centroid.buffer(meter_edge_size // 2).envelope)
     return geo_dataframe
 
 
@@ -353,13 +332,9 @@ def generate_squares(
                 .set_crs("EPSG:4326")\
                 .to_crs(epsg)
             gdf = generate_centroid_squares(points, meter_edge_size)
-            gdf.loc[:, DATETIME_LABEL] = gee_stratafied_config["end_date"].r
+            gdf.loc[:, DATETIME_LABEL] = gee_stratafied_config["end_date"]
         case "centroid":
             gdf = generate_centroid_squares(
-                geo_dataframe,
-                meter_edge_size)
-        case "centroid_shift":
-            gdf = generate_centroid_shift_squares(
                 geo_dataframe,
                 meter_edge_size)
         case _:
@@ -475,14 +450,13 @@ def generate_annotation_data(
         population_gdf: gpd.GeoDataFrame,
         sample_gdf: gpd.GeoDataFrame,
         groupby_columns: list[str],
-        strata_list_path: str,
         pixel_edge_size: int,
         scale: int,
         anno_data_path: str,
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    strata_list = sorted(load_yaml(strata_list_path))
+    strata_list = sorted(sample_gdf[STRATA_LABEL].unique())
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -530,13 +504,12 @@ def sample():
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
                 "projection": SAMPLER_CONFIG["projection"],
-                "strata_list_path": STRATA_LIST_PATH,
                 "strata_columns": SAMPLER_CONFIG["strata_columns"],
                 "datetime_column": SAMPLER_CONFIG["datetime_column"],
             }
             geo_dataframe = preprocess_data(**sample_config)
-            LOGGER.info(f"Saving processed geo dataframe to {GEO_PRE_PATH}...")
-            geo_dataframe.to_file(GEO_PRE_PATH)
+            LOGGER.info(f"Saving processed geo dataframe to {GEO_POP_PATH}...")
+            geo_dataframe.to_file(GEO_POP_PATH)
 
         if SAMPLER_CONFIG["num_points"]:
             LOGGER.info("Performing stratified sample of data in geo file...")
@@ -547,10 +520,12 @@ def sample():
             geo_dataframe = stratified_sample(**group_config)
 
         LOGGER.info("Generating square polygons...")
+         # subtracting 1 from meter edge to account for the extra pixel in the envelope polygon
+         # TODO: see pipeline.utils.lt_medoid_image_generator
         square_config = {
             "geo_dataframe": geo_dataframe,
             "method": SAMPLER_CONFIG["method"],
-            "meter_edge_size": SAMPLER_CONFIG["scale"] * SAMPLER_CONFIG["pixel_edge_size"],
+            "meter_edge_size": SAMPLER_CONFIG["scale"] * (SAMPLER_CONFIG["pixel_edge_size"] - 1),    
             "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
         }
         geo_dataframe = generate_squares(**square_config)
@@ -567,8 +542,8 @@ def sample():
 def annotate():
     try:
         LOGGER.info("Loading geo files into GeoDataFrame...")
-        if SAMPLER_CONFIG["preprocess_actions"] and os.path.exists(GEO_PRE_PATH):
-            population_gdf = gpd.read_file(GEO_PRE_PATH)
+        if SAMPLER_CONFIG["preprocess_actions"] and os.path.exists(GEO_POP_PATH):
+            population_gdf = gpd.read_file(GEO_POP_PATH)
         else:
             population_gdf = gpd.read_file(GEO_RAW_PATH)
         sample_gdf = gpd.read_file(META_DATA_PATH)
@@ -578,7 +553,6 @@ def annotate():
             "population_gdf": population_gdf,
             "sample_gdf": sample_gdf,
             "groupby_columns": SAMPLER_CONFIG["groupby_columns"],
-            "strata_list_path": STRATA_LIST_PATH,
             "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
             "scale": SAMPLER_CONFIG["scale"],
             "anno_data_path": ANNO_DATA_PATH,
@@ -594,7 +568,7 @@ def annotate():
 @function_timer
 def download():
     try:
-        LOGGER.info("Loading geo file into GeoDataFrame...")
+        LOGGER.info("Loading meta_data into GeoDataFrame...")
         gdf = gpd.read_file(META_DATA_PATH)
 
         LOGGER.info("Generating image chips...")
@@ -627,16 +601,14 @@ def calculate():
     try:
         LOGGER.info("Calculating sample statistics...")
         stat = {}
+        
+        gdf = gpd.read_file(META_DATA_PATH)
+        stat["strata_count"] = gdf.groupby(STRATA_LABEL).size().to_dict()
+        
         match SAMPLER_CONFIG["file_type"]:
             case "ZARR":
                 LOGGER.info(f"Verifying chip data...")
                 chip_data = xr.open_zarr(CHIP_DATA_PATH)
-
-                if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
-                    if os.path.exists(ALL_SAMPLE_PATH):
-                        all_samples = [str(i)
-                                       for i in np.load(ALL_SAMPLE_PATH)]
-                        chip_data = chip_data[all_samples]
 
                 stat["chip_means"], stat["chip_stds"] = get_xarr_chip_mean_std(
                     chip_data)
@@ -647,10 +619,6 @@ def calculate():
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verify annotation data...")
                     anno_data = xr.open_zarr(ANNO_DATA_PATH)
-
-                    if SAMPLER_CONFIG["sample_toggles"]["postprocess_data"]:
-                        if os.path.exists(ALL_SAMPLE_PATH):
-                            anno_data = anno_data[all_samples]
 
                     stat["anno_totals"], stat["anno_weights"] = get_class_weights(
                         anno_data)
@@ -675,6 +643,7 @@ def index():
 
     if SAMPLER_CONFIG["postprocess_actions"]:
         LOGGER.info("Postprocessing data in geo file...")
+        # TODO: implement tif version
         chip_data = xr.open_zarr(CHIP_DATA_PATH)
         anno_data = xr.open_zarr(ANNO_DATA_PATH) if \
             os.path.exists(ANNO_DATA_PATH) else None
@@ -683,7 +652,7 @@ def index():
             "anno_data": anno_data,
             "postprocess_actions": SAMPLER_CONFIG["postprocess_actions"],
         }
-        # TODO: resample data so sample ratio stays consistent postprocessing
+        # TODO: resample data so sample strata ratios stays consistent postprocessing
         samples = postprocess_data(**sample_config)
     np.save(ALL_SAMPLE_PATH, samples)
 
@@ -696,22 +665,15 @@ def index():
         }
         samples = generate_time_combinations(**time_sample_config)
 
-    if SAMPLER_CONFIG["validate_ratio"]:
+    if SAMPLER_CONFIG["split_ratios"]:
         LOGGER.info(
             "Splitting sample data into training, validation, test, and predict sets...")
-        assert SAMPLER_CONFIG["validate_ratio"] > 0.0, "Validation ratio must be greater than 0.0"
-        train, validate = train_test_split(
-            samples, test_size=SAMPLER_CONFIG["validate_ratio"])
+        train, validate, test = train_validate_test_split(samples, SAMPLER_CONFIG["split_ratios"], RANDOM_SEED)
         idx_payload = {
             TRAIN_SAMPLE_PATH: train,
-            VALIDATE_SAMPLE_PATH: validate
+            VALIDATE_SAMPLE_PATH: validate,
+            TEST_SAMPLE_PATH: test
         }
-
-        if SAMPLER_CONFIG["test_ratio"] and SAMPLER_CONFIG["test_ratio"] > 0.0:
-            validate, test = train_test_split(
-                validate, test_size=SAMPLER_CONFIG["test_ratio"])
-            idx_payload[VALIDATE_SAMPLE_PATH] = validate
-            idx_payload[TEST_SAMPLE_PATH] = test
 
         LOGGER.info("Saving sample data splits to paths...")
         for path, idx_lst in idx_payload.items():
