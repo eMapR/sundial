@@ -1,20 +1,20 @@
 import geopandas as gpd
-import torch
 
 from datetime import datetime
 
 
 # TODO: update these to store and pull from zarr xarray
-class LatLotFromMeta():
+class LatLonFromMeta():
     meta_data = True
+    name = "location_coords"
     
     def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
         point = meta_data.iloc[idx].geometry.centroid
-        return torch.tensor([point.y, point.x], dtype=torch.float)
-
+        return [point.y, point.x]
 
 class YearDayFromMeta():
     meta_data = True
+    name = "temporal_coords"
     
     def __init__(self,
                  year_col: str,
@@ -31,11 +31,12 @@ class YearDayFromMeta():
     
     def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
         year = meta_data[self.year_col].iloc[idx]
-        return torch.tensor([(year, self.get_day_of_year(date, year)) for date in self.dates], dtype=torch.float)
+        return [(year, self.get_day_of_year(date, year)) for date in self.dates]
     
 
 class MultiYearDayFromMeta():
     meta_data = True
+    name = "temporal_coords"
     
     def __init__(self,
                  year_col: str,
@@ -56,4 +57,4 @@ class MultiYearDayFromMeta():
             day_of_year = date.timetuple().tm_yday
             yeardays.append((year, day_of_year))
 
-        return torch.tensor(yeardays, dtype=torch.float)
+        return yeardays

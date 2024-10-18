@@ -131,19 +131,15 @@ class PrithviGlobalBackbone(nn.Module):
                 if "decoder" in k:
                     del v
             _ = self.model.load_state_dict(checkpoint, strict=False)
-            _ = self.model.load_state_dict(checkpoint, strict=False)
         if reshape:
             self.reshaper = PrithviReshape(self.view_size)
         else:
             self.reshaper = nn.Identity()
 
-    def forward(self,
-                chips: torch.Tensor,
-                temporal_coords: torch.Tensor,
-                location_coords: torch.Tensor):
-        latent, _, _ = self.model.forward_encoder(chips,
-                                                  temporal_coords,
-                                                  location_coords,
+    def forward(self, data):
+        latent, _, _ = self.model.forward_encoder(data["chip"],
+                                                  data["temporal_coords"],
+                                                  data["location_coords"],
                                                   mask_ratio=0.0)
         return self.reshaper(latent)
 

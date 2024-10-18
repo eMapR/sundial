@@ -1,8 +1,8 @@
 import geopandas as gpd
-import importlib
 import lightning as L
 import numpy as np
 import os
+import pandas as pd
 import re
 import torch
 import xarray as xr
@@ -10,9 +10,9 @@ import xarray as xr
 from datetime import datetime
 from rioxarray import open_rasterio
 from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import v2
 from typing import Literal, Optional
 
-from pipeline.utils import clip_xy_xarray
 from pipeline.settings import (
     load_yaml,
     CHIP_DATA_PATH,
@@ -24,8 +24,9 @@ from pipeline.settings import (
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
 )
+from pipeline.utils import clip_xy_xarray
 from settings import DATALOADER_CONFIG
-
+from utils import dynamic_import
 
 class GenericChipsDataset(Dataset):
     def __init__(self,
@@ -35,10 +36,10 @@ class GenericChipsDataset(Dataset):
                  sample_path: str,
                  chip_data_path: str,
                  anno_data_path: str | None,
-                 split_tif: int | None = None,
+                 split_tif: int | None,
                  extension_config: Optional[dict] = {},
-                 transform_config: Optional[dict] = {},
-                 preprocess_config: Optional[dict] = {},
+                 dynamic_transform_config: Optional[dict] = {},
+                 static_transform_config: Optional[dict] = {},
                  **kwargs):
         super().__init__()
         self.chip_size = chip_size
@@ -49,8 +50,8 @@ class GenericChipsDataset(Dataset):
         self.anno_data_path = anno_data_path
         self.split_tif = split_tif
         self.extension_config = extension_config
-        self.transform_config = transform_config
-        self.preprocess_config = preprocess_config
+        self.dynamic_transform_config = dynamic_transform_config
+        self.static_transform_config = static_transform_config
 
         sample_type = os.path.splitext(self.sample_path)
         match sample_type[-1]:
@@ -65,152 +66,126 @@ class GenericChipsDataset(Dataset):
 
         self._init_loaders()
         self._init_extensions()
-        self._init_preprocessors()
-        self._init_transformers()
+        self._init_static_transforms()
+        self._init_dynamic_transforms()
 
-    def __getitem__(self, idx):
-        # loading image idx
-        sample_idx = idx // self.num_transforms
-        transform_idx = idx % self.num_transforms
+    def __getitem__(self, indx):
+        # loading image indx
+        data = {}
+        seed = int(datetime.now().timestamp())
+        sample_indx = indx // len(self.dynamic_transforms)
+        transform_indx = indx % len(self.dynamic_transforms)
+        
         if not isinstance(self.samples, list) and len(self.samples.shape) == 2:
-            img_name, time_idx = self.samples[sample_idx]
-            slicer = slice(time_idx, time_idx + self.time_step)
+            img_name, time_indx = self.samples[sample_indx]
+            slicer = slice(time_indx, time_indx + self.time_step)
         else:
-            img_name = self.samples[sample_idx]
+            img_name = self.samples[sample_indx]
             slicer = slice(-self.time_step, None) if self.time_step else None
         
         # parsing img name for index
         if isinstance(img_name, str):
-            img_idx = int(re.search(r'.*(\d+).*', img_name).group(1))
+            img_indx = int(re.search(r'.*(\d+).*', img_name).group(1))
         else:
-            img_idx = img_name
+            img_indx = img_name
 
         # loading chip and slicing time if necessary
         chip = self.chip_loader(img_name)
         if slicer is not None:
             chip = chip[:, slicer, :, :]
-
-        # preprocessing chip if specified
-        if self.chip_preprocessor:
-            chip = self.chip_preprocessor(chip)
-
-        # transforming chip if specified
-        if self.transformers:
-            seed = datetime.now().timestamp()
-            torch.manual_seed(seed)
-            transform = self.transformers[transform_idx]["transform"]
-            apply_to_anno = self.transformers[transform_idx]["apply_to_anno"]
-            chip = transform(chip)
-
+        with torch.no_grad():
+            if self.chip_static_transforms is not None:
+                chip = self.chip_static_transforms(chip)
+            if not self.dynamic_transforms.empty:
+                dynamic_transform = self.dynamic_transforms.iloc[transform_indx]["transform"]
+                image_only = self.dynamic_transforms.iloc[transform_indx]["image_only"]
+                torch.manual_seed(seed)
+                chip = dynamic_transform(chip)
+        data["chip"] = chip
+        
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
             anno = self.anno_loader(img_name)
-            # preprocessing chip if specified
-            if self.anno_preprocessor:
-                anno = self.anno_preprocessor(anno)
-            if self.transformers and apply_to_anno:
-                torch.manual_seed(seed)
-                anno = transform(anno)
+            with torch.no_grad(): # see https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+                if self.anno_static_transforms is not None:
+                    anno = self.anno_static_transforms(anno)
+                if not self.dynamic_transforms.empty and not image_only:
+                    torch.manual_seed(seed)
+                    anno = dynamic_transform(anno)
         else:
             anno = torch.empty(0)
-        ret = (chip, anno, idx)
-        if self.extensions:
-            for ext in self.extensions:
-                if ext.meta_data:
-                    ret += (ext.get_item(img_idx, self.meta_data),)
-                else:
-                    ret += (ext.get_item(img_idx),)
-        return ret
+        data["anno"] = anno
+        
+        for ext in self.extensions:
+            if ext.meta_data:
+                ext_val = ext.get_item(img_indx, self.meta_data)
+            else:
+                ext_val = ext.get_item(img_indx)
+            data[ext.name] = torch.tensor(ext_val, dtype=torch.float)
+        
+        data["indx"] = indx 
+
+        return data
 
     def __len__(self):
-        return len(self.samples) * self.num_transforms
+        return len(self.samples) * len(self.dynamic_transforms)
 
     def _init_loaders(self):
         match self.file_type:
             case "zarr":
                 self.chips = xr.open_zarr(self.chip_data_path)
-                self.chip_loader = lambda name: self._zarr_loader(
-                    self.chips, name)
+                self.chip_loader = lambda name: self._zarr_loader(self.chips, name)
                 if self.anno_data_path is not None:
                     self.annos = xr.open_zarr(self.anno_data_path)
-                    self.anno_loader = lambda name: self._zarr_loader(
-                        self.annos, name)
+                    self.anno_loader = lambda name: self._zarr_loader(self.annos, name)
             case "tif":
-                self.chip_loader = lambda name: \
-                    self._tif_loader(self.chip_data_path, name, self.split_tif)
+                self.chip_loader = lambda name: self._tif_loader(self.chip_data_path, name, self.split_tif)
                 if self.anno_data_path is not None:
-                    self.anno_loader = lambda name: \
-                        self._tif_loader(self.anno_data_path, name, None)
+                    self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
-        chip = xarr[str(name)]
+        chip = xarr[str(name)].copy(deep=True) # deep copy due to python copy on write (a with statement may work)
         if self.chip_size < max(chip["x"].size, chip["y"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
-            
-        return torch.tensor(chip.to_numpy(), dtype=torch.float)
+        chip = torch.tensor(chip.values, dtype=torch.float)
+        return chip
 
     def _tif_loader(self, data_path: str, name: int, split_tif: int | None):
         image_path = os.path.join(data_path, f"{name}.tif")
         with open_rasterio(image_path) as chip:
             if self.chip_size < max(chip["x"].size, chip["y"].size):
                 chip = clip_xy_xarray(chip, self.chip_size)
-            
-            chip = torch.tensor(chip.to_numpy(), dtype=torch.float)
+                
+            chip = torch.tensor(chip.values.copy(), dtype=torch.float)
             if split_tif:
                 chip = chip.reshape(-1, self.split_tif, chip.shape[-2], chip.shape[-1])
-            
+
             return chip
+
+    def _init_dynamic_transforms(self):
+        transform_list = []
+        if self.dynamic_transform_config.get("include_original", True):
+            transform_list.append({"transform": torch.nn.Identity(), "image_only": False})
+
+        for t in self.dynamic_transform_config.get("transforms", []):
+            transform_list.append({"transform": dynamic_import(t).forward, "image_only": t.get("image_only", True)})
+
+        self.dynamic_transforms = pd.DataFrame(transform_list)
         
-    def _npy_loader(self, data_path: str, name: int):
-        pass
+    def _init_static_transforms(self):
+        chip_transforms = []
+        anno_transforms = []
 
-    def _init_transformers(self):
-        self.transformers = []
-
-        if self.transform_config.get("include_original"):
-            self.transformers.append({
-                "transform": torch.nn.Identity(),
-                "apply_to_anno": True
-            })
-
-        for transform in self.transform_config.get("transforms", []):
-            transformer = self._dynamic_transform_import(transform)
-            self.transformers.append({
-                "transform": transformer,
-                "apply_to_anno": transform.get("apply_to_anno", False)
-            })
-
-        composition = self.transform_config.get("composition", {})
-        composition_path = composition.get("class_path")
-        match composition_path:
-            case None:
-                pass
-            case _:
-                module_path, class_name = composition_path.rsplit(".", 1)
-                composition_cls = getattr(
-                    importlib.import_module(module_path), class_name)
-                self.transformers = [{
-                    "transform": composition_cls(*self.transformers),
-                    "apply_to_anno": all([t["apply_to_anno"] for t in self.transformers])
-                }]
-
-        num_transforms = len(self.transformers)
-        self.num_transforms = 1 if num_transforms == 0 else num_transforms
-
-    def _init_preprocessors(self):
-        chip = []
-        anno = []
-
-        for preprocess in self.preprocess_config.get("preprocesses", []):
-            preprocessor = self._dynamic_transform_import(preprocess)
-            targets = preprocess.get("targets", [])
+        for transform in self.static_transform_config.get("transforms", []):
+            transform_obj = dynamic_import(transform)
+            targets = transform.get("targets", [])
             if "chip" in targets:
-                chip.append(preprocessor)
+                chip_transforms.append(transform_obj)
             if "anno" in targets:
-                anno.append(preprocessor)
+                anno_transforms.append(transform_obj)
 
-        self.chip_preprocessor = torch.nn.Sequential(*chip) if chip else None
-        self.anno_preprocessor = torch.nn.Sequential(*anno) if anno else None
+        self.chip_static_transforms = v2.Compose(chip_transforms) if chip_transforms else None
+        self.anno_static_transforms = v2.Compose(anno_transforms) if anno_transforms else None
         
     def _init_extensions(self):
         if self.extension_config.get("load_meta_data"):
@@ -218,32 +193,7 @@ class GenericChipsDataset(Dataset):
         extensions = self.extension_config.get("extensions")
         self.extensions = []
         for extension in extensions:
-            self.extensions.append(self._dynamic_extension_import(extension))
-
-    def _dynamic_transform_import(self, transform: dict):
-        class_path = transform.get("class_path")
-        transform_path = class_path.rsplit(".", 1)
-        match len(transform_path):
-            case 1:
-                transform_cls = getattr(
-                    importlib.import_module("transforms"), class_path)
-                return transform_cls(
-                    **transform.get("init_args", {}))
-            case 2:
-                module_path, class_name = transform_path
-                transform_cls = getattr(
-                    importlib.import_module(module_path), class_name)
-                return transform_cls(
-                    **transform.get("init_args", {}))
-                
-    def _dynamic_extension_import(self, loader: dict):
-        class_path = loader.get("class_path")
-        loader_path = class_path.rsplit(".", 1)
-        module_path, class_name = loader_path
-        loader_cls = getattr(
-            importlib.import_module(module_path), class_name)
-        return loader_cls(
-            **loader.get("init_args", {}))
+            self.extensions.append(dynamic_import(extension))
 
 
 class GenericChipsDataModule(L.LightningDataModule):
@@ -256,8 +206,8 @@ class GenericChipsDataModule(L.LightningDataModule):
             file_type: str = DATALOADER_CONFIG["file_type"],
             split_tif: int | None = DATALOADER_CONFIG["split_tif"],
             extension_config: dict = DATALOADER_CONFIG["extension_config"],
-            preprocess_config: dict = DATALOADER_CONFIG["preprocess_config"],
-            transform_config: dict = DATALOADER_CONFIG["transform_config"],
+            static_transform_config: dict = DATALOADER_CONFIG["static_transform_config"],
+            dynamic_transform_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
             train_sample_path: str = TRAIN_SAMPLE_PATH,
             validate_sample_path: str = VALIDATE_SAMPLE_PATH,
             test_sample_path: str = TEST_SAMPLE_PATH,
@@ -274,8 +224,8 @@ class GenericChipsDataModule(L.LightningDataModule):
         self.file_type = file_type
         self.split_tif = split_tif
         self.extension_config = extension_config
-        self.preprocess_config = preprocess_config
-        self.transform_config = transform_config
+        self.static_transform_config = static_transform_config
+        self.dynamic_transform_config = dynamic_transform_config
         self.train_sample_path = train_sample_path
         self.validate_sample_path = validate_sample_path
         self.test_sample_path = test_sample_path
@@ -287,16 +237,17 @@ class GenericChipsDataModule(L.LightningDataModule):
         # loading means and stds from stat_data_path
         if stat_data_path and os.path.exists(self.stat_data_path):
             stats = load_yaml(self.stat_data_path)
-            if not self.preprocess_config.get("preprocesses"):
-                self.preprocess_config = {"preprocesses": []}
+            if not self.static_transform_config.get("transforms"):
+                self.static_transform_config = {"transforms": []}
             means = stats.get("chip_means")
             stds = stats.get("chip_stds")
-            self.preprocess_config["preprocesses"].insert(0, {
-                "class_path": "GeoNormalization",
+            self.static_transform_config["transforms"].insert(0, {
+                "class_path": "transforms.GeoNormalization",
                 "init_args": {
                     "means": means,
                     "stds": stds
                 },
+                "methods": ["all"],
                 "targets": ["chip"]
             })
         else:
@@ -309,7 +260,6 @@ class GenericChipsDataModule(L.LightningDataModule):
             "file_type": self.file_type,
             "split_tif": self.split_tif,
             "extension_config": self.extension_config,
-            "preprocess_config": self.preprocess_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
         } | kwargs
@@ -319,39 +269,50 @@ class GenericChipsDataModule(L.LightningDataModule):
             "num_workers": self.num_workers,
             "pin_memory": True,
             "drop_last": False,
-            "prefetch_factor": 2,
-            "persistent_workers": True
         }
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
+        transforms = self.static_transform_config.get("transforms", [])
         match stage:
             case "fit":
+                train_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "train"])}
                 self.training_ds = GenericChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.train_sample_path,
-                        "transform_config": self.transform_config
+                        "static_transform_config": train_static_transform_config,
+                        "dynamic_transform_config": self.dynamic_transform_config,
                     })
 
-                validate_preprocess_config = {
-                    "preprocesses": [t for t in self.preprocess_config.get("preprocesses", []) if t.get("validate", True)],
-                }
-
+                validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
                 self.validate_ds = GenericChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.validate_sample_path,
-                        "preprocess_config": validate_preprocess_config})
+                        "static_transform_config": validate_static_transform_config,
+                    })
 
             case "validate":
+                validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
                 self.validate_ds = GenericChipsDataset(
-                    **self.dataset_config | {"sample_path": self.validate_sample_path})
+                    **self.dataset_config | {
+                        "sample_path": self.validate_sample_path,
+                        "static_transform_config": validate_static_transform_config
+                    })
 
             case "test":
+                test_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "test"])}
                 self.test_ds = GenericChipsDataset(
-                    **self.dataset_config | {"sample_path": self.test_sample_path})
+                    **self.dataset_config | {
+                        "sample_path": self.test_sample_path,
+                        "static_transform_config": test_static_transform_config
+                    })
 
             case "predict":
+                predict_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "predict"])}
                 self.predict_ds = GenericChipsDataset(
-                    **self.dataset_config | {"sample_path": self.predict_sample_path, "anno_data_path": None})
+                    **self.dataset_config | {
+                        "sample_path": self.predict_sample_path,
+                        "static_transform_config": predict_static_transform_config,
+                        "anno_data_path": None})
 
     def train_dataloader(self):
         return DataLoader(
@@ -368,3 +329,7 @@ class GenericChipsDataModule(L.LightningDataModule):
     def predict_dataloader(self):
         return DataLoader(
             **self.dataloader_config | {"dataset": self.predict_ds})
+        
+    def _filter_configs(self, configs, label, filters):
+        return [c for c in configs if (set(filters) & set(c.get(label, ["all"])))]
+                    

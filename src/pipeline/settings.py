@@ -130,11 +130,8 @@ SAMPLER_CONFIG = {
         "sources": None
     },
 
-    # train test split settings
-    # (float | None) ratio of validate samples from total samples
-    "validate_ratio": 2e-1,
-    # (float | None) ratio of test samples from validate samples
-    "test_ratio": 2e-1,
+    # Tuple(float) | None ratio of validate, test samples from total samples
+    "split_ratios": (2e-1, 2e-2),
 
     # image and downloadng settings
     # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE

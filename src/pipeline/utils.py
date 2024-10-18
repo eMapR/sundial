@@ -77,27 +77,35 @@ def zarr_reshape(
     new_attrs = attributes | {"point": point_name, "square": square_name}
     xarr.attrs.update(**new_attrs)
 
-    # padding the xarray to the edge size to maintain consistent image size in zarr
-    if pixel_edge_size > min(xarr["x"].size,  xarr["y"].size):
-        xarr = pad_xy_xarray(xarr, pixel_edge_size)
-    if pixel_edge_size < max(xarr["x"].size,  xarr["y"].size):
-        xarr = clip_xy_xarray(xarr, pixel_edge_size)
-
     return xarr.chunk(chunks={DATETIME_LABEL: 1})
 
 
-def clip_xy_xarray(xarr: xr.DataArray,
-                   pixel_edge_size: int) -> xr.DataArray:
+def clip_xy_xarray(xarr: xr.DataArray, 
+                   pixel_edge_size: int, 
+                   buffer_size: int,
+                   random_seed: int | None) -> xr.DataArray:
+    if buffer_size > 0:
+        clip_xy_xarray(xarr, buffer_size*2, 0, None)
+        
     x_diff = xarr["x"].size - pixel_edge_size
     y_diff = xarr["y"].size - pixel_edge_size
 
-    x_start = x_diff // 2 if x_diff > 0 else 0
-    x_end = x_diff - x_start if x_diff > 0 else 0
+    if random_seed is None:
+        x_start = x_diff // 2 
+        x_end = xarr["x"].size - (x_diff - x_start)
 
-    y_start = y_diff // 2 if y_diff > 0 else 0
-    y_end = y_diff - y_start if y_diff > 0 else 0
+        y_start = y_diff // 2
+        y_end = xarr["y"].size - (y_diff - y_start)
+    else:
+        np.random.seed(random_seed)
 
-    return xarr.sel(x=slice(x_start, xarr["x"].size-x_end), y=slice(y_start, xarr["y"].size-y_end))
+        x_start = np.random.randint(0, x_diff + 1)
+        y_start = np.random.randint(0, y_diff + 1)
+
+        x_end = xarr["x"].size - (x_diff - x_start)
+        y_end = xarr["y"].size - (y_diff - y_start)
+
+    return xarr.sel(x=slice(x_start, x_end), y=slice(y_start, y_end))
 
 
 def pad_xy_xarray(
@@ -106,11 +114,11 @@ def pad_xy_xarray(
     x_diff = pixel_edge_size - xarr["x"].size
     y_diff = pixel_edge_size - xarr["y"].size
 
-    x_start = x_diff // 2 if x_diff > 0 else 0
-    x_end = x_diff - x_start if x_diff > 0 else 0
+    x_start = x_diff // 2
+    x_end = x_diff - x_start
 
-    y_start = y_diff // 2 if y_diff > 0 else 0
-    y_end = y_diff - y_start if y_diff > 0 else 0
+    y_start = y_diff // 2
+    y_end = y_diff - y_start
 
     xarr = xarr.pad(
         x=(x_start, x_end),

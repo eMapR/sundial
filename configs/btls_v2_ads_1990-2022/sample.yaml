@@ -1,0 +1,21 @@
+file_type: ZARR
+gee_workers: 42
+gee_stratafied_config: null
+groupby_columns: ["year"]
+io_limit: 32
+look_range: 4
+method: centroid
+num_points: 16384
+num_workers: 64
+overwrite: false
+pixel_edge_size: 256
+postprocess_actions: []
+preprocess_actions:
+    - column: dca_cat
+      action: "=="
+      targets: "bark beetles"
+projection: EPSG:5070
+generate_time_combinations: false
+scale: 30
+strata_columns: ['dca_cat']
+split_ratios: [.2, .02]

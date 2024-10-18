@@ -179,9 +179,9 @@ class BCEWithLogitsLoss(nn.BCEWithLogitsLoss):
                  pos_weight: list[float] | None = None,
                  device: torch.device | None = None):
         if weight is not None:
-            weight = torch.tensor(weight, device=device)
+            weight = torch.tensor(weight, device=device, dtype=torch.float)
         if pos_weight is not None:
-            pos_weight = torch.tensor(pos_weight, device=device)
+            pos_weight = torch.tensor(pos_weight, device=device, dtype=torch.float)
         super().__init__(weight=weight,
                          size_average=size_average,
                          reduce=reduce,
@@ -199,7 +199,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                  label_epsiloning: float = 0,
                  device: torch.device | None = None):
         if weight is not None:
-            weight = torch.tensor(weight, device=device)
+            weight = torch.tensor(weight, device=device, dtype=torch.float)
         super().__init__(weight=weight,
                          size_average=size_average,
                          ignore_index=ignore_index,

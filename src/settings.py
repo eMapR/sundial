@@ -27,8 +27,8 @@ DATALOADER_CONFIG = {
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
     "split_tif": None,
     "extension_config": {"extensions": []},
-    "preprocess_config": {"preprocesses": []},
-    "transform_config": {"transforms": []},
+    "static_transform_config": {"transforms": []},
+    "dynamic_transform_config": {"transforms": []},
 }
 
 # default lightning model checkpoint save settings

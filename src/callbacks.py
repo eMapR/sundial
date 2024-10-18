@@ -47,7 +47,6 @@ class DrawPrithviONNXCallback(L.Callback):
         c = pl_module.prithvi_params["model_args"]["in_chans"]
         h = pl_module.prithvi_params["model_args"]["img_size"]
         example_input = torch.randn((1, c, d, h, h),
-                                    dtype=torch.float,
                                     device=pl_module.device)
         pl_module.to_onnx(LOG_PATH, example_input)
 
@@ -181,7 +180,7 @@ class LogTrainBinaryExtCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
-        annotations = batch[1]
+        annotations = batch["anno"]
         output = outputs["output"]
 
         metrics = {
@@ -208,8 +207,7 @@ class LogTrainMulticlassExtCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
-        annotations = batch[1]
-
+        annotations = batch["anno"]
         output = outputs["output"]
         preds = torch.argmax(output, dim=1)
         target = torch.argmax(annotations, dim=1)
@@ -238,8 +236,7 @@ class LogTrainRegressionExtCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
-        annotations = batch[1]
-
+        annotations = batch["anno"]
         output = outputs["output"]
         preds = torch.argmax(output, dim=1)
         target = torch.argmax(annotations, dim=1)
@@ -265,16 +262,15 @@ class LogTestCallback(L.Callback):
                           batch: Tuple[torch.Tensor],
                           batch_idx: int,
                           dataloader_idx: int = 0):
-        chips = batch[0]
-        annotations = batch[1]
-        indices = batch[2]
-        
+        chips = batch["chip"]
+        annotations = batch["anno"]
+        indices = batch["indx"]
         loss = outputs["loss"]
         output = outputs["output"]
 
         pl_module.log(
             name="test_loss",
-            value=loss,
+            value=loss.detach(),
             logger=True,
             prog_bar=False,
         )
@@ -329,10 +325,9 @@ class SaveTestCallback(L.Callback):
                           batch: torch.Tensor,
                           batch_idx: int,
                           dataloader_idx: int = 0):
-        chips = batch[0]
-        annotations = batch[1]
-        indices = batch[2]
-        
+        chips = batch["chip"]
+        annotations = batch["anno"]
+        indices = batch["indx"]
         output = outputs["output"]
 
         # unnormalize chips for loggings
@@ -371,9 +366,9 @@ class SaveTestCallback(L.Callback):
                              batch: Tuple[torch.Tensor],
                              batch_idx: int,
                              dataloader_idx: int = 0):
-        indices = batch[2]
-
+        indices = batch["indx"]
         output = outputs["output"]
+
         for i in range(output.shape[0]):
             index = indices[i]
             pred = output[i]
@@ -404,72 +399,3 @@ class PackageCallback(L.Callback):
                        trainer: L.Trainer,
                        pl_module: L.LightningModule):
         self.tensor_tif_upload(pl_module)
-
-
-class LogSaveCDiffCallback(L.Callback):
-    def on_test_batch_end(self,
-                             trainer: L.Trainer,
-                             pl_module: L.LightningModule,
-                             outputs: torch.Tensor,
-                             batch: Tuple[torch.Tensor],
-                             batch_idx: int,
-                             dataloader_idx: int = 0):
-        chips = batch[0]
-        indices = batch[2]
-
-        latents = outputs["latent"]
-        rmses = outputs["rmse"]
-
-        # unnormalize chips for loggings
-        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
-            means = torch.tensor(
-                trainer.test_dataloaders.dataset.means,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            stds = torch.tensor(
-                trainer.test_dataloaders.dataset.stds,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            chips = chips * stds + means
-
-        df = pd.DataFrame([{"bidx": i, "idx": int(indices[i])} for i in range(chips.shape[0])])
-        pl_module.logger.experiment.log_table(filename="idx.csv", tabular_data=df, headers=True)
-        
-        log_tsne_plot(latents.view(latents.shape[0], -1), f"tsne_" + EXPERIMENT_FULL_NAME, pl_module.logger.experiment, figsize=(32,24))
-        for i in range(chips.shape[0]):
-            index = indices[i]
-            chip = chips[i]
-            latent = latents[i]
-            rmse = rmses[i]
-
-            # log and save rgb and ir bands separately
-            log_rbg_ir_image(chip, index, pl_module.logger.experiment)
-            # save_rgb_ir_tensor(chip, index, PREDICTION_PATH)
-            
-            # plot tsne
-            new_dim0 = latent.shape[-2] * latent.shape[-1]
-            reshaped_latent = latent.view(-1, new_dim0).transpose(0, 1)
-            log_tsne_plot(reshaped_latent, f"{index:07d}_tsne_" + EXPERIMENT_FULL_NAME, pl_module.logger.experiment, figsize=(8,6))
-            
-            # log and save latent representation
-            flatten_latent = torch.mean(latent, dim=0, keepdim=True)
-            pl_module.logger.experiment.log_image(
-                image_data=torch.nn.functional.interpolate(flatten_latent.unsqueeze(0), size=(256, 256), mode='nearest').squeeze(0).detach().cpu(),
-                name=f"{index:07d}_latent",
-                image_minmax=(0, 1),
-                image_scale=2
-            )
-
-            # save latent representation
-            # path = os.path.join(PREDICTION_PATH, f"{index:07d}_latent.pt")
-            # torch.save(latent, path)
-
-            # log and save rmse
-            pl_module.logger.experiment.log_image(
-                image_data=torch.nn.functional.interpolate(rmse.unsqueeze(0), size=(256, 256), mode='nearest').squeeze(0).detach().cpu(),
-                name=f"{index:07d}_rmse",
-                image_minmax=(0, 1),
-                image_scale=2
-            )
-            # path = os.path.join(PREDICTION_PATH, f"{index:07d}_rmse.pt")
-            # torch.save(rmse, path)

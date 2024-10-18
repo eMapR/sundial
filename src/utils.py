@@ -1,6 +1,7 @@
 import cupy as cp
 import geopandas as gpd
 import glob
+import importlib
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 import numpy as np
@@ -15,6 +16,18 @@ from sklearn.manifold import TSNE
 from typing import Any, Optional
 
 from pipeline.utils import function_timer
+
+
+
+def dynamic_import(loader: dict):
+    class_path = loader.get("class_path")
+    init_args = loader.get("init_args", {})
+    
+    loader_path = class_path.rsplit(".", 1)
+    module_path, class_name = loader_path
+    loader_cls = getattr(importlib.import_module(module_path), class_name)
+    
+    return loader_cls(**init_args)
 
 
 def distance_transform(targets: torch.tensor):

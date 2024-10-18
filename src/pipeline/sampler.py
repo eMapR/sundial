@@ -418,16 +418,11 @@ def annotator(population_gdf: gpd.GeoDataFrame,
                 raise e
             annotation = xr.DataArray(annotation, dims=["y", "x"])
 
-            # clipping or padding to pixel_edge_size
-            if pixel_edge_size > min(annotation["x"].size,  annotation["y"].size):
-                annotation = pad_xy_xarray(annotation, pixel_edge_size)
-            if pixel_edge_size < max(annotation["x"].size,  annotation["y"].size):
-                annotation = clip_xy_xarray(annotation, pixel_edge_size)
             xarr_anno_list.append(annotation)
         xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_LABEL)
 
         # writing in batches to avoid io bottleneck
-        LOGGER.info(f"Appending rasterized sample {index} to batch...")
+        LOGGER.info(f"Appending rasterized sample {index} of shape {xarr_anno.shape} to batch...")
         xarr_anno.name = str(index)
         batch.append(xarr_anno)
         if len(batch) == io_limit:

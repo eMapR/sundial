@@ -1,62 +1,48 @@
+import torch
 import lightning as L
+from torch import nn
 
 
 class SundialPLBase(L.LightningModule):
-    def forward(self, chips):
-        embeddings = self.backbone(*chips)
-        logits = self.head(embeddings)
-
-        return logits
+    def forward(self, batch):
+        features = self.backbone(batch)
+        return self.head(features)
 
     def training_step(self, batch):
-        chips = batch[0:1]
-        annotations = batch[1]
+        data = {k:v for k,v in batch.items() if k != "anno"}
+        anno = batch["anno"]
         
-        if len(batch) > 3:
-            chips += batch[3:]
-        
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
+        logits = self(data)
+        loss = self.criterion(logits, anno)
 
         return {"loss": loss}
 
     def validation_step(self, batch):
-        chips = batch[0:1]
-        annotations = batch[1]
+        data = {k:v for k,v in batch.items() if k != "anno"}
+        anno = batch["anno"]
         
-        if len(batch) > 3:
-            chips += batch[3:]
+        logits = self(data)
+        loss = self.criterion(logits, anno)
         
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        # reactivating logits for metric logging
         output = self.activation(logits)
-
-        return {"loss": loss, "output": output}
+        
+        return {"loss": loss, "output": output.detach()}
 
     def test_step(self, batch):
-        chips = batch[0:1]
-        annotations = batch[1]
+        data = {k:v for k,v in batch.items() if k != "anno"}
+        anno = batch["anno"]
         
-        if len(batch) > 3:
-            chips += batch[3:]
+        logits = self(data)
+        loss = self.criterion(logits, anno)
         
-        logits = self(chips)
-        loss = self.criterion(logits, annotations)
-
-        # reactivating logits for metric logging
         output = self.activation(logits)
-
-        return {"loss": loss, "output": output}
+        
+        return {"loss": loss, "output": output.detach()}
 
     def predict_step(self, batch):
-        chips = batch[0:1]
+        data = {k:v for k,v in batch.items() if k != "anno"}
         
-        if len(batch) > 3:
-            chips += batch[3:]
-        
-        logits = self(chips)
+        logits = self(data)
         output = self.activation(logits)
 
-        return {"output": output}
+        return {"output": output.detach()}

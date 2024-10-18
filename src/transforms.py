@@ -10,13 +10,12 @@ class GeoNormalization(nn.Module):
                  means: list[float],
                  stds: list[float]):
         super().__init__()
-        self.means = torch.tensor(
-            means, dtype=torch.float).view(-1, 1, 1, 1)
-        self.stds = torch.tensor(
-            stds, dtype=torch.float).view(-1, 1, 1, 1)
+        self.means = torch.tensor(means, dtype=torch.float).view(-1, 1, 1, 1)
+        self.stds = torch.tensor(stds, dtype=torch.float).view(-1, 1, 1, 1)
 
     def forward(self, x):
-        return (x - self.means) / self.stds
+        x = (x - self.means) / self.stds
+        return x
 
 
 class FirstOrderDifference(nn.Module):
