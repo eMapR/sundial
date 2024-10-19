@@ -131,7 +131,7 @@ SAMPLER_CONFIG = {
     },
 
     # Tuple(float) | None ratio of validate, test samples from total samples
-    "split_ratios": (2e-1, 2e-2),
+    "split_ratios": [2e-1, 2e-2],
 
     # image and downloadng settings
     # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE
@@ -149,7 +149,7 @@ SAMPLER_CONFIG = {
     # (str) function in pipeline/utils to parse metadata
     "meta_data_parser": "parse_meta_data",
     # (str) function in pipeline/utils to generate expression in google earth engine
-    "image_expr_generator": "lt_medoid_image_generator",
+    "image_expr_factory": "lt_medoid_image_factory",
     # (str) function in pipeline/utils to reshape resulting download from GEE
     "image_reshaper": "zarr_reshape",
 

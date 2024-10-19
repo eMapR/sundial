@@ -27,7 +27,7 @@ class Downloader:
         chip_data_path (str): The path to save the image data to.
         meta_data_path (str): The path to the meta data file with coordinates.
         meta_data_parser (callable): A callable to parse the meta data file.
-        image_expr_generator (callable): A callable to generate the image expression.
+        image_expr_factory (callable): A callable to generate the image expression.
         image_reshaper (callable): A callable to reshape the image data.
 
         num_workers (int): The number of workers to use for the parallel download process.
@@ -49,7 +49,7 @@ class Downloader:
             chip_data_path: str,
             meta_data: gpd.GeoDataFrame,
             meta_data_parser: callable,
-            image_expr_generator: callable,
+            image_expr_factory: callable,
             image_reshaper: callable,
 
             num_workers: int,
@@ -70,7 +70,7 @@ class Downloader:
         self._chip_data_path = chip_data_path
         self._meta_data = meta_data
         self._meta_data_parser = meta_data_parser
-        self._image_expr_generator = image_expr_generator
+        self._image_expr_factory = image_expr_factory
         self._image_reshaper = image_reshaper
 
         self._num_workers = num_workers
@@ -219,7 +219,7 @@ class Downloader:
                 # creating payload for each square to send to GEE
                 report_queue.put(
                     ("INFO", f"Creating image payload for square {index}... {square_coords}"))
-                image = self._image_expr_generator(
+                image = self._image_expr_factory(
                     square_coords,
                     start_date,
                     end_date,
