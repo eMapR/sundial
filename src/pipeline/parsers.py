@@ -24,7 +24,7 @@ def parse_meta_data(
                                datetime | None,
                                dict]:
     square = meta_data.iloc[index].loc["geometry"]
-    square_coords = list(square.exterior.coords)
+    square_coords = list(square.boundary.coords)
     point_coords = list(square.centroid.coords)
 
     # generating start and end date from datetime attribute and back step

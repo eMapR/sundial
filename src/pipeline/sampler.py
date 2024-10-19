@@ -336,7 +336,8 @@ def generate_squares(
         case "centroid":
             gdf = generate_centroid_squares(
                 geo_dataframe,
-                meter_edge_size)
+                meter_edge_size
+            )
         case _:
             raise ValueError(f"Invalid method: {method}")
 
@@ -515,12 +516,12 @@ def sample():
             geo_dataframe = stratified_sample(**group_config)
 
         LOGGER.info("Generating square polygons...")
-         # subtracting 1 from meter edge to account for the extra pixel in the envelope polygon
+        #  subtracting 1 from meter edge to account for the extra pixel in the envelope polygon
          # TODO: see pipeline.utils.lt_medoid_image_generator
         square_config = {
             "geo_dataframe": geo_dataframe,
             "method": SAMPLER_CONFIG["method"],
-            "meter_edge_size": SAMPLER_CONFIG["scale"] * (SAMPLER_CONFIG["pixel_edge_size"] - 1),    
+            "meter_edge_size": SAMPLER_CONFIG["scale"] * (SAMPLER_CONFIG["pixel_edge_size"]),    
             "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
         }
         geo_dataframe = generate_squares(**square_config)

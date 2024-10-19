@@ -9,6 +9,7 @@ def lt_medoid_image_factory(
         square_coords: list[tuple[float, float]],
         start_date: datetime,
         end_date: datetime,
+        pixel_edge_size: int,
         scale: int,
         projection: str,
         mask_labels: list[str] = ["snow", "cloud", "shadow"]) -> ee.Image:
@@ -35,13 +36,13 @@ def lt_medoid_image_factory(
         .select(old_band_names, new_band_names)\
         .divide(10000)\
         .reproject(crs=projection, scale=scale)\
-        .clipToBoundsAndScale(geometry=square, scale=scale)
+        .clipToBoundsAndScale(geometry=square, maxDimension=pixel_edge_size)
 
     return image
 
 
 def lt_medoid_image_factory_forward(*args, **kwargs):
     """factory to increment end year by one"""
-    square_coords, start_date, end_date, scale, epsg_str = args
+    square_coords, start_date, end_date, pixel_edge_size, scale, epsg_str = args
     end_date = end_date.replace(year=end_date.year + 1)
-    return lt_medoid_image_factory(square_coords, start_date, end_date, scale, epsg_str)
+    return lt_medoid_image_factory(square_coords, start_date, end_date, pixel_edge_size, scale, epsg_str)

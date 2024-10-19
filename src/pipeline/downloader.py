@@ -223,6 +223,7 @@ class Downloader:
                     square_coords,
                     start_date,
                     end_date,
+                    self._pixel_edge_size,
                     self._scale,
                     epsg_str,
                     **self._generator_kwargs)
