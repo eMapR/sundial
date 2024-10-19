@@ -362,16 +362,14 @@ def generate_time_combinations(
 
 def rasterizer(polygons: gpd.GeoSeries,
                square: Polygon,
-               scale: int,
+               pixel_edge_size: int,
                fill: int | float,
                default_value: int | float):
-    cols = int((square.bounds[2] - square.bounds[0]) / scale)
-    rows = int((square.bounds[3] - square.bounds[1]) / scale)
 
-    transform = from_bounds(*square.bounds, rows, cols)
+    transform = from_bounds(*square.bounds, pixel_edge_size, pixel_edge_size)
     raster = rasterize(
         shapes=polygons,
-        out_shape=(rows, cols),
+        out_shape=(pixel_edge_size, pixel_edge_size),
         fill=fill,
         transform=transform,
         default_value=default_value)
@@ -414,7 +412,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
                     annotation = np.zeros((pixel_edge_size, pixel_edge_size))
                 else:
                     annotation = rasterizer(
-                        mp, square, scale, NO_DATA_VALUE, default_value)
+                        mp, square, pixel_edge_size, NO_DATA_VALUE, default_value)
             except Exception as e:
                 raise e
             annotation = xr.DataArray(annotation, dims=["y", "x"])
