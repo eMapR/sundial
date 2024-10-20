@@ -165,8 +165,6 @@ logs/
 samples/
 checkpoints/
 predictions/
-src/models/heads/unet
 src/models/backbones/prithvi
-src/models/backbones/clay
 *.tar.gz
 .vscode

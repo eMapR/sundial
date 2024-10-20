@@ -274,7 +274,7 @@ class Downloader:
                 chip = ee.data.computePixels(payload)
             except Exception as e:
                 report_queue.put(
-                    ("ERROR", f"Failed to download square: {type(e)} {e} {square_coords}"))
+                    ("ERROR", f"Failed to download square {index}: {type(e)} {e} {square_coords}"))
                 continue
 
             report_queue.put(
