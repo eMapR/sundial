@@ -47,13 +47,10 @@ from pipeline.settings import (
     VALIDATE_SAMPLE_PATH,
 )
 from .utils import (
-    clip_xy_xarray,
     function_timer,
     get_class_weights,
-    get_xarr_anno_mean_std,
-    get_xarr_chip_mean_std,
-    pad_xy_xarray,
-    test_non_zero_sum,
+    get_band_stats,
+    get_xarr_stats,
     train_validate_test_split
 )
 
@@ -603,30 +600,22 @@ def calculate():
             case "ZARR":
                 LOGGER.info(f"Verifying chip data...")
                 chip_data = xr.open_zarr(CHIP_DATA_PATH)
-
-                stat["chip_means"], stat["chip_stds"] = get_xarr_chip_mean_std(
-                    chip_data)
-                stat["chip_count"] = len(chip_data.variables)
-                stat["chip_verify"] = {
-                    i: s for i, s in test_non_zero_sum(chip_data, RANDOM_SEED)}
+                stat["chip_stats"] = get_xarr_stats(chip_data)
+                stat["chip_stats"] |= get_band_stats(chip_data)
 
                 if os.path.isdir(ANNO_DATA_PATH):
-                    LOGGER.info(f"Verify annotation data...")
+                    LOGGER.info(f"Verifying annotation data...")
                     anno_data = xr.open_zarr(ANNO_DATA_PATH)
 
-                    stat["anno_totals"], stat["anno_weights"] = get_class_weights(
-                        anno_data)
-                    stat["anno_means"], stat["anno_stds"] = get_xarr_anno_mean_std(
-                        anno_data)
-                    stat["anno_verify"] = {
-                        i: s for i, s in test_non_zero_sum(anno_data, RANDOM_SEED)}
+                    stat["anno_stats"] = get_xarr_stats(anno_data)
+                    stat["anno_stats"] |= get_class_weights(anno_data)
             case _:
                 raise ValueError(
                     f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
         update_yaml(stat, STAT_DATA_PATH)
     except Exception as e:
         LOGGER.critical(
-            f"Failed to calculate sample statistics: {type(e)} {e}")
+            f"Error in calculating sample statistics: {type(e)} {e}")
         raise e
 
 

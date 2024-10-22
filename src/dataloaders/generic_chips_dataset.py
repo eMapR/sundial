@@ -239,8 +239,8 @@ class GenericChipsDataModule(L.LightningDataModule):
             stats = load_yaml(self.stat_data_path)
             if not self.static_transform_config.get("transforms"):
                 self.static_transform_config = {"transforms": []}
-            means = stats.get("chip_means")
-            stds = stats.get("chip_stds")
+            means = stats.get("chip_stats")["band_stats"]
+            stds = stats.get("chip_stats")["band_stats"]
             self.static_transform_config["transforms"].insert(0, {
                 "class_path": "transforms.GeoNormalization",
                 "init_args": {

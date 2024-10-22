@@ -106,34 +106,49 @@ def train_validate_test_split(samples: Tuple[float],
     return train, val, test
 
 @function_timer
-def get_xarr_chip_mean_std(data: xr.Dataset) -> tuple[list[float], list[float]]:
-    data = data.to_dataarray()
-    means = data.mean(dim=["variable", DATETIME_LABEL, "y", "x"])
-    stds = data.std(dim=["variable", DATETIME_LABEL, "y", "x"])
-    return means.values.tolist(), stds.values.tolist()
+def get_chip_stats(data: xr.Dataset) -> dict:
+    sums = data.sum(dim=data.dims).to_array()
+    min_idx = sums.argmin().values
+    max_idx = sums.argmax().values
+
+    stats = {
+        "mean": float(sums.mean().values),
+        "std": float(sums.std().values),
+        "min": float(sums[min_idx].values),
+        "max": float(sums[max_idx].values),
+        "count": len(data.variables)
+    }
+
+    return stats
 
 
 @function_timer
-def get_xarr_anno_mean_std(data: xr.Dataset) -> tuple[list[float], list[float]]:
-    sums = data.sum(dim=["y", "x"]).to_dataarray()
-    means = sums.mean(dim="variable")
-    stds = sums.std(dim="variable")
-    return means.values.tolist(), stds.values.tolist()
+def get_xarr_stats(data: xr.Dataset) -> dict:
+    sums = data.sum(dim=data.dims).to_array()
+    min_idx = sums.argmin().values
+    max_idx = sums.argmax().values
 
+    stats = {
+        "mean": float(sums.mean().values),
+        "std": float(sums.std().values),
+        "min": float(sums[min_idx].values),
+        "max": float(sums[max_idx].values),
+        "count": len(data.variables)
+    }
+
+    return stats
 
 @function_timer
 def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     sums = data.sum(dim=["y", "x"])
     totals = sums.to_dataarray().sum(dim="variable")
     weights = totals.min() / totals
-    return totals.values.tolist(), weights.values.tolist()
+    return {"totals": totals.values.tolist(), "weights": weights.values.tolist()}, sums
 
 
 @function_timer
-def test_non_zero_sum(xarr: xr.Dataset,
-                      size: int) -> Generator[tuple[str, int], None, None]:
-    tests = np.random.choice(xarr.variables, size=size).tolist()
-    for test in tests:
-        sum = xarr[test].sum().values
-        assert sum > 0
-        yield test, int(sum)
+def get_band_stats(data: xr.Dataset) -> tuple[list[float], list[float]]:
+    data = data.to_dataarray()
+    means = data.mean(dim=["variable", DATETIME_LABEL, "y", "x"])
+    stds = data.std(dim=["variable", DATETIME_LABEL, "y", "x"])
+    return {"band_means": means.values.tolist(), "band_stds": stds.values.tolist()}

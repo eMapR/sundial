@@ -11,8 +11,8 @@ def save_yaml(config: dict, path: str | os.PathLike):
 
 def load_yaml(path: str | os.PathLike) -> dict:
     with open(path, "r") as f:
-        return yaml.safe_load(f)
-
+        config = yaml.safe_load(f)
+        return config if config else {}
 
 def update_yaml(config: dict, path: str | os.PathLike) -> dict:
     if os.path.exists(path):
