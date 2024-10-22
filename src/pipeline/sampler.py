@@ -600,6 +600,7 @@ def calculate():
             case "ZARR":
                 LOGGER.info(f"Verifying chip data...")
                 chip_data = xr.open_zarr(CHIP_DATA_PATH)
+                # TODO: fix redudant summing
                 stat["chip_stats"] = get_xarr_stats(chip_data)
                 stat["chip_stats"] |= get_band_stats(chip_data)
 
