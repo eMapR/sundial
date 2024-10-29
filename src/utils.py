@@ -173,14 +173,14 @@ def log_rbg_ir_image(chip: torch.Tensor, index: int, logger: Any):
         image = rgb[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_rgb_t-{times[t]}_chip",
+            name=f"{index:07d}_rgb_t-{times[t]}_chip.png",
             image_scale=2.0,
             image_minmax=(rgb_min, rgb_max)
         )
         image = ir[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_ir_t-{times[t]}_chip",
+            name=f"{index:07d}_ir_t-{times[t]}_chip.png",
             image_scale=2.0,
             image_minmax=(ir_min, ir_max)
         )

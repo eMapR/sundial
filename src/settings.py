@@ -26,6 +26,7 @@ DATALOADER_CONFIG = {
     "time_step": SAMPLER_CONFIG["time_step"],
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
     "split_tif": None,
+    "start_idx": None,
     "extension_config": {"extensions": []},
     "static_transform_config": {"transforms": []},
     "dynamic_transform_config": {"transforms": []},

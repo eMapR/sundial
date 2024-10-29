@@ -301,7 +301,7 @@ class LogTestCallback(L.Callback):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
-                    name=f"{index:07d}_c{c+1}_anno",
+                    name=f"{index:07d}_c{c+1}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -311,7 +311,7 @@ class LogTestCallback(L.Callback):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.to(torch.float32).detach().cpu(),
-                    name=f"{index:07d}_c{c+1}_pred",
+                    name=f"{index:07d}_c{c+1}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )

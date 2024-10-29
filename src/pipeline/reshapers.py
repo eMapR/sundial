@@ -12,23 +12,24 @@ def zarr_reshape(
         pixel_edge_size: int,
         square_name: str,
         point_name: str,
-        attributes: Optional[dict] = None) -> xr.DataArray:
+        attributes: Optional[dict] = {}) -> xr.DataArray:
 
-    # unflattening the array to shape (year, x, y, band)
+    # unflattening the array to shape (year, band, y, x)
+    # TODO: implement np structured_to_unstructured module
     years, bands = zip(*[b.split('_')
                        for b in arr.dtype.names if b != "overlap"])
     years = sorted(list(set(years)))
     bands = sorted(list(set(bands)))
     xr_list = [
         xr.DataArray(
-            np.dstack([arr[f"{y}_{b}"] for b in bands]),
-            dims=['y', 'x', "band"]
+            np.stack([arr[f"{y}_{b}"] for b in bands]),
+            dims=["band", 'y', 'x']
         ).astype(float)
         for y in years]
     xarr = xr.concat(xr_list, dim=DATETIME_LABEL)
     
     # transposing to match torch convention
-    xarr = xarr.transpose("band", DATETIME_LABEL, "x", "y")
+    xarr = xarr.transpose("band", DATETIME_LABEL, "y", "x")
 
     # adding strata data as attributes
     xarr.name = str(index)

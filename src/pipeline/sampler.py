@@ -297,6 +297,7 @@ def stratified_sample(
 def generate_centroid_squares(
         geo_dataframe: gpd.GeoDataFrame,
         meter_edge_size: int) -> gpd.GeoDataFrame:
+    geo_dataframe = geo_dataframe.reset_index()
     geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
         .apply(lambda p: p.centroid.buffer(meter_edge_size // 2).envelope)
     return geo_dataframe
@@ -511,8 +512,6 @@ def sample():
             geo_dataframe = stratified_sample(**group_config)
 
         LOGGER.info("Generating square polygons...")
-        #  subtracting 1 from meter edge to account for the extra pixel in the envelope polygon
-         # TODO: see pipeline.utils.lt_medoid_image_generator
         square_config = {
             "geo_dataframe": geo_dataframe,
             "method": SAMPLER_CONFIG["method"],

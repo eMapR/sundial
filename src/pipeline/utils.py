@@ -82,7 +82,7 @@ def function_timer(func):
     return timer
 
 
-def train_validate_test_split(samples: Tuple[float], 
+def train_validate_test_split(samples: np.array, 
                               ratios: list[int],
                               random_seed: float | int) -> np.array:
     assert len(ratios) == 2 or len(ratios) == 3, "Ratios must be a list or array of 2 ors 3 elements (val, test) or (train, val, test)"
@@ -92,9 +92,8 @@ def train_validate_test_split(samples: Tuple[float],
         ratios = (1 - sum(ratios),) + tuple(ratios)
 
     n_total = len(samples)
-    indices = np.arange(n_total)
-    np.random.seed(random_seed)
-    np.random.shuffle(indices)
+    rng = np.random.default_rng(random_seed)
+    rng.shuffle(samples)
 
     train_end = int(ratios[0] * n_total)
     val_end = train_end + int(ratios[1] * n_total)

@@ -22,6 +22,7 @@ def lt_medoid_image_factory(
         end_date=end_date,
         area_of_interest=square,
         mask_labels=mask_labels,
+        exclude={"slcOff": True}
     )
     size = 1 + end_date.year - start_date.year
 

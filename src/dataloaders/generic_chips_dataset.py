@@ -37,6 +37,7 @@ class GenericChipsDataset(Dataset):
                  chip_data_path: str,
                  anno_data_path: str | None,
                  split_tif: int | None,
+                 start_idx: int | None,
                  extension_config: Optional[dict] = {},
                  dynamic_transform_config: Optional[dict] = {},
                  static_transform_config: Optional[dict] = {},
@@ -49,6 +50,7 @@ class GenericChipsDataset(Dataset):
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
         self.split_tif = split_tif
+        self.start_idx = start_idx
         self.extension_config = extension_config
         self.dynamic_transform_config = dynamic_transform_config
         self.static_transform_config = static_transform_config
@@ -88,11 +90,15 @@ class GenericChipsDataset(Dataset):
             img_indx = int(re.search(r'.*(\d+).*', img_name).group(1))
         else:
             img_indx = img_name
+        data["indx"] = img_indx 
 
         # loading chip and slicing time if necessary
         chip = self.chip_loader(img_name)
+        if self.start_idx is not None:
+            chip = chip[:, :-self.start_idx, :, :]
         if slicer is not None:
             chip = chip[:, slicer, :, :]
+
         with torch.no_grad():
             if self.chip_static_transforms is not None:
                 chip = self.chip_static_transforms(chip)
@@ -122,8 +128,6 @@ class GenericChipsDataset(Dataset):
             else:
                 ext_val = ext.get_item(img_indx)
             data[ext.name] = torch.tensor(ext_val, dtype=torch.float)
-        
-        data["indx"] = indx 
 
         return data
 
@@ -205,6 +209,7 @@ class GenericChipsDataModule(L.LightningDataModule):
             time_step: int = DATALOADER_CONFIG["time_step"],
             file_type: str = DATALOADER_CONFIG["file_type"],
             split_tif: int | None = DATALOADER_CONFIG["split_tif"],
+            start_idx: int | None = DATALOADER_CONFIG["start_idx"],
             extension_config: dict = DATALOADER_CONFIG["extension_config"],
             static_transform_config: dict = DATALOADER_CONFIG["static_transform_config"],
             dynamic_transform_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
@@ -223,6 +228,7 @@ class GenericChipsDataModule(L.LightningDataModule):
         self.time_step = time_step
         self.file_type = file_type
         self.split_tif = split_tif
+        self.start_idx = start_idx
         self.extension_config = extension_config
         self.static_transform_config = static_transform_config
         self.dynamic_transform_config = dynamic_transform_config
@@ -239,8 +245,8 @@ class GenericChipsDataModule(L.LightningDataModule):
             stats = load_yaml(self.stat_data_path)
             if not self.static_transform_config.get("transforms"):
                 self.static_transform_config = {"transforms": []}
-            means = stats.get("chip_stats")["band_stats"]
-            stds = stats.get("chip_stats")["band_stats"]
+            means = stats.get("chip_stats")["band_means"]
+            stds = stats.get("chip_stats")["band_stds"]
             self.static_transform_config["transforms"].insert(0, {
                 "class_path": "transforms.GeoNormalization",
                 "init_args": {
