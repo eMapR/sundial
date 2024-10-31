@@ -3,6 +3,42 @@ import torch.nn.functional as F
 from torch import nn
 
 
+class Conv3dBlock(nn.Module):
+    def __init__(self,
+                in_channels,
+                out_channels,
+                kernel_size=(1, 1, 1),
+                stride=(1, 1, 1),
+                padding=(0, 0, 0)):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+            
+
+    def forward(self, x):
+        return self.block(x)
+    
+class ConvTranspose3dBlock(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size=(1, 16, 16),
+                 stride=(1, 16, 16),
+                 padding=(0, 0, 0)):
+        super().__init__()
+        
+        self.block = nn.Sequential(
+                nn.ConvTranspose3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding),
+                nn.BatchNorm3d(out_channels),
+                nn.ReLU(inplace=True)
+                )
+    def forward(self, x):
+        return self.block(x)
+
+
 class Upscaler(nn.Module):
     def __init__(self, embed_dim: int, depth: int, dropout: bool = True):
         super().__init__()
@@ -48,18 +84,18 @@ class ResizeConv2d(nn.Module):
 
 
 class Upsampler(nn.Module):
-    def __init__(self, in_channels=1024, out_channels=64, dropout_prob=0.3):
+    def __init__(self, in_channels=1024, out_channels=64):
         super().__init__()
 
         self.upsample1 = ResizeConv2d(in_channels, 512, kernel_size=3, scale_factor=2)
         self.upsample2 = ResizeConv2d(512, 256, kernel_size=3, scale_factor=2) 
-        self.upsample3 = ResizeConv2d(256, 128, kernel_size=3, scale_factor=2)
-        self.upsample4 = ResizeConv2d(128, out_channels, kernel_size=3, scale_factor=2)
+        # self.upsample3 = ResizeConv2d(256, 128, kernel_size=3, scale_factor=2)
+        # self.upsample4 = ResizeConv2d(128, out_channels, kernel_size=3, scale_factor=2)
 
 
     def forward(self, x):
         x = self.upsample1(x)
         x = self.upsample2(x)
-        x = self.upsample3(x)
-        x = self.upsample4(x)
+        # x = self.upsample3(x)
+        # x = self.upsample4(x)
         return x

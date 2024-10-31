@@ -1,47 +1,42 @@
 trainer:
     callbacks:
       - class_path: callbacks.LogTrainCallback
-      - class_path: callbacks.LogTrainMulticlassExtCallback
+      - class_path: callbacks.LogTrainBinaryExtCallback
       - class_path: StochasticWeightAveraging
         init_args:
             swa_lrs: 0.0001
             device: null
-    max_epochs: 1024
+    max_epochs: 1
+    enable_progress_bar: false
+    # strategy: ddp_find_unused_parameters_true
     strategy: auto
     devices: 1
     num_nodes: 1
-    accumulate_grad_batches: 16
+    accumulate_grad_batches: 8
+    log_every_n_steps: 8
     precision: bf16-mixed
-    gradient_clip_val: 5
+model_checkpoint:
+    monitor: precision
+    mode: max
 optimizer:
     class_path: torch.optim.AdamW
     init_args:
-        lr: 0.0001
+        lr: 0.001
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.CosineAnnealingLR
     init_args:
-        T_max : 32
+        T_max : 128
 criterion:
-    class_path: SSIMLoss
-    # init_args:
-    #     weight:
-    #         - 1.0
-    #         - 0.34951579599089555
-    #         - 0.4940872334705189
-    #         - 0.14299814508111305
-    #         - 0.24599326269278943
+    class_path: GeneralzedDiceBoundaryLoss
+    init_args:
+        alpha: 0.05
 activation:
     class_path: Sigmoid
-    # init_args:
-    #     dim: 1
 data:
     init_args:
         transform_config:
             include_original: true
             transforms:
-              - class_path: FirstOrderDifference
-                image_only: false
-                preprocess: true
               - class_path: torchvision.transforms.RandomRotation
                 init_args:
                     degrees: 360
@@ -54,9 +49,3 @@ data:
                 init_args:
                     p: 1
                 image_only: true
-              - class_path: GeoColorJitter
-                init_args:
-                    brightness: 0.1
-                    contrast: 0.001
-                    saturation: 0.001
-                    hue: 0.001

@@ -9,7 +9,7 @@ class SundialPLBase(L.LightningModule):
         return self.head(features)
 
     def training_step(self, batch):
-        data = {k:v for k,v in batch.items() if k != "anno"}
+        data = {k: v for k, v in batch.items() if k != "anno"}
         anno = batch["anno"]
         
         logits = self(data)

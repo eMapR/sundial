@@ -1,0 +1,41 @@
+model:
+    class_path: models.prithvi.PrithviGlobalFCN
+    init_args:
+        num_classes: 1
+        upscale_depth: 2
+        view_size: 16
+        prithvi_path: src/models/backbones/prithvi/PrithviGlobal.pt
+        prithvi_params:
+            model_args:
+                input_size: [4, 64, 64]
+                patch_size: [1, 1, 1]
+                in_chans: 6
+                coords_encoding: 
+                    - time
+                    - location
+        prithvi_freeze: true
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 16
+        num_workers: 32
+        chip_size: 64
+        time_step: 4
+        split_tif: 4
+        extension_config:
+            load_meta_data: true
+            extensions:
+              - class_path: dataloaders.generic_chips_dataset.YearDayFromMeta
+                init_args:
+                    year_col: year
+                    dates:
+                        - 03-15
+                        - 06-01
+                        - 09-01
+                        - 12-15
+              - class_path: dataloaders.generic_chips_dataset.LatLotFromMeta
+        chip_data_path: /home/ceoas/truongmy/emapr/sundial/samples/4sea_wus_agb/images
+        anno_data_path: /home/ceoas/truongmy/emapr/sundial/samples/4sea_wus_agb/labels
+        train_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/4sea_wus_agb/train_sample.txt
+        validate_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/4sea_wus_agb/validate_sample.txt
+        test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/4sea_wus_agb/test_sample.txt

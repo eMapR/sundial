@@ -2,9 +2,11 @@ trainer:
     callbacks:
       - class_path: callbacks.LogTestCallback
       - class_path: callbacks.SaveTestCallback
-    precision: 32-true
+    #   - class_path: callbacks.LogSaveCDiffCallback
+    precision: bf16-mixed
     devices: 1
+ckpt_path: epoch=0105_ssim=0.155_gdl_cor2.ckpt
 criterion:
-    class_path: GeneralizedDiceLoss
+    class_path: TverskyLoss
 activation:
     class_path: Sigmoid

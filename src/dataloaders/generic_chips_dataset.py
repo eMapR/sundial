@@ -265,6 +265,7 @@ class GenericChipsDataModule(L.LightningDataModule):
             "time_step": self.time_step,
             "file_type": self.file_type,
             "split_tif": self.split_tif,
+            "start_idx": self.start_idx,
             "extension_config": self.extension_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,

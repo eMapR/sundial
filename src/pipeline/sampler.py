@@ -393,7 +393,6 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         target = sample_gdf.iloc[index]
         group = target[groupby_columns]
         square = target.geometry
-        default_value = strata_list.index(target[STRATA_LABEL]) + 1
 
         # rasterizing multipolygon and clipping to square
         xarr_anno_list = []
@@ -401,7 +400,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
             f"Creating annotations for sample {index} from strata list...")
 
         # strata list should already be in order of index value
-        for strata in strata_list:
+        for default_value, strata in zip(range(1, len(strata_list) + 1), strata_list):
             try:
                 mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
                     (population_gdf[STRATA_LABEL] == strata)

@@ -1,7 +1,7 @@
 model:
     class_path: models.prithvi.PrithviUNet
     init_args:
-        num_classes: 5
+        num_classes: 3
         upscale_depth: 2
         view_size: 16
         prithvi_path: src/models/backbones/prithvi/Prithvi_100M.pt
@@ -22,7 +22,7 @@ model:
 data:
     class_path: dataloaders.ChipsDataModule
     init_args:
-        batch_size: 32
+        batch_size: 48
         num_workers: 16 
         chip_size: 256
         time_step: 3

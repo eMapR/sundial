@@ -1,0 +1,7 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTestCallback
+    precision: bf16-mixed
+    devices: 1
+criterion:
+    class_path: RMSELoss

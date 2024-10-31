@@ -14,7 +14,7 @@ model:
                 embed_dim: 768
                 img_size: 256
                 in_chans: 6
-                num_frames: 5
+                num_frames: 3
                 num_heads: 12
                 patch_size: 16
                 tubelet_size: 1
@@ -22,7 +22,7 @@ model:
 data:
     class_path: dataloaders.ChipsDataModule
     init_args:
-        batch_size: 32
+        batch_size: 64
         num_workers: 16 
         chip_size: 256
-        time_step: 5
+        time_step: 4

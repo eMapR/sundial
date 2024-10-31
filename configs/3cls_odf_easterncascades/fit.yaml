@@ -6,9 +6,9 @@ trainer:
         init_args:
             swa_lrs: 0.0001
             device: null
-    max_epochs: 256
+    max_epochs: 1024
     strategy: ddp_find_unused_parameters_true
-    devices: 1
+    devices: 2
     num_nodes: 1
     accumulate_grad_batches: 8
     precision: bf16-mixed
@@ -20,17 +20,8 @@ optimizer:
 lr_scheduler:
     class_path: torch.optim.lr_scheduler.CosineAnnealingLR
     init_args:
-        T_max : 16
+        T_max : 128
 criterion:
-    class_path: CrossEntropyLoss
-    init_args:
-        weight:
-            - 1.0
-            - 0.7501836884643645
-            - 0.0025064164014390413
-            - 0.013133015191078297
-            - 0.04686549694180829
+    class_path: SSIMLoss
 activation:
-    class_path: Softmax
-    init_args:
-        dim: 1
+    class_path: Sigmoid

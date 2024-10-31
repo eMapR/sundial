@@ -1,14 +1,14 @@
 trainer:
     callbacks:
       - class_path: callbacks.LogTestCallback
-      - class_path: callbacks.SaveTestCallback
+    #   - class_path: callbacks.SaveTestCallback
     precision: 16-mixed
     devices: 1
-ckpt_path: null 
+ckpt_path: best
 verbose: true
 criterion:
     class_path: FocalLoss
     init_args:
-        reduction: sum
+        reduction: mean
 activation:
     class_path: Sigmoid

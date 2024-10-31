@@ -4,16 +4,20 @@ model:
 trainer:
     callbacks:
       - class_path: callbacks.LogTestCallback
-      - class_path: callbacks.SaveTestCallback
+    #   - class_path: callbacks.SaveTestCallback
     #   - class_path: callbacks.PackageCallback
     precision: bf16-mixed
     devices: 1
 ckpt_path: "best"
 criterion:
-    class_path: CrossEntropyLoss
-    init_args:
-        reduction: sum
+    class_path: SSIMLoss
 activation:
-    class_path: Softmax
+    class_path: Sigmoid
+data:
     init_args:
-        dim: 1
+        transform_config:
+            include_original: true
+            transforms:
+              - class_path: SecondOrderDifference
+                image_only: false
+                preprocess: true

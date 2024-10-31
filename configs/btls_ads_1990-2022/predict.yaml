@@ -1,4 +1,0 @@
-trainer:
-    callbacks:
-      - class_path: callbacks.SaveTestCallback
-ckpt_path: null

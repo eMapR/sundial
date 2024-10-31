@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-class ConvBlock(nn.Module):
+class DownConvBlock(nn.Module):
     def __init__(self, ch_in, ch_out):
         super().__init__()
         self.conv = nn.Sequential(
@@ -70,27 +70,27 @@ class AttentionUNet(nn.Module):
 
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.conv1 = ConvBlock(ch_in=in_channel, ch_out=64)
-        self.conv2 = ConvBlock(ch_in=64, ch_out=128)
-        self.conv3 = ConvBlock(ch_in=128, ch_out=256)
-        self.conv4 = ConvBlock(ch_in=256, ch_out=512)
-        self.conv5 = ConvBlock(ch_in=512, ch_out=1024)
+        self.conv1 = DownConvBlock(ch_in=in_channel, ch_out=64)
+        self.conv2 = DownConvBlock(ch_in=64, ch_out=128)
+        self.conv3 = DownConvBlock(ch_in=128, ch_out=256)
+        self.conv4 = DownConvBlock(ch_in=256, ch_out=512)
+        self.conv5 = DownConvBlock(ch_in=512, ch_out=1024)
 
         self.up5 = UpConvBlock(ch_in=1024, ch_out=512)
         self.att5 = AttentionBlock(f_g=512, f_l=512, f_int=256)
-        self.upconv5 = ConvBlock(ch_in=1024, ch_out=512)
+        self.upconv5 = DownConvBlock(ch_in=1024, ch_out=512)
 
         self.up4 = UpConvBlock(ch_in=512, ch_out=256)
         self.att4 = AttentionBlock(f_g=256, f_l=256, f_int=128)
-        self.upconv4 = ConvBlock(ch_in=512, ch_out=256)
+        self.upconv4 = DownConvBlock(ch_in=512, ch_out=256)
 
         self.up3 = UpConvBlock(ch_in=256, ch_out=128)
         self.att3 = AttentionBlock(f_g=128, f_l=128, f_int=64)
-        self.upconv3 = ConvBlock(ch_in=256, ch_out=128)
+        self.upconv3 = DownConvBlock(ch_in=256, ch_out=128)
 
         self.up2 = UpConvBlock(ch_in=128, ch_out=64)
         self.att2 = AttentionBlock(f_g=64, f_l=64, f_int=32)
-        self.upconv2 = ConvBlock(ch_in=128, ch_out=64)
+        self.upconv2 = DownConvBlock(ch_in=128, ch_out=64)
 
         self.conv_1x1 = nn.Conv2d(64, out_channel, kernel_size=1, stride=1, padding=0)
 

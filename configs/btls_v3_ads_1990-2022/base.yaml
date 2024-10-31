@@ -1,18 +1,23 @@
 model:
-    class_path: models.prithvi.PrithviGlobalAttentionUNet
+    class_path: models.prithvi.PrithviGlobalDecoderThin2dUNet
     init_args:
         num_classes: 1
-        view_size: 16
+        num_channels: 24
+        bilinear: false
+        # kernel_size: [4, 4, 4]
+        # view_size: 16
+        # upscale_depth: 2
         prithvi_path: src/models/backbones/prithvi/PrithviGlobal.pt
         prithvi_params:
             model_args:
-                input_size: [4, 64, 64]
-                patch_size: [4, 4, 4]
-                in_chans: 6
+                input_size: [1, 16, 16]
+                patch_size: [1, 1, 1]
+                in_chans: 1024
                 embed_dim: 1024
-                coords_encoding:
-                    - time
-                    - location
+                coords_encoding: []
+                # coords_encoding:
+                #     - time
+                #     - location
         prithvi_freeze: true
 data:
     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
@@ -21,15 +26,15 @@ data:
         num_workers: 4
         chip_size: 256
         time_step: 4
-        extension_config:
-            load_meta_data: true
-            extensions:
-                - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromMeta
-                  init_args:
-                    year_col: year
-                    year_range: 4
-                    month_day: 08-15
-                - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+        # extension_config:
+        #     load_meta_data: true
+        #     extensions:
+        #         - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromMeta
+        #           init_args:
+        #             year_col: year
+        #             year_range: 4
+        #             month_day: 08-15
+        #         - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
         dynamic_transform_config:
             include_original: false
             transforms:
