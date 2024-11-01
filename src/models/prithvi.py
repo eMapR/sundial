@@ -57,7 +57,7 @@ class PrithviBackbone(nn.Module):
 
     def forward(self, chips):
         latent, _, ids_restore = self.model.forward_encoder(chips, mask_ratio=0.0)
-        if decoder:
+        if self.decoder:
             latent = self.model.forward_decoder(latent, ids_restore)
         return self.reshaper(latent)
 

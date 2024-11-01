@@ -141,17 +141,17 @@ While the framework for deep learning is build on [Pytorch Lightning](https://li
 
 ## Example Samples Directory Structure
 project-root/\
-├── chip_data/
+├── chip_data/\
 │   └── ...\
-├── anno_data/
-│   └── ...
-├── gpop_data/ # Shapefile containing original annotation polygons and other information post filter (eg date & classes)
-│   └── ...
-├── meta_data/ # Shapefile containing square polygons associated with the image chips includes match index to original polygons.
+├── anno_data/\
+│   └── ...\
+├── gpop_data/ # Shapefile containing original annotation polygons and other information post filter (eg date & classes)\
+│   └── ...\
+├── meta_data/ # Shapefile containing square polygons associated with the image chips includes match index to original polygons.\
 │   └── ...\
 ├── stat_data.yaml # Various data stats including band means and std dev for normalization\
-├── all_sample
-├── train_sample
-├── validate_sample
-├── test_sample
-└──...
+├── all_sample\
+├── train_sample\
+├── validate_sample\
+├── test_sample\
+└──...\
