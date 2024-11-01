@@ -6,7 +6,7 @@ from typing import Optional
 from pipeline.settings import DATETIME_LABEL
 
 
-def zarr_reshape(
+def structured_to_unstructured(
         arr: np.ndarray,
         index: str,
         pixel_edge_size: int,
@@ -15,7 +15,7 @@ def zarr_reshape(
         attributes: Optional[dict] = {}) -> xr.DataArray:
 
     # unflattening the array to shape (year, band, y, x)
-    # TODO: implement np structured_to_unstructured module
+    # TODO: implement np.structured_to_unstructured module
     years, bands = zip(*[b.split('_')
                        for b in arr.dtype.names if b != "overlap"])
     years = sorted(list(set(years)))

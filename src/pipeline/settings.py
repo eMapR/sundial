@@ -86,7 +86,7 @@ FILE_EXT_MAP = {
 SAMPLER_CONFIG = {
     # date information for medoid composites
     # (dict | None) image generator / parser kwargs for download
-    "medoid_config": {
+    "parser_kwargs": {
         "start_month": 7,
         "start_day": 15,
         "end_month": 9,
@@ -98,13 +98,13 @@ SAMPLER_CONFIG = {
     "method": "centroid",
     # (float| int | None) number of points to sample. If float, a fraction of sample = n is used.
     "num_points": 2.0e-2,
-    # (list[str] | None) columns in provided geo_raw_path to use for strata
+    # (List[str] | None) columns in provided geo_raw_path to use for strata
     "strata_columns": None,
-    # (list[str] | None) columns to group by for annotation generation in addition to strata columns
+    # (List[str] | None) columns to group by for annotation generation in addition to strata columns
     "groupby_columns": None,
-    # (dict) list of actions to perform on shapefile before sampling
+    # (dict) List of actions to perform on shapefile before sampling
     "preprocess_actions": [],
-    # (dict) list of actions to perform on chip and anno data after sampling
+    # (dict) List of actions to perform on chip and anno data after sampling
     "postprocess_actions": [],
     # (str) Column to use for datetime value in geo file
     "datetime_column": "year",
@@ -113,22 +113,9 @@ SAMPLER_CONFIG = {
     # (int | None) number of time steps between each sample, or number of years to include in model including observation year
     "time_step": None,
 
-    # gee strata settings
-    # (dict | None) settings for strata generation
-    "gee_stratafied_config": {
-        # (int) number of points to generate per stratum
-        "num_points": None,
-        # (int) number of strata to generate per data source
-        "num_strata": None,
-        # (int) scale of images to perform stratification
-        "scale": None,
-        # (int) start date to filter source images
-        "start_date": None,
-        # (int) end date to filter source images
-        "end_date": None,
-        # (list[Literal["prism", "elevation", "ads"]]) data sources to use for stratification
-        "sources": None
-    },
+    # square generation settings
+    # (dict | None) settings for passing to square generator function
+    "squares_config": {},
 
     # Tuple(float) | None ratio of validate, test samples from total samples
     "split_ratios": [2e-1, 2e-2],
@@ -147,11 +134,11 @@ SAMPLER_CONFIG = {
     # (int) n time step to look back from observation date (i.e. 2 = 3 years total including observation year)
     "look_range": 2,
     # (str) function in pipeline/utils to parse metadata
-    "meta_data_parser": "parse_meta_data",
+    "meta_data_parser": "medoid_from_year",
     # (str) function in pipeline/utils to generate expression in google earth engine
-    "image_expr_factory": "lt_medoid_image_factory",
+    "ee_image_factory": "lt_medoid_image_factory",
     # (str) function in pipeline/utils to reshape resulting download from GEE
-    "image_reshaper": "zarr_reshape",
+    "image_reshaper": "unstack_band_years",
 
     # MP and GEE specific settings
     # (int) number of parallel workers to use for annotation generation

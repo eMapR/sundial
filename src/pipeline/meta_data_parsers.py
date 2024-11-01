@@ -3,22 +3,21 @@ import pandas as pd
 import xarray as xr
 
 from datetime import datetime
-from typing import Tuple
 
 from pipeline.settings import DATETIME_LABEL
 
 
-def parse_meta_data(
+def medoid_from_year(
         meta_data: pd.DataFrame,
         index: int,
         look_range: int,
         start_month: int,
         start_day: int,
         end_month: int,
-        end_day: int) -> Tuple[list[Tuple[float, float]],
-                               Tuple[float, float],
+        end_day: int) -> tuple[list[tuple[float, float]],
+                               tuple[float, float],
                                str,
-                               list[Tuple[float, float]],
+                               list[tuple[float, float]],
                                str,
                                datetime | None,
                                datetime | None,

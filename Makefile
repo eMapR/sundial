@@ -92,7 +92,7 @@ setup_env:
 	mkdir -p $(SUNDIAL_BASE_PATH)/configs;
 	mkdir -p $(SUNDIAL_BASE_PATH)/models/backbones;
 	mkdir -p $(SUNDIAL_BASE_PATH)/models/heads;
-	conda env create -f $(SUNDIAL_BASE_PATH)/environment.yml -n $(SUNDIAL_ENV_NAME) -p $(CONDA_PREFIX) -y --force;
+	conda env create -f $(SUNDIAL_BASE_PATH)/environment.yaml -n $(SUNDIAL_ENV_NAME) -p $(CONDA_PREFIX) -y --force;
 	conda activate $(SUNDIAL_ENV_NAME);
 	echo "Sundial setup complete!";
 

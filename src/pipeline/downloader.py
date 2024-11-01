@@ -27,7 +27,7 @@ class Downloader:
         chip_data_path (str): The path to save the image data to.
         meta_data_path (str): The path to the meta data file with coordinates.
         meta_data_parser (callable): A callable to parse the meta data file.
-        image_expr_factory (callable): A callable to generate the image expression.
+        ee_image_factory (callable): A callable to generate the image expression.
         image_reshaper (callable): A callable to reshape the image data.
 
         num_workers (int): The number of workers to use for the parallel download process.
@@ -49,7 +49,7 @@ class Downloader:
             chip_data_path: str,
             meta_data: gpd.GeoDataFrame,
             meta_data_parser: callable,
-            image_expr_factory: callable,
+            ee_image_factory: callable,
             image_reshaper: callable,
 
             num_workers: int,
@@ -58,7 +58,7 @@ class Downloader:
 
             reproject: Optional[bool] = False,
             parser_kwargs: Optional[dict] = {},
-            generator_kwargs: Optional[dict] = {},
+            factory_kwargs: Optional[dict] = {},
             reshaper_kwargs: Optional[dict] = {},
     ) -> None:
         self._file_type = file_type
@@ -70,7 +70,7 @@ class Downloader:
         self._chip_data_path = chip_data_path
         self._meta_data = meta_data
         self._meta_data_parser = meta_data_parser
-        self._image_expr_factory = image_expr_factory
+        self._ee_image_factory = ee_image_factory
         self._image_reshaper = image_reshaper
 
         self._num_workers = num_workers
@@ -79,7 +79,7 @@ class Downloader:
 
         self._reproject = reproject
         self._parser_kwargs = parser_kwargs
-        self._generator_kwargs = generator_kwargs
+        self._factory_kwargs = factory_kwargs
         self._reshaper_kwargs = reshaper_kwargs
         self._meta_size = len(self._meta_data)
 
@@ -219,14 +219,14 @@ class Downloader:
                 # creating payload for each square to send to GEE
                 report_queue.put(
                     ("INFO", f"Creating image payload for square {index}... {square_coords}"))
-                image = self._image_expr_factory(
+                image = self._ee_image_factory(
                     square_coords,
                     start_date,
                     end_date,
                     self._pixel_edge_size,
                     self._scale,
                     epsg_str,
-                    **self._generator_kwargs)
+                    **self._factory_kwargs)
 
                 # reprojecting the image if necessary
                 if self._reproject and epsg_str is not None:
@@ -388,8 +388,7 @@ class Downloader:
             ("INFO", f"Merging and writing consumer {consumer_index} chip batch {batch_index} of size {batch_size} to {chip_data_path}..."))
         xarr_chip_batch = xr.merge(xarr_chip_batch)
         with chip_lock:
-            xarr_chip_batch.to_zarr(
-                store=chip_data_path, mode="a")
+            xarr_chip_batch.to_zarr(store=chip_data_path, mode="a")
 
         # reporting batch completion to watcher
         for name in square_name_batch:

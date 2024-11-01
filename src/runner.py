@@ -11,7 +11,7 @@ from settings import CHECKPOINT_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
 from utils import get_best_ckpt, get_latest_ckpt, tensors_to_tifs
 
 from pipeline.utils import function_timer
-from pipeline.sampler import (
+from pipeline.pipeline import (
     sample,
     annotate,
     download,
@@ -48,7 +48,7 @@ def run():
 
     # setting up trainer defaults w/ paths from pipeline.settings
     run_configs = load_yaml(METHOD_CONFIG_PATH)
-
+    
     args = [METHOD,
             f"--config={BASE_CONFIG_PATH}",
             f"--config={METHOD_CONFIG_PATH}"]

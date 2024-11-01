@@ -5,14 +5,13 @@ gee_workers: 42
 gee_stratafied_config: null
 groupby_columns: ["yod"]
 io_limit: 32
-look_range: 5
-method: centroid_shift
+look_range: 3
+method: centroid
 num_points: null
-num_workers: 64
+num_workers: 32
 overwrite: false
 pixel_edge_size: 256
 postprocess_actions: []
-predict_ratio: 0.0
 preprocess_actions:
     - column: predicted
       action: "in"
@@ -24,5 +23,4 @@ projection: EPSG:5070
 generate_time_combinations: false
 scale: 30
 strata_columns: ["predicted"]
-test_ratio: 0.04
-validate_ratio: 0.2
+split_ratios: [.2, .02]

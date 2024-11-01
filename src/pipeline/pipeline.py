@@ -48,9 +48,13 @@ from pipeline.settings import (
 )
 from .utils import (
     function_timer,
+    gee_stratified_sampling,
+    gee_download_features,
+    generate_centroid_squares,
     get_class_weights,
     get_band_stats,
     get_xarr_stats,
+    stratified_sample,
     train_validate_test_split
 )
 
@@ -64,135 +68,6 @@ OPS_MAP = {
     "!=": operator.ne,
 }
 
-
-def gee_get_ads_score_image(
-        area_of_interest: ee.Geometry) -> ee.Image:
-    return ee.Image(os.getenv("ADS_SCORE_IMAGE_LINK")).clip(area_of_interest)
-
-
-def gee_get_elevation_image(
-        area_of_interest: ee.Geometry) -> ee.Image:
-    return ee.Image('USGS/SRTMGL1_003').clip(area_of_interest)
-
-
-def gee_get_prism_image(
-        area_of_interest: ee.Geometry,
-        start_date: datetime,
-        end_date: datetime) -> ee.Image:
-    collection = ee.ImageCollection("OREGONSTATE/PRISM/AN81m")\
-        .filterBounds(area_of_interest)\
-        .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-    return collection.reduce(ee.Reducer.mean()).select(["ppt_mean"], ["ppt"])
-
-
-def gee_get_percentile_ranges(
-        single_band_image: ee.Image,
-        area_of_interest: ee.Geometry,
-        percentiles: ee.List) -> list[int]:
-    return sorted(single_band_image.reduceRegion(
-        reducer=ee.Reducer.percentile(percentiles),
-        geometry=area_of_interest,
-        maxPixels=1e13
-    ).values().getInfo())
-
-
-@function_timer
-def gee_stratify_by_percentile(
-        single_band_image: ee.Image,
-        percentiles: list[int],
-        out_band_name: str = None) -> ee.Image:
-    result = ee.Image(0)
-    for idx in range(len(percentiles) - 1):
-        mask = single_band_image.gte(percentiles[idx]).And(
-            single_band_image.lt(percentiles[idx+1]))
-        result = result.where(mask, ee.Image(idx+1))
-    if out_band_name is not None:
-        result = result.select(["constant"], [out_band_name])
-    return result
-
-
-@function_timer
-def gee_generate_random_points(
-        feature: ee.Feature,
-        radius: int,
-        num_points: int,
-) -> ee.FeatureCollection:
-    geometry = feature.geometry().buffer(distance=radius)
-    return ee.FeatureCollection.randomPoints(
-        region=geometry,
-        points=num_points,
-        seed=RANDOM_SEED,
-    )
-
-
-@function_timer
-def gee_stratified_sampling(
-        num_points: int,
-        num_strata: int,
-        scale: int,
-        start_date: datetime,
-        end_date: datetime,
-        sources: Literal["prism", "elevation", "ads_score"],
-        area_of_interest: ee.Geometry,
-        projection: str) -> ee.FeatureCollection:
-    # creating percentiles for stratification
-    num_images = len(sources)
-    percentiles = ee.List.sequence(0, 100, count=num_strata+1)
-
-    # Getting data images for stratification
-    raw_images = []
-    for source in sources:
-        match source:
-            case "prism":
-                raw_images.append(
-                    gee_get_prism_image(area_of_interest, start_date, end_date))
-            case "elevation":
-                raw_images.append(
-                    gee_get_elevation_image(area_of_interest))
-            case "ads_score":
-                raw_images.append(
-                    gee_get_ads_score_image(area_of_interest))
-            case _:
-                raise ValueError(f"Invalid source: {source}")
-
-    # stratify by percentile
-    stratified_images = []
-    for image in raw_images:
-        percentile_ranges = gee_get_percentile_ranges(
-            image, area_of_interest, percentiles)
-        stratified_images.append(
-            gee_stratify_by_percentile(image, percentile_ranges))
-
-    # concatenate stratified images
-    if num_images == 1:
-        population = stratified_images[0]
-    else:
-        combined = ee.Image.cat(stratified_images)
-        num_bands = num_images
-        concatenate_expression = " + ".join(
-            [f"(b({i})*(100**{i}))" for i in range(num_bands)])
-        population = combined.expression(concatenate_expression).toInt()
-
-    # get stratified random sample experession for compute features laters
-    return population.stratifiedSample(
-        num_points,
-        region=area_of_interest,
-        scale=scale,
-        projection=projection,
-        geometries=True)
-
-
-@function_timer
-def gee_download_features(
-        features: ee.FeatureCollection) -> gpd.GeoDataFrame:
-    try:
-        return ee.data.computeFeatures({
-            "expression": features,
-            "fileFormat": "GEOPANDAS_GEODATAFRAME"})
-    except Exception as e:
-        LOGGER.critical(
-            f"Failed to convert feature collection to GeoDataFrame: {e}")
-        raise e
 
 @function_timer
 def preprocess_data(
@@ -277,38 +152,11 @@ def postprocess_data(
 
 
 @function_timer
-def stratified_sample(
-        geo_dataframe: gpd.GeoDataFrame,
-        num_points: Optional[float | int] = None):
-    if num_points is not None:
-        groupby = geo_dataframe.groupby(STRATA_LABEL)
-        match num_points:
-            case num if isinstance(num, float):
-                sample = groupby.sample(frac=num)
-            case num if isinstance(num, int):
-                sample = groupby.sample(n=num)
-    else:
-        sample = geo_dataframe
-    sample = sample.reset_index().rename(columns={'index': 'geo_file_index'})
-    return sample
-
-
-@function_timer
-def generate_centroid_squares(
-        geo_dataframe: gpd.GeoDataFrame,
-        meter_edge_size: int) -> gpd.GeoDataFrame:
-    geo_dataframe = geo_dataframe.reset_index()
-    geo_dataframe.loc[:, "geometry"] = geo_dataframe.loc[:, "geometry"]\
-        .apply(lambda p: p.centroid.buffer(meter_edge_size // 2).envelope)
-    return geo_dataframe
-
-
-@function_timer
 def generate_squares(
         geo_dataframe: gpd.GeoDataFrame,
         method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
         meter_edge_size: int | float,
-        gee_stratafied_config: Optional[dict] = None) -> gpd.GeoDataFrame:
+        squares_config: dict) -> gpd.GeoDataFrame:
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "convering_grid":
@@ -322,15 +170,15 @@ def generate_squares(
             area_of_interest = unary_union(geo_dataframe.geometry)
             area_of_interest = ee.Geometry.Polygon(
                 list(area_of_interest.exterior.coords), proj=epsg, evenOdd=even_odd)
-            gee_stratafied_config["area_of_interest"] = area_of_interest
-            gee_stratafied_config["projection"] = epsg
+            squares_config["area_of_interest"] = area_of_interest
+            squares_config["projection"] = epsg
 
-            points = gee_stratified_sampling(**gee_stratafied_config)
+            points = gee_stratified_sampling(**squares_config)
             points = gee_download_features(points)\
                 .set_crs("EPSG:4326")\
                 .to_crs(epsg)
             gdf = generate_centroid_squares(points, meter_edge_size)
-            gdf.loc[:, DATETIME_LABEL] = gee_stratafied_config["end_date"]
+            gdf.loc[:, DATETIME_LABEL] = squares_config["end_date"]
         case "centroid":
             gdf = generate_centroid_squares(
                 geo_dataframe,
@@ -515,7 +363,7 @@ def sample():
             "geo_dataframe": geo_dataframe,
             "method": SAMPLER_CONFIG["method"],
             "meter_edge_size": SAMPLER_CONFIG["scale"] * (SAMPLER_CONFIG["pixel_edge_size"]),    
-            "gee_stratafied_config": SAMPLER_CONFIG["gee_stratafied_config"],
+            "squares_config": SAMPLER_CONFIG["squares_config"],
         }
         geo_dataframe = generate_squares(**square_config)
 
@@ -561,7 +409,7 @@ def download():
         gdf = gpd.read_file(META_DATA_PATH)
 
         LOGGER.info("Generating image chips...")
-        parser_kwargs = SAMPLER_CONFIG["medoid_config"]
+        parser_kwargs = SAMPLER_CONFIG["parser_kwargs"]
         parser_kwargs["look_range"] = SAMPLER_CONFIG["look_range"]
         downloader_kwargs = {
             "file_type": SAMPLER_CONFIG["file_type"],
@@ -571,9 +419,9 @@ def download():
             "projection": SAMPLER_CONFIG["projection"],
             "chip_data_path": CHIP_DATA_PATH,
             "meta_data": gdf,
-            "meta_data_parser": getattr(importlib.import_module("pipeline.parsers"), SAMPLER_CONFIG["meta_data_parser"]),
-            "image_expr_factory": getattr(importlib.import_module("pipeline.factories"), SAMPLER_CONFIG["image_expr_factory"]),
-            "image_reshaper": getattr(importlib.import_module("pipeline.reshapers"), SAMPLER_CONFIG["image_reshaper"]),
+            "meta_data_parser": getattr(importlib.import_module("pipeline.meta_data_parsers"), SAMPLER_CONFIG["meta_data_parser"]),
+            "ee_image_factory": getattr(importlib.import_module("pipeline.ee_image_factories"), SAMPLER_CONFIG["ee_image_factory"]),
+            "image_reshaper": getattr(importlib.import_module("pipeline.image_reshapers"), SAMPLER_CONFIG["image_reshaper"]),
             "num_workers": SAMPLER_CONFIG["gee_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
             "logger": LOGGER,
