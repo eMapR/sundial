@@ -3,7 +3,7 @@ import torch
 from torch import nn, einsum
 from torchmetrics.functional.image import structural_similarity_index_measure
 from torchvision.ops import sigmoid_focal_loss
-from typing import Any, Literal, Sequence, Tuple
+from typing import Any, Literal, Sequence
 
 from utils import distance_transform
 
@@ -11,7 +11,7 @@ from utils import distance_transform
 class Reducer(nn.Module):
     def __init__(self,
                  reduction: str,
-                 dim: int | Tuple[int] = 0,
+                 dim: int | tuple[int] = 0,
                  keepdim: bool = False):
         super().__init__()
         self.dim = dim
@@ -215,7 +215,7 @@ class SSIMLoss(nn.Module):
                  kernel_size: int | Sequence[int] = 11,
                  reduction: Literal['elementwise_mean',
                                     'sum', 'none'] | None = "elementwise_mean",
-                 data_range: float | Tuple[float, float] | None = None,
+                 data_range: float | tuple[float, float] | None = None,
                  k1: float = 0.01,
                  k2: float = 0.03):
         super().__init__()

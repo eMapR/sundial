@@ -83,6 +83,7 @@ class PrithviFCN(SundialPLBase):
             prithvi_path=prithvi_path)
 
         from torchvision.models.segmentation.fcn import FCNHead
+        from models.utiils import Upscaler
         self.head = nn.Sequential(
             Upscaler(prithvi_params["model_args"]["embed_dim"], self.upscale_depth),
             FCNHead(prithvi_params["model_args"]["embed_dim"], self.num_classes)
@@ -107,7 +108,7 @@ class PrithviUNet(SundialPLBase):
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
 
-        from models.unet import UNet
+        from models.basic_unet import UNet
         self.head = UNet(prithvi_params["model_args"]["embed_dim"], self.num_classes)
 
 
@@ -182,6 +183,7 @@ class PrithviGlobalFCN(SundialPLBase):
             prithvi_path=prithvi_path)
 
         from torchvision.models.segmentation.fcn import FCNHead
+        from models.utils import Upsampler
         self.head = nn.Sequential(
             Upsampler(prithvi_params["model_args"]["embed_dim"], 64),
             FCNHead(256, self.num_classes)
@@ -190,6 +192,7 @@ class PrithviGlobalFCN(SundialPLBase):
 class PrithviGlobalAttentionUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
+        view_size: int,
         prithvi_params: dict,
         prithvi_freeze: bool = True,
         prithvi_path: str = None,

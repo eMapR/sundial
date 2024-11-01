@@ -6,7 +6,7 @@ from typing import Optional
 from pipeline.settings import DATETIME_LABEL
 
 
-def structured_to_unstructured(
+def unstack_band_years(
         arr: np.ndarray,
         index: str,
         pixel_edge_size: int,
