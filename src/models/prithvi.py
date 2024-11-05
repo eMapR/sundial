@@ -52,8 +52,10 @@ class PrithviBackbone(L.LightningModule):
         self.reshaper = PrithviReshape(self.view_size) if reshape else nn.Identity()
         self.decoder = decoder
         if self.prithvi_freeze:
+            self.model.patch_embed.eval()
             for param in self.model.patch_embed.parameters():
                 param.requires_grad = False
+            self.model.blocks.eval()
             for blk in self.model.blocks:
                 for param in blk.parameters():
                     param.requires_grad = False
@@ -143,8 +145,10 @@ class PrithviGlobalBackbone(L.LightningModule):
         self.reshaper = PrithviReshape(view_size) if reshape else nn.Identity()
         self.decoder = decoder
         if self.prithvi_freeze:
+            self.model.patch_embed.eval()
             for param in self.model.patch_embed.parameters():
                 param.requires_grad = False
+            self.model.blocks.eval()
             for blk in self.model.blocks:
                 for param in blk.parameters():
                     param.requires_grad = False
