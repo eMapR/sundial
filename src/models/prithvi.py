@@ -24,7 +24,7 @@ class PrithviReshape(nn.Module):
         return latent
 
 
-class PrithviBackbone(nn.Module):
+class PrithviBackbone(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
                  prithvi_freeze: bool = True,
@@ -41,8 +41,6 @@ class PrithviBackbone(nn.Module):
         from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
-        if self.prithvi_freeze:
-            self.eval()
         if self.prithvi_path is not None:
             checkpoint = torch.load(self.prithvi_path)
             del checkpoint['pos_embed']
@@ -53,6 +51,12 @@ class PrithviBackbone(nn.Module):
             _ = self.model.load_state_dict(checkpoint, strict=False)
         self.reshaper = PrithviReshape(self.view_size) if reshape else nn.Identity()
         self.decoder = decoder
+        if self.prithvi_freeze:
+            for param in self.model.patch_embed.parameters():
+                param.requires_grad = False
+            for blk in self.model.blocks:
+                for param in blk.parameters():
+                    param.requires_grad = False
         
 
     def forward(self, chips):
@@ -83,7 +87,7 @@ class PrithviFCN(SundialPLBase):
             prithvi_path=prithvi_path)
 
         from torchvision.models.segmentation.fcn import FCNHead
-        from models.utiils import Upscaler
+        from models.utils import Upscaler
         self.head = nn.Sequential(
             Upscaler(prithvi_params["model_args"]["embed_dim"], self.upscale_depth),
             FCNHead(prithvi_params["model_args"]["embed_dim"], self.num_classes)
@@ -112,7 +116,7 @@ class PrithviUNet(SundialPLBase):
         self.head = UNet(prithvi_params["model_args"]["embed_dim"], self.num_classes)
 
 
-class PrithviGlobalBackbone(nn.Module):
+class PrithviGlobalBackbone(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
                  prithvi_freeze: bool = True,
@@ -128,8 +132,6 @@ class PrithviGlobalBackbone(nn.Module):
         from models.backbones.prithvi.PrithviGlobal import MaskedAutoencoderViT
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
-        if self.prithvi_freeze:
-            self.eval()
         if self.prithvi_path is not None:
             checkpoint = torch.load(self.prithvi_path)
             if not decoder:
@@ -140,6 +142,12 @@ class PrithviGlobalBackbone(nn.Module):
             
         self.reshaper = PrithviReshape(view_size) if reshape else nn.Identity()
         self.decoder = decoder
+        if self.prithvi_freeze:
+            for param in self.model.patch_embed.parameters():
+                param.requires_grad = False
+            for blk in self.model.blocks:
+                for param in blk.parameters():
+                    param.requires_grad = False
 
     def forward(self, data):
         if isinstance(data, dict):
@@ -151,9 +159,9 @@ class PrithviGlobalBackbone(nn.Module):
             temporal = None
             location = None
         latent, _, ids_restore, = self.model.forward_encoder(chip,
-                                                  temporal,
-                                                  location,
-                                                  mask_ratio=0.0)
+                                                        temporal,
+                                                        location,
+                                                        mask_ratio=0.0)
         if self.decoder:
             latent = self.model.forward_decoder(latent,
                                                 ids_restore,
@@ -171,7 +179,7 @@ class PrithviGlobalFCN(SundialPLBase):
                  prithvi_freeze: bool = True,
                  prithvi_path: str = None,
                  **kwargs):
-        super().__init__(**kwargs)
+        super()._init__(**kwargs)
         self.num_classes = num_classes
         self.upscale_depth = upscale_depth
         self.view_size = view_size
@@ -298,8 +306,7 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
-            reshape=True)
+            prithvi_path=prithvi_path)
         
     def forward(self, data):
         x = data["chip"]
@@ -316,3 +323,68 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         x6 = self.up2(x5, x1)
         x7 = self.out(x6)
         return x7
+
+class PrithviGlobalDiffReconstruction(SundialPLBase):
+    def __init__(self,
+                 prithvi_params: dict,
+                 prithvi_path: str = None):
+        super().__init__()
+        self.prithvi = PrithviGlobalBackbone(
+            prithvi_params=prithvi_params,
+            prithvi_freeze=True,
+            prithvi_path=prithvi_path,
+            decoder=True,
+            reshape=False)
+        input_size = prithvi_params["model_args"]["input_size"]
+        patch_size = prithvi_params["model_args"]["patch_size"]
+        s, p, q = patch_size
+        s -= 1
+        D = s * p * q * prithvi_params["model_args"]["in_chans"]
+        gs = [s // p for s, p in zip(input_size, patch_size)]
+        self.L = gs[1] * gs[2]
+        
+        self.prithvi.model.decoder_pred = nn.Linear(512,
+                                      D,
+                                      bias=True)
+
+        from einops import rearrange
+        self.prithvi.model.patchify = lambda imgs: rearrange(imgs, 'b c (t s) (h p) (w q) -> b (t h w) (s p q c)', s=s, p=p, q=q)
+        self.prithvi.model.unpatchify = lambda imgs: rearrange(imgs, 'b (t h w) (s p q c) -> b c (t s) (h p) (w q)', h=gs[1], w=gs[2], t=gs[0], s=s, p=p, q=q)
+
+        from models.utils import FirstOrderDifference
+        self.fo_diff = FirstOrderDifference()
+
+    def forward(self, data):
+        return self.prithvi(data)
+    
+    def training_step(self, batch):
+        data = batch
+        diff = self.fo_diff(data["chip"])
+        pred = self(data)
+        
+        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
+        loss = self.prithvi.model.forward_loss(diff, pred, mask)
+        
+        return {"loss": loss}
+
+    def validation_step(self, batch):
+        data = batch
+        diff = self.fo_diff(data["chip"])
+        pred = self(data)
+        
+        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
+        loss = self.prithvi.model.forward_loss(diff, pred, mask)
+        recon = self.prithvi.model.unpatchify(pred)
+
+        return {"loss": loss, "output": recon.detach(), "diff": diff.detach()}
+    
+    def test_step(self, batch):
+        data = batch
+        diff = self.fo_diff(data["chip"])
+        pred = self(data)
+        
+        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
+        loss = self.prithvi.model.forward_loss(diff, pred, mask)
+        recon = self.prithvi.model.unpatchify(pred)
+
+        return {"loss": loss, "output": recon.detach(), "diff": diff.detach()}

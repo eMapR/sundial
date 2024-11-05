@@ -99,3 +99,12 @@ class Upsampler(nn.Module):
         # x = self.upsample3(x)
         # x = self.upsample4(x)
         return x
+    
+class FirstOrderDifference(nn.Module):
+    def forward(self, x):
+        return x[:, :, 1:, :, :] - x[:, :, :-1, :, :]
+
+
+class SecondOrderDifference(nn.Module):
+    def forward(self, x):
+        return x[:, :, 2:, :, :] - 2 * x[:, :, 1:-1, :, :] + x[:, :-2, :, :]

@@ -27,7 +27,7 @@ from pipeline.settings import (load_yaml,
                                PREDICTION_PATH,
                                SAMPLER_CONFIG,
                                STAT_DATA_PATH)
-from utils import log_rbg_ir_image, log_tsne_plot, save_rgb_ir_tensor, tensors_to_tifs
+from utils import log_rgb_ir_image, log_tsne_plot, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -63,33 +63,34 @@ class DefineCriterionCallback(L.Callback):
               trainer: L.Trainer,
               pl_module: L.LightningModule,
               stage: str) -> None:
-        assert self.class_path is not None
-
-        # TODO: Add support for multiple criterions
-        class_path = self.class_path.rsplit(".", 1)
-        match len(class_path):
-            case 1:
-                modules = ["losses", "torch.nn"]
-                success = False
-                for module in modules:
-                    try:
-                        criterion_mod = importlib.import_module(module)
-                        criterion_cls = getattr(
-                            criterion_mod, self.class_path)
-                        if "device" in inspect.signature(criterion_cls).parameters:
-                            self.init_args |= {"device": pl_module.device}
-                        success = True
-                        break
-                    except AttributeError:
-                        pass
-                if not success:
-                    raise AttributeError(
-                        f"Criterion class {self.class_path} not found in torch.nn or src.losses")
-            case 2:
-                module_path, class_name = class_path
-                criterion_mod = importlib.import_module(module_path)
-                criterion_cls = getattr(criterion_mod, class_name)
-        pl_module.criterion = criterion_cls(**self.init_args)
+        if self.class_path:
+            # TODO: Add support for multiple criterions
+            class_path = self.class_path.rsplit(".", 1)
+            match len(class_path):
+                case 1:
+                    modules = ["losses", "torch.nn"]
+                    success = False
+                    for module in modules:
+                        try:
+                            criterion_mod = importlib.import_module(module)
+                            criterion_cls = getattr(
+                                criterion_mod, self.class_path)
+                            if "device" in inspect.signature(criterion_cls).parameters:
+                                self.init_args |= {"device": pl_module.device}
+                            success = True
+                            break
+                        except AttributeError:
+                            pass
+                    if not success:
+                        raise AttributeError(
+                            f"Criterion class {self.class_path} not found in torch.nn or src.losses")
+                case 2:
+                    module_path, class_name = class_path
+                    criterion_mod = importlib.import_module(module_path)
+                    criterion_cls = getattr(criterion_mod, class_name)
+            pl_module.criterion = criterion_cls(**self.init_args)
+        else:
+            pl_module.criterion = torch.nn.Identity()
 
 
 class DefineActivationCallback(L.Callback):
@@ -168,6 +169,35 @@ class LogTrainCallback(L.Callback):
             value=outputs["loss"],
             logger=True,
             prog_bar=True,
+            sync_dist=True
+        )
+
+
+class LogTrainImageCallback(L.Callback):
+    def on_validation_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: Tuple[torch.Tensor],
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        diff = outputs["diff"]
+        output = outputs["output"]
+
+        ssim0 = structural_similarity_index_measure(output[:,:,0,...], diff[:,:,0,...])
+        ssim1 = structural_similarity_index_measure(output[:,:,1,...], diff[:,:,1,...])
+        ssim2 = structural_similarity_index_measure(output[:,:,2,...], diff[:,:,2,...])
+        
+        ssim = (ssim0 + ssim1 + ssim2) / 3
+        
+        metrics = {
+            "ssim": ssim,
+        }
+
+        pl_module.log_dict(
+            dictionary=metrics,
+            logger=True,
+            prog_bar=False,
             sync_dist=True
         )
 
@@ -294,7 +324,7 @@ class LogTestCallback(L.Callback):
             pred = output[i]
 
             # save rgb and ir band separately
-            log_rbg_ir_image(chip, index, pl_module.logger.experiment)
+            log_rgb_ir_image(chip, index, pl_module.logger.experiment)
 
             # save original annotations
             for c in range(anno.shape[0]):
@@ -315,6 +345,51 @@ class LogTestCallback(L.Callback):
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
+
+
+class LogTestReconstructCallback(L.Callback):
+    def on_test_batch_end(self,
+                          trainer: L.Trainer,
+                          pl_module: L.LightningModule,
+                          outputs: torch.Tensor,
+                          batch: Tuple[torch.Tensor],
+                          batch_idx: int,
+                          dataloader_idx: int = 0):
+        chips = batch["chip"]
+        indices = batch["indx"]
+        loss = outputs["loss"]
+        output = outputs["output"]
+        diffs = outputs["diff"]
+
+        pl_module.log(
+            name="test_loss",
+            value=loss.detach(),
+            logger=True,
+            prog_bar=False,
+        )
+
+        # unnormalize chips for loggings
+        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
+            means = torch.tensor(
+                trainer.test_dataloaders.dataset.means,
+                dtype=torch.float,
+                device=pl_module.device).view(-1, 1, 1, 1)
+            stds = torch.tensor(
+                trainer.test_dataloaders.dataset.stds,
+                dtype=torch.float,
+                device=pl_module.device).view(-1, 1, 1, 1)
+            chips = chips * stds + means
+
+        for i in range(chips.shape[0]):
+            index = indices[i]
+            chip = chips[i]
+            pred = output[i]
+            diff = diffs[i]
+
+            # save rgb and ir band separately
+            log_rgb_ir_image(chip, index, "chip", pl_module.logger.experiment)
+            log_rgb_ir_image(pred, index, "pred", pl_module.logger.experiment)
+            log_rgb_ir_image(diff, index, "diff", pl_module.logger.experiment)
 
 
 class SaveTestCallback(L.Callback):
@@ -351,13 +426,6 @@ class SaveTestCallback(L.Callback):
             # save rgb and ir bands separately
             save_rgb_ir_tensor(chip, index, PREDICTION_PATH)
 
-            # save annotations
-            path = os.path.join(PREDICTION_PATH, f"{index:07d}_anno.pt")
-            torch.save(anno, path)
-
-            # save predictions generated from model
-            path = os.path.join(PREDICTION_PATH, f"{index:07d}_pred.pt")
-            torch.save(pred, path)
 
     def on_predict_batch_end(self,
                              trainer: L.Trainer,

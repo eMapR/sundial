@@ -54,7 +54,7 @@ LOGGER_CONFIG = {
     "log_code": False,
     "auto_param_logging": False,
     "auto_metric_logging": False,
-    "auto_metric_step_rate": 16,
+    "auto_metric_step_rate": 1,
     "log_git_metadata": False,
     "log_git_patch": False,
     "display_summary_level": 0

@@ -161,7 +161,7 @@ def save_rgb_ir_tensor(chip: torch.Tensor, index: int, path: str):
         torch.save(image, img_path)
 
 
-def log_rbg_ir_image(chip: torch.Tensor, index: int, logger: Any):
+def log_rgb_ir_image(chip: torch.Tensor, index: int, label: str, logger: Any):
     rgb = chip[0:3].flip(0).permute(1, 2, 3, 0)
     ir = chip[3:6].permute(1, 2, 3, 0)
     rgb_max = torch.max(rgb).item()
@@ -173,14 +173,14 @@ def log_rbg_ir_image(chip: torch.Tensor, index: int, logger: Any):
         image = rgb[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_rgb_t-{times[t]}_chip.png",
+            name=f"{index:07d}_rgb_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(rgb_min, rgb_max)
         )
         image = ir[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_ir_t-{times[t]}_chip.png",
+            name=f"{index:07d}_ir_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(ir_min, ir_max)
         )
