@@ -77,7 +77,7 @@ default:
 	echo
 	echo "        SUNDIAL_BASE_PATH:           Base path for Sundial scripts. Default: 'shell pwd' of makefile"
 	echo "        SUNDIAL_SAMPLE_NAME:         Sample name. REQUIRED"
-	echo "        SUNDIAL_EXPERIMENT_PREFIX:   Sundial experiment name prefix used for naming. Default: ''"
+	echo "        SUNDIAL_EXPERIMENT_PREFIX:   Sundial experiment name prefix used for naming. REQUIRED"
 	echo "        SUNDIAL_EXPERIMENT_SUFFIX:   Experiment suffix used only for logging."
 	echo "        SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
 	echo "        SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'"
