@@ -253,7 +253,8 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path,
-            decoder=True)
+            decoder=True,
+            reshape=False)
 
         self.up1 = Conv3dBlock(1536, 256)
         self.up2 = Conv3dBlock(512, 128)
@@ -310,7 +311,9 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path)
+            prithvi_path=prithvi_path,
+            decoder=True,
+            reshape=False)
         
     def forward(self, data):
         x = data["chip"]

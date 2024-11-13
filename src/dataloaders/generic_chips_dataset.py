@@ -147,10 +147,10 @@ class GenericChipsDataset(Dataset):
                     self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
-        chip = xarr[name].copy(deep=True) # deep copy due to python copy on write (a with statement may work)
+        chip = xarr[name]
         if self.chip_size < max(chip["x"].size, chip["y"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
-        chip = torch.tensor(chip.values, dtype=torch.float)
+        chip = torch.tensor(chip.values.copy(), dtype=torch.float)
         return chip
 
     def _tif_loader(self, data_path: str, name: int, split_tif: int | None):

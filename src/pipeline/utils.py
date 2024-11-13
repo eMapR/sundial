@@ -37,8 +37,6 @@ def recursive_merge(dict1: dict, dict2: dict):
         if key in result:
             if isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = recursive_merge(result[key], value)
-            elif isinstance(result[key], list) and isinstance(value, list):
-                result[key] = result[key] + value
             else:
                 result[key] = value
         else:
@@ -143,8 +141,10 @@ def get_xarr_stats(data: xr.Dataset) -> dict:
 def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     sums = data.sum(dim=["y", "x"])
     totals = sums.to_dataarray().sum(dim="variable")
-    weights = totals.min() / totals
-    return {"totals": totals.values.tolist(), "weights": weights.values.tolist()}, sums
+    total_samples = totals.sum()
+    class_probs = totals / total_samples
+    weights = 1 / class_probs
+    return {"totals": totals.values.tolist(), "weights": weights.values.tolist()}
 
 
 def get_band_stats(data: xr.Dataset,

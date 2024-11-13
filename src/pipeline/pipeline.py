@@ -449,7 +449,7 @@ def calculate():
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verifying annotation data...")
                     anno_data = xr.open_zarr(ANNO_DATA_PATH)
-
+                    # TODO: choice in weighting scheme
                     stat["anno_stats"] = get_xarr_stats(anno_data)
                     stat["anno_stats"] |= get_class_weights(anno_data)
             case _:
@@ -480,7 +480,6 @@ def index():
         }
         # TODO: resample data so sample class ratios stays consistent postprocessing
         samples = postprocess_data(**sample_config)
-    np.save(ALL_SAMPLE_PATH, samples)
 
     if SAMPLER_CONFIG["generate_time_combinations"]:
         LOGGER.info("Generating time combinations...")
@@ -490,7 +489,8 @@ def index():
             "time_step": SAMPLER_CONFIG["time_step"]
         }
         samples = generate_time_combinations(**time_sample_config)
-
+    np.save(ALL_SAMPLE_PATH, samples)
+    
     if SAMPLER_CONFIG["split_ratios"]:
         LOGGER.info(
             "Splitting sample data into training, validation, test, and predict sets...")
