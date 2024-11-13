@@ -40,9 +40,13 @@ class BeforeAfter(nn.Module):
 
 class RandomAffineAugmentation(nn.Module):
     def __init__(self):
-        self.rotation = torchvision.v2.RandomRotation(degrees=[0, 90, 180, 270])
-        self.hflip = torchvision.v2.RandomHorizontalFlip()
-        self.vflip = torchvision.v2.RandomVerticalFLip()
+        super().__init__()
+        self.rotation = torchvision.transforms.RandomChoice([torchvision.transforms.v2.RandomRotation((0, 0)),
+                                                            torchvision.transforms.v2.RandomRotation((90, 90)),
+                                                            torchvision.transforms.v2.RandomRotation((180, 180)),
+                                                            torchvision.transforms.v2.RandomRotation((270, 270))])
+        self.hflip = torchvision.transforms.v2.RandomHorizontalFlip()
+        self.vflip = torchvision.transforms.v2.RandomVerticalFlip()
     
     def forward(self, x):
         x = self.rotation(x)
@@ -53,8 +57,9 @@ class RandomAffineAugmentation(nn.Module):
    
 class RandomCropAndAffine(nn.Module):
     def __init__(self, size):
+        super().__init__()
         self.affine = RandomAffineAugmentation()
-        self.crop = torchvision.v2.RandomCrop(size=size)
+        self.crop = torchvision.transforms.v2.RandomCrop(size=size)
         
     def forward(self, x):
         x = self.crop(x)
@@ -70,7 +75,7 @@ class GeoColorJitter(nn.Module):
                  hue: float | tuple[float, float] = 0,
                  uniform: bool = True):
         super().__init__()
-        self.color_jitter = torchvision.transforms.ColorJitter(
+        self.color_jitter = torchvision.transforms.v2.ColorJitter(
             brightness=brightness,
             contrast=contrast,
             saturation=saturation,
