@@ -31,7 +31,7 @@ def unstack_band_years(
     # transposing to match torch convention
     xarr = xarr.transpose("band", DATETIME_LABEL, "y", "x")
 
-    # adding strata data as attributes
+    # adding class data as attributes
     xarr.name = str(index)
     new_attrs = attributes | {"point": point_name, "square": square_name}
     xarr.attrs.update(**new_attrs)

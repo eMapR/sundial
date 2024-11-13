@@ -326,4 +326,3 @@ variables:
   SUNDIAL_EXPERIMENT_PREFIX: placeholder_experiment_prefix
   SUNDIAL_GPU_PARTITION: placeholder_gpu_slurm_partition
   SUNDIAL_CPU_PARTITION: placeholder_cpu_slurm_partition
-prefix: /home/ceoas/truongmy/miniconda3_x86/envs/sundial
