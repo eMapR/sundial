@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --mem=128G
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=16
 #SBATCH --ntasks-per-node=1
 
 conda activate ${SUNDIAL_ENV_NAME}

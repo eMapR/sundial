@@ -6,16 +6,44 @@ import os
 import time
 import utm
 import xarray as xr
+import yaml
 
 from datetime import datetime
 from typing import Literal, Optional
 
-from pipeline.logger import get_logger
-from pipeline.settings import (NO_DATA_VALUE,
-                               LOG_PATH, METHOD,
-                               DATETIME_LABEL,
-                               RANDOM_SEED,
-                               CLASS_LABEL)
+
+def save_yaml(config: dict, path: str | os.PathLike):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        yaml.dump(config, f)
+
+
+def load_yaml(path: str | os.PathLike) -> dict:
+    with open(path, "r") as f:
+        config = yaml.safe_load(f)
+        return config if config else {}
+
+
+def update_yaml(config: dict, path: str | os.PathLike) -> dict:
+    if os.path.exists(path):
+        old_config = load_yaml(path)
+        config = recursive_merge(old_config, config)
+    save_yaml(config, path)
+
+
+def recursive_merge(dict1: dict, dict2: dict):
+    result = dict1.copy()
+    for key, value in dict2.items():
+        if key in result:
+            if isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = recursive_merge(result[key], value)
+            elif isinstance(result[key], list) and isinstance(value, list):
+                result[key] = result[key] + value
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
 
 
 def clip_xy_xarray(xarr: xr.DataArray, 
@@ -36,7 +64,8 @@ def clip_xy_xarray(xarr: xr.DataArray,
 
 def pad_xy_xarray(
         xarr: xr.DataArray,
-        pixel_edge_size: int) -> xr.DataArray:
+        pixel_edge_size: int,
+        no_data_value: float | int) -> xr.DataArray:
     x_diff = pixel_edge_size - xarr["x"].size
     y_diff = pixel_edge_size - xarr["y"].size
 
@@ -53,7 +82,7 @@ def pad_xy_xarray(
         y=(y_start, y_end),
         keep_attrs=True,
         mode="constant",
-        constant_values=NO_DATA_VALUE)
+        constant_values=no_data_value)
     return xarr
 
 
@@ -70,23 +99,6 @@ def get_utm_zone(point_coords: list[tuple[float]]) -> int:
     epsg_code = f"{epsg_prefix}{utm_zone[0]}"
 
     return epsg_code
-
-
-def function_timer(func):
-    logger = get_logger(LOG_PATH, METHOD)
-
-    def timer(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        if logger:
-            logger.info(
-                f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
-        else:
-            print(
-                f"{func.__name__} took {(end - start)/60:.3f} minutes to complete.")
-        return result
-    return timer
 
 
 def train_validate_test_split(samples: np.array, 
@@ -111,24 +123,7 @@ def train_validate_test_split(samples: np.array,
 
     return train, val, test
 
-@function_timer
-def get_chip_stats(data: xr.Dataset) -> dict:
-    sums = data.sum(dim=data.dims).to_array()
-    min_idx = sums.argmin().values
-    max_idx = sums.argmax().values
 
-    stats = {
-        "mean": float(sums.mean().values),
-        "std": float(sums.std().values),
-        "min": float(sums[min_idx].values),
-        "max": float(sums[max_idx].values),
-        "count": len(data.variables)
-    }
-
-    return stats
-
-
-@function_timer
 def get_xarr_stats(data: xr.Dataset) -> dict:
     sums = data.sum(dim=data.dims).to_array()
     min_idx = sums.argmin().values
@@ -144,7 +139,7 @@ def get_xarr_stats(data: xr.Dataset) -> dict:
 
     return stats
 
-@function_timer
+
 def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     sums = data.sum(dim=["y", "x"])
     totals = sums.to_dataarray().sum(dim="variable")
@@ -152,11 +147,11 @@ def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     return {"totals": totals.values.tolist(), "weights": weights.values.tolist()}, sums
 
 
-@function_timer
-def get_band_stats(data: xr.Dataset) -> tuple[list[float], list[float]]:
+def get_band_stats(data: xr.Dataset,
+                   datetime_label: str) -> tuple[list[float], list[float]]:
     data = data.to_dataarray()
-    means = data.mean(dim=["variable", DATETIME_LABEL, "y", "x"])
-    stds = data.std(dim=["variable", DATETIME_LABEL, "y", "x"])
+    means = data.mean(dim=["variable", datetime_label, "y", "x"])
+    stds = data.std(dim=["variable", datetime_label, "y", "x"])
     return {"band_means": means.values.tolist(), "band_stds": stds.values.tolist()}
 
 
@@ -191,7 +186,6 @@ def gee_get_percentile_ranges(
     ).values().getInfo())
 
 
-@function_timer
 def gee_stratify_by_percentile(
         single_band_image: ee.Image,
         percentiles: list[int],
@@ -206,21 +200,20 @@ def gee_stratify_by_percentile(
     return result
 
 
-@function_timer
 def gee_generate_random_points(
         feature: ee.Feature,
         radius: int,
         num_points: int,
+        random_seed: float | int
 ) -> ee.FeatureCollection:
     geometry = feature.geometry().buffer(distance=radius)
     return ee.FeatureCollection.randomPoints(
         region=geometry,
         points=num_points,
-        seed=RANDOM_SEED,
+        seed=random_seed,
     )
 
 
-@function_timer
 def gee_stratified_sampling(
         num_points: int,
         num_classes: int,
@@ -277,20 +270,19 @@ def gee_stratified_sampling(
         geometries=True)
 
 
-@function_timer
 def gee_download_features(
         features: ee.FeatureCollection) -> gpd.GeoDataFrame:
     return ee.data.computeFeatures({
         "expression": features,
         "fileFormat": "GEOPANDAS_GEODATAFRAME"})
 
-    
-@function_timer
+
 def stratified_sample(
         geo_dataframe: gpd.GeoDataFrame,
+        class_label: str,
         num_points: Optional[float | int] = None):
     if num_points is not None:
-        groupby = geo_dataframe.groupby(CLASS_LABEL)
+        groupby = geo_dataframe.groupby(class_label)
         match num_points:
             case num if isinstance(num, float):
                 sample = groupby.sample(frac=num)
@@ -302,7 +294,6 @@ def stratified_sample(
     return sample
 
 
-@function_timer
 def generate_centroid_squares(
         geo_dataframe: gpd.GeoDataFrame,
         meter_edge_size: int) -> gpd.GeoDataFrame:

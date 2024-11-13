@@ -9,23 +9,17 @@ import pandas as pd
 import random
 import xarray as xr
 
-from datetime import datetime
-from typing import Literal
 from rasterio.transform import from_bounds
 from rasterio.features import rasterize
 from shapely.geometry import Polygon
 from shapely import unary_union
-from shapely.ops import transform
-from sklearn.model_selection import train_test_split
-from typing import Optional
+from typing import Any, Optional, Literal
 
 from pipeline.downloader import Downloader
-from pipeline.logger import get_logger
+from pipeline.logging import function_timer, get_logger
 from pipeline.settings import (
-    load_yaml,
-    save_yaml,
-    update_yaml,
     DATETIME_LABEL,
+    IDX_NAME_ZFILL,
     METHOD,
     NO_DATA_VALUE,
     RANDOM_SEED,
@@ -46,8 +40,7 @@ from pipeline.settings import (
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
 )
-from .utils import (
-    function_timer,
+from pipeline.utils import (
     gee_stratified_sampling,
     gee_download_features,
     generate_centroid_squares,
@@ -55,7 +48,8 @@ from .utils import (
     get_band_stats,
     get_xarr_stats,
     stratified_sample,
-    train_validate_test_split
+    train_validate_test_split,
+    update_yaml,
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)
@@ -138,12 +132,11 @@ def postprocess_data(
         target = postprocess["targets"]
         match action:
             case "sum":
-                sums_ds = pre_calc[data].setdefault(
-                    action, data_map[data].sum())
-                to_drop = [v for v in sums_ds.data_vars if not compare(
-                    sums_ds[v].values, target)]
-                data_map[data] = data_map[data].drop_vars(
-                    to_drop, errors="ignore")
+                sums_ds = pre_calc[data].setdefault(action, data_map[data].sum())
+                to_drop = [v for v in sums_ds.data_vars if not compare(sums_ds[v].values, target)]
+                data_map[data] = data_map[data].drop_vars(to_drop, errors="ignore")
+            case "filter":
+                pass
             case _:
                 raise ValueError(f"Invalid action: {action}")
     chip_vars = np.array(data_map["chip"].data_vars, dtype=int)
@@ -231,13 +224,14 @@ def annotator(population_gdf: gpd.GeoDataFrame,
               scale: int,
               anno_data_path: str,
               io_limit: int,
-              io_lock: Optional[mp.Lock] = None,
+              io_lock: Any = None,
               index_queue: Optional[mp.Queue] = None):
     batch = []
     while (index := index_queue.get()) is not None:
-
+        index_name = str(index).zfill(IDX_NAME_ZFILL)
+        
         # getting annotation information from sample
-        LOGGER.info(f"Rasterizing sample {index}...")
+        LOGGER.info(f"Rasterizing sample {index_name}...")
         target = sample_gdf.iloc[index]
         group = target[groupby_columns]
         square = target.geometry
@@ -245,7 +239,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         # rasterizing multipolygon and clipping to square
         xarr_anno_list = []
         LOGGER.info(
-            f"Creating annotations for sample {index} from class list...")
+            f"Creating annotations for sample {index_name} from class list...")
 
         # class list should already be in order of index value
         for default_value, class_name in zip(range(1, len(class_indices) + 1), class_indices):
@@ -260,14 +254,15 @@ def annotator(population_gdf: gpd.GeoDataFrame,
                         mp, square, pixel_edge_size, NO_DATA_VALUE, default_value)
             except Exception as e:
                 raise e
+            # TODO: add support for tif
             annotation = xr.DataArray(annotation, dims=["y", "x"])
 
             xarr_anno_list.append(annotation)
         xarr_anno = xr.concat(xarr_anno_list, dim=CLASS_LABEL)
 
         # writing in batches to avoid io bottleneck
-        LOGGER.info(f"Appending rasterized sample {index} of shape {xarr_anno.shape} to batch...")
-        xarr_anno.name = str(index)
+        LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_anno.shape} to batch...")
+        xarr_anno.name = index_name
         batch.append(xarr_anno)
         if len(batch) == io_limit:
             xarr_anno = xr.merge(batch)
@@ -354,6 +349,7 @@ def sample():
             LOGGER.info("Performing stratified sample of data in geo file...")
             group_config = {
                 "geo_dataframe": geo_dataframe,
+                "class_label": CLASS_LABEL,
                 "num_points": SAMPLER_CONFIG["num_points"],
             }
             geo_dataframe = stratified_sample(**group_config)
@@ -409,8 +405,6 @@ def download():
         gdf = gpd.read_file(META_DATA_PATH)
 
         LOGGER.info("Generating image chips...")
-        parser_kwargs = SAMPLER_CONFIG["parser_kwargs"]
-        parser_kwargs["look_range"] = SAMPLER_CONFIG["look_range"]
         downloader_kwargs = {
             "file_type": SAMPLER_CONFIG["file_type"],
             "overwrite": SAMPLER_CONFIG["overwrite"],
@@ -425,7 +419,7 @@ def download():
             "num_workers": SAMPLER_CONFIG["gee_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
             "logger": LOGGER,
-            "parser_kwargs": parser_kwargs,
+            "parser_kwargs": SAMPLER_CONFIG["parser_kwargs"],
             "factory_kwargs": SAMPLER_CONFIG["factory_kwargs"],
             "reshaper_kwargs": SAMPLER_CONFIG["reshaper_kwargs"],
         }
@@ -450,7 +444,7 @@ def calculate():
                 chip_data = xr.open_zarr(CHIP_DATA_PATH)
                 # TODO: fix redudant summing
                 stat["chip_stats"] = get_xarr_stats(chip_data)
-                stat["chip_stats"] |= get_band_stats(chip_data)
+                stat["chip_stats"] |= get_band_stats(chip_data, DATETIME_LABEL)
 
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verifying annotation data...")

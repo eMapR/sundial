@@ -1,24 +1,6 @@
 import os
-import yaml
 
-
-# convenience functions for saving and loading yaml files
-def save_yaml(config: dict, path: str | os.PathLike):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        yaml.dump(config, f)
-
-
-def load_yaml(path: str | os.PathLike) -> dict:
-    with open(path, "r") as f:
-        config = yaml.safe_load(f)
-        return config if config else {}
-
-def update_yaml(config: dict, path: str | os.PathLike) -> dict:
-    if os.path.exists(path):
-        old_config = load_yaml(path)
-        config = old_config | config
-    save_yaml(config, path)
+from pipeline.utils import  load_yaml, recursive_merge
 
 
 # experiment information
@@ -71,6 +53,7 @@ RANDOM_SEED = 42
 CLASS_LABEL = "strata"
 DATETIME_LABEL = "datetime"
 NO_DATA_VALUE = 0
+IDX_NAME_ZFILL = 8
 GEE_REQUEST_LIMIT = 40
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
 
@@ -84,15 +67,6 @@ FILE_EXT_MAP = {
 
 # configs relating to sampler methods
 SAMPLER_CONFIG = {
-    # date information for medoid composites
-    # (dict | None) image generator / parser kwargs for download
-    "parser_kwargs": {
-        "start_month": 7,
-        "start_day": 15,
-        "end_month": 9,
-        "end_day": 1
-    },
-
     # Sampling settings
 
     # (str) Method to used for generating squares around the polygons given in the original geodataframe.
@@ -165,14 +139,20 @@ SAMPLER_CONFIG = {
     
     # (int) Number of time steps to look back from observation date (i.e. 2 = 3 years total including observation year). Currently only years is supported.
     # See downloader.Downloader.image_generator.
-    "look_range": 2,
+    "look_range": 3,
     
     # (str) Name of function in pipeline.meta_data_parser to parse metadata in Downloader. An example is provided but more can be defined there.
     # Must consume (META_DATA_PATH, index: int, **kwargs).
     "meta_data_parser": "medoid_from_year",
     
     # (dict) Kwargs to be passed to meta_data_parser.
-    "parser_kwargs": {},
+    "parser_kwargs": {
+        "start_month": 7,
+        "start_day": 15,
+        "end_month": 9,
+        "end_day": 1,
+        "look_range": 3
+    },
     
     # (str) Name of function in pipeline.ee_image_factory to generate expression in google earth engine consumed by Downloader. An example is provided but more can be defined there.
     # Must consume (square_coords: list[tuple[float, float]], start_date: datetime, end_date: datetime, pixel_edge_size: int, scale: int, projection: str, **kwargs)
@@ -182,7 +162,7 @@ SAMPLER_CONFIG = {
     "factory_kwargs": {},
     
     # (str) Name of function in pipeline.image_reshaper to reshape resulting download from GEE via Downloader. An example is provided but more can be defined there.
-    # Must consume (arr: np.ndarray, index: str,pixel_edge_size: int,square_name: str,point_name: str, attributes: Optional[dict] = {}, **kwargs)
+    # Must consume (arr: np.ndarray, index_name: str, pixel_edge_size: int,square_name: str,point_name: str, attributes: Optional[dict] = {}, **kwargs)
     "image_reshaper": "unstack_band_years",
     
     # (dict) Kwargs to be passed to image_reshaper.
@@ -205,7 +185,7 @@ SAMPLER_CONFIG = {
 
 # loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
-    SAMPLER_CONFIG |= load_yaml(SAMPLE_CONFIG_PATH)
+    SAMPLER_CONFIG = recursive_merge(SAMPLER_CONFIG, load_yaml(SAMPLE_CONFIG_PATH))
 
 if SAMPLER_CONFIG["file_type"] == "ZARR":
     ext = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]]

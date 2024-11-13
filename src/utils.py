@@ -15,9 +15,6 @@ from cupyx.scipy.ndimage import distance_transform_edt
 from sklearn.manifold import TSNE
 from typing import Any, Optional
 
-from pipeline.utils import function_timer
-
-
 
 def dynamic_import(loader: dict):
     class_path = loader.get("class_path")
@@ -215,7 +212,6 @@ def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
             dst.write(tensor.numpy())
 
 
-@function_timer
 def tensors_to_tifs(prediction_path: str,
                     output_name: str,
                     meta_data_path: str,

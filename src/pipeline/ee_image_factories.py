@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pipeline.settings import DATETIME_LABEL
 
+
 def lt_medoid_image_factory(
         square_coords: list[tuple[float, float]],
         start_date: datetime,

@@ -10,7 +10,6 @@ from callbacks import DefineActivationCallback, DefineCriterionCallback, LogSetu
 from settings import CHECKPOINT_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
 from utils import get_best_ckpt, get_latest_ckpt, tensors_to_tifs
 
-from pipeline.utils import function_timer
 from pipeline.pipeline import (
     sample,
     annotate,
@@ -19,7 +18,6 @@ from pipeline.pipeline import (
     index,
 )
 from pipeline.settings import (
-    load_yaml,
     BASE_CONFIG_PATH,
     CHECKPOINT_PATH,
     EXPERIMENT_FULL_NAME,
@@ -31,6 +29,8 @@ from pipeline.settings import (
     RANDOM_SEED,
     SAMPLER_CONFIG,
 )
+from pipeline.logging import function_timer
+from pipeline.utils import load_yaml
 
 
 class SundialCLI(LightningCLI):

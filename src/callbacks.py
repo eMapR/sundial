@@ -20,14 +20,15 @@ from torchmetrics import (MeanAbsoluteError,
 from torchmetrics.functional.image import structural_similarity_index_measure
 from typing import Optional, Tuple
 
-from pipeline.settings import (load_yaml,
-                               EXPERIMENT_FULL_NAME,
+from pipeline.settings import (EXPERIMENT_FULL_NAME,
+                               IDX_NAME_ZFILL,
                                LOG_PATH,
                                META_DATA_PATH,
                                PREDICTION_PATH,
                                SAMPLER_CONFIG,
                                STAT_DATA_PATH)
-from utils import log_rgb_ir_image, log_tsne_plot, save_rgb_ir_tensor, tensors_to_tifs
+from pipeline.utils import load_yaml
+from utils import log_rgb_ir_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -318,7 +319,7 @@ class LogTestCallback(L.Callback):
             chips = chips * stds + means
 
         for i in range(chips.shape[0]):
-            index = indices[i]
+            index = str(indices[i]).zfill(IDX_NAME_ZFILL)
             chip = chips[i]
             anno = annotations[i]
             pred = output[i]
@@ -331,7 +332,7 @@ class LogTestCallback(L.Callback):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
-                    name=f"{index:07d}_c{c+1}_anno.png",
+                    name=f"{index}_c{c+1}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -341,7 +342,7 @@ class LogTestCallback(L.Callback):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.to(torch.float32).detach().cpu(),
-                    name=f"{index:07d}_c{c+1}_pred.png",
+                    name=f"{index}_c{c+1}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -438,9 +439,9 @@ class SaveTestCallback(L.Callback):
         output = outputs["output"]
 
         for i in range(output.shape[0]):
-            index = indices[i]
+            index = str(indices[i]).zfill(IDX_NAME_ZFILL)
             pred = output[i]
-            path = os.path.join(PREDICTION_PATH, f"{index:07d}_pred.pt")
+            path = os.path.join(PREDICTION_PATH, f"{index}_pred.pt")
             torch.save(pred, path)
 
 

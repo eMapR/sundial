@@ -8,7 +8,7 @@ from pipeline.settings import DATETIME_LABEL
 
 def unstack_band_years(
         arr: np.ndarray,
-        index: str,
+        index_name: str,
         pixel_edge_size: int,
         square_name: str,
         point_name: str,
@@ -32,7 +32,7 @@ def unstack_band_years(
     xarr = xarr.transpose("band", DATETIME_LABEL, "y", "x")
 
     # adding class data as attributes
-    xarr.name = str(index)
+    xarr.name = index_name
     new_attrs = attributes | {"point": point_name, "square": square_name}
     xarr.attrs.update(**new_attrs)
 

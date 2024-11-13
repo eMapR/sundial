@@ -25,6 +25,7 @@ from pipeline.settings import (
     PREDICT_SAMPLE_PATH,
 )
 from pipeline.utils import clip_xy_xarray
+from pipeline.settings import IDX_NAME_ZFILL
 from settings import DATALOADER_CONFIG
 from utils import dynamic_import
 
@@ -79,18 +80,17 @@ class GenericChipsDataset(Dataset):
         transform_indx = indx % len(self.dynamic_transforms)
         
         if not isinstance(self.samples, list) and len(self.samples.shape) == 2:
-            img_name, time_indx = self.samples[sample_indx]
+            img_indx, time_indx = self.samples[sample_indx]
             slicer = slice(time_indx, time_indx + self.time_step)
         else:
-            img_name = self.samples[sample_indx]
+            img_indx = self.samples[sample_indx]
             slicer = slice(-self.time_step, None) if self.time_step else None
-        
+        if isinstance(img_indx, str):
+            img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
+
         # parsing img name for index
-        if isinstance(img_name, str):
-            img_indx = int(re.search(r'.*(\d+).*', img_name).group(1))
-        else:
-            img_indx = img_name
         data["indx"] = img_indx 
+        img_name = str(img_indx).zfill(IDX_NAME_ZFILL)
 
         # loading chip and slicing time if necessary
         chip = self.chip_loader(img_name)
@@ -148,7 +148,7 @@ class GenericChipsDataset(Dataset):
                     self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
-        chip = xarr[str(name)].copy(deep=True) # deep copy due to python copy on write (a with statement may work)
+        chip = xarr[name].copy(deep=True) # deep copy due to python copy on write (a with statement may work)
         if self.chip_size < max(chip["x"].size, chip["y"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
         chip = torch.tensor(chip.values, dtype=torch.float)

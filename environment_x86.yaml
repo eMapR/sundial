@@ -288,6 +288,7 @@ dependencies:
       - jsonargparse==4.34.0
       - lightning==2.4.0
       - lightning-utilities==0.11.8
+      - lt-gee-py==0.0.4
       - markdown-it-py==3.0.0
       - mdurl==0.1.2
       - mpmath==1.3.0
