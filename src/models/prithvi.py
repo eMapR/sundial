@@ -301,9 +301,9 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         from models.basic_unet import DoubleConv, Down, Up, OutConv
         self.inc = DoubleConv(self.num_channels, 256)
         self.down1 = Down(256, 512)
-        factor = 2 if bilinear else 1
-        self.down2 = Down(512, 1024 // factor)
+        self.down2 = Down(512, 1024)
         
+        factor = 2 if bilinear else 1
         self.up1 = Up(1024, 512 // factor, bilinear)
         self.up2 = Up(512, 256 // factor, bilinear)
         self.out = OutConv(256, self.num_classes)

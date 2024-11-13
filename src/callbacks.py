@@ -18,6 +18,7 @@ from torchmetrics.functional.classification import (binary_accuracy,
 from torchmetrics import (MeanAbsoluteError,
                           MeanSquaredError)
 from torchmetrics.functional.image import structural_similarity_index_measure
+from torchvision.transforms.functional import to_pil_image
 from typing import Optional, Tuple
 
 from pipeline.settings import (EXPERIMENT_FULL_NAME,
@@ -119,6 +120,35 @@ class DefineActivationCallback(L.Callback):
             pl_module.activation = activation
         else:
             pl_module.activation = torch.nn.Identity()
+
+
+class GenerateGifCallback(L.Callback):
+    def __init__(self,
+                 save_path: Optional[str] = None,
+                 index: Optional[int] = 0):
+        super().__init__()
+        self.save_path = save_path
+        self.index = index
+        self.frames = []
+    
+    def on_validation_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: Tuple[torch.Tensor],
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        output = outputs["output"]
+
+        frame_tensor = output[0].detach().cpu()
+        self.frames.append(frame_tensor)
+        
+    def on_train_end(self,
+                    trainer: L.Trainer,
+                    pl_module: L.LightningModule):
+        pil_frames = [to_pil_image(frame) for frame in self.frames]
+        if pil_frames:
+            pil_frames[0].save(self.save_path, save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
 
 
 class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
