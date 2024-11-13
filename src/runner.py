@@ -57,6 +57,7 @@ def run():
     # setting up default callbacks and ckpts for methods avoiding pL indirect
     trainer_defaults = {
         "accelerator": "cuda",
+        "log_every_n_steps": 16,
         "callbacks": [
             ModelSetupCallback(),
             DefineCriterionCallback(**run_configs.get("criterion", {})),

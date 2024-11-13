@@ -70,9 +70,7 @@ def preprocess_data(
             "column": str,
             "action": Literal[">", "<", "==", "!=", "replace"],
             "targets": int, float, str, list]],
-        projection: Optional[str] = None,
-        class_columns: Optional[list[str]] = None,
-        datetime_column: Optional[str] = None) -> gpd.GeoDataFrame:
+        projection: Optional[str] = None) -> gpd.GeoDataFrame:
     epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
     if projection is not None and epsg != projection:
         LOGGER.info(f"Reprojecting geo dataframe to {projection}...")
@@ -103,13 +101,6 @@ def preprocess_data(
                     raise ValueError(f"Invalid filter operator: {action}")
 
     geo_dataframe = geo_dataframe[mask].copy()
-    if datetime_column is not None:
-        geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe[datetime_column]
-
-    if class_columns is not None:
-        geo_dataframe.loc[:, CLASS_LABEL] = geo_dataframe[class_columns]\
-            .apply(lambda x: '__'.join(x.astype(str)).replace(" ", "_"), axis=1)
-
     return geo_dataframe
 
 
@@ -331,9 +322,8 @@ def sample():
     try:
         LOGGER.info("Loading geo file into GeoDataFrame...")
         geo_dataframe = gpd.read_file(GEO_RAW_PATH)
-
+        LOGGER.info("Preprocessing data in geo file...")
         if SAMPLER_CONFIG["preprocess_actions"]:
-            LOGGER.info("Preprocessing data in geo file...")
             sample_config = {
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
@@ -342,8 +332,14 @@ def sample():
                 "datetime_column": SAMPLER_CONFIG["datetime_column"],
             }
             geo_dataframe = preprocess_data(**sample_config)
-            LOGGER.info(f"Saving processed geo dataframe to {GEO_POP_PATH}...")
-            geo_dataframe.to_file(GEO_POP_PATH)
+        
+        LOGGER.info(f"Saving processed geo dataframe to {GEO_POP_PATH}...")
+        if SAMPLER_CONFIG["datetime_column"] is not None:
+            geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe[SAMPLER_CONFIG["datetime_column"]]
+        if SAMPLER_CONFIG["class_columns"] is not None:
+            geo_dataframe.loc[:, CLASS_LABEL] = geo_dataframe[SAMPLER_CONFIG["class_columns"]]\
+                .apply(lambda x: '__'.join(x.astype(str)).replace(" ", "_"), axis=1)
+        geo_dataframe.to_file(GEO_POP_PATH)
 
         if SAMPLER_CONFIG["num_points"]:
             LOGGER.info("Performing stratified sample of data in geo file...")

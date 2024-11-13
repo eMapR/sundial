@@ -125,10 +125,10 @@ class DefineActivationCallback(L.Callback):
 class GenerateGifCallback(L.Callback):
     def __init__(self,
                  save_path: Optional[str] = None,
-                 index: Optional[int] = 0):
+                 index_name: Optional[int] = 0):
         super().__init__()
         self.save_path = save_path
-        self.index = index
+        self.index_name = index_name
         self.frames = []
     
     def on_validation_batch_end(self,
@@ -349,20 +349,20 @@ class LogTestCallback(L.Callback):
             chips = chips * stds + means
 
         for i in range(chips.shape[0]):
-            index = str(indices[i]).zfill(IDX_NAME_ZFILL)
+            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             chip = chips[i]
             anno = annotations[i]
             pred = output[i]
 
             # save rgb and ir band separately
-            log_rgb_ir_image(chip, index, pl_module.logger.experiment)
+            log_rgb_ir_image(chip, index_name, "chip", pl_module.logger.experiment)
 
             # save original annotations
             for c in range(anno.shape[0]):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.detach().cpu(),
-                    name=f"{index}_c{c+1}_anno.png",
+                    name=f"{index_name}_c{c+1}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -372,7 +372,7 @@ class LogTestCallback(L.Callback):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.to(torch.float32).detach().cpu(),
-                    name=f"{index}_c{c+1}_pred.png",
+                    name=f"{index_name}_c{c+1}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -412,15 +412,15 @@ class LogTestReconstructCallback(L.Callback):
             chips = chips * stds + means
 
         for i in range(chips.shape[0]):
-            index = indices[i]
+            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             chip = chips[i]
             pred = output[i]
             diff = diffs[i]
 
             # save rgb and ir band separately
-            log_rgb_ir_image(chip, index, "chip", pl_module.logger.experiment)
-            log_rgb_ir_image(pred, index, "pred", pl_module.logger.experiment)
-            log_rgb_ir_image(diff, index, "diff", pl_module.logger.experiment)
+            log_rgb_ir_image(chip, index_name, "chip", pl_module.logger.experiment)
+            log_rgb_ir_image(pred, index_name, "pred", pl_module.logger.experiment)
+            log_rgb_ir_image(diff, index_name, "diff", pl_module.logger.experiment)
 
 
 class SaveTestCallback(L.Callback):
@@ -449,13 +449,13 @@ class SaveTestCallback(L.Callback):
             chips = chips * stds + means
 
         for i in range(chips.shape[0]):
-            index = indices[i]
+            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             chip = chips[i]
             anno = annotations[i]
             pred = output[i]
 
             # save rgb and ir bands separately
-            save_rgb_ir_tensor(chip, index, PREDICTION_PATH)
+            save_rgb_ir_tensor(chip, index_name, "chip", PREDICTION_PATH)
 
 
     def on_predict_batch_end(self,
@@ -469,9 +469,9 @@ class SaveTestCallback(L.Callback):
         output = outputs["output"]
 
         for i in range(output.shape[0]):
-            index = str(indices[i]).zfill(IDX_NAME_ZFILL)
+            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             pred = output[i]
-            path = os.path.join(PREDICTION_PATH, f"{index}_pred.pt")
+            path = os.path.join(PREDICTION_PATH, f"{index_name}_pred.pt")
             torch.save(pred, path)
 
 

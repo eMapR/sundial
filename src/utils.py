@@ -146,19 +146,19 @@ def clean_dir_files(directory: str | os.PathLike):
             print(f"Failed to delete {file_path}. Reason: {e}")
 
 
-def save_rgb_ir_tensor(chip: torch.Tensor, index: int, path: str):
+def save_rgb_ir_tensor(chip: torch.Tensor, index_name: int, path: str):
     times = list(range(chip.shape[1]-1, -1, -1))
     for t in range(chip.shape[1]):
         image = chip[0:3, t, :, :]
-        img_path = os.path.join(path, f"{index:07d}_rgb_t-{times[t]}_chip.pt")
+        img_path = os.path.join(path, f"{index_name}_rgb_t-{times[t]}_chip.pt")
         torch.save(image, img_path)
 
         image = chip[3:6, t, :, :]
-        img_path = os.path.join(path, f"{index:07d}_ir_t-{times[t]}_chip.pt")
+        img_path = os.path.join(path, f"{index_name}_ir_t-{times[t]}_chip.pt")
         torch.save(image, img_path)
 
 
-def log_rgb_ir_image(chip: torch.Tensor, index: int, label: str, logger: Any):
+def log_rgb_ir_image(chip: torch.Tensor, index_name: int, label: str, logger: Any):
     rgb = chip[0:3].flip(0).permute(1, 2, 3, 0)
     ir = chip[3:6].permute(1, 2, 3, 0)
     rgb_max = torch.max(rgb).item()
@@ -170,14 +170,14 @@ def log_rgb_ir_image(chip: torch.Tensor, index: int, label: str, logger: Any):
         image = rgb[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_rgb_t-{times[t]}_{label}.png",
+            name=f"{index_name}_rgb_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(rgb_min, rgb_max)
         )
         image = ir[t, :, :, :]
         logger.log_image(
             image_data=image.detach().cpu(),
-            name=f"{index:07d}_ir_t-{times[t]}_{label}.png",
+            name=f"{index_name}_ir_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(ir_min, ir_max)
         )

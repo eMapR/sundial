@@ -31,6 +31,35 @@ class SecondOrderDifference(nn.Module):
 class BinaryStep(nn.Module):
     def forward(self, x):
         return torch.where(x > 0, 1.0, 0.0)
+    
+
+class BeforeAfter(nn.Module):
+    def forward(self, x):
+        return torch.stack([x[:,-3,:,:], x[:,-1,:,:]], dim=1)
+    
+
+class RandomAffineAugmentation(nn.Module):
+    def __init__(self):
+        self.rotation = torchvision.v2.RandomRotation(degrees=[0, 90, 180, 270])
+        self.hflip = torchvision.v2.RandomHorizontalFlip()
+        self.vflip = torchvision.v2.RandomVerticalFLip()
+    
+    def forward(self, x):
+        x = self.rotation(x)
+        x = self.hflip(x)
+        x = self.vflip(x)
+        return x
+
+   
+class RandomCropAndAffine(nn.Module):
+    def __init__(self, size):
+        self.affine = RandomAffineAugmentation()
+        self.crop = torchvision.v2.RandomCrop(size=size)
+        
+    def forward(self, x):
+        x = self.crop(x)
+        x = self.affine(x)
+        return x
 
 
 class GeoColorJitter(nn.Module):

@@ -69,6 +69,6 @@ if __name__ == "__main__":
             "init_args": DATALOADER_CONFIG
         }
     }
-    config_path = os.path.join(CONFIG_PATH, f"base.yaml")
+    config_path = os.path.join(CONFIG_PATH, "base.yaml")
     save_yaml(run_config, config_path)
     save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)

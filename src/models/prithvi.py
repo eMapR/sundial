@@ -325,9 +325,11 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         
         x4 = x3.unsqueeze(2)
         x4 = self.prithvi(x4)
+        x4 = self.prithvi.model.unpatchify(x4)
+        x4 = x4.squeeze(2)
         
         x5 = self.up1(x4, x2)
-        x6 = self.up2(x5, x1)
+        x6 = self.up2(x5, x1)  
         x7 = self.out(x6)
         return x7
 

@@ -88,7 +88,7 @@ default:
 	echo
 
 setup_env:
-	echo "Setting up directories for $(SUNDIAL_BASE_PATH) and conda environment "$(SUNDIAL_ENV_NAME)". The existing environment will be overwritten...";
+	echo "Setting up directories for $(SUNDIAL_BASE_PATH) and conda environment "$(SUNDIAL_ENV_NAME)".";
 	mkdir -p $(SUNDIAL_BASE_PATH)/logs;
 	mkdir -p $(SUNDIAL_BASE_PATH)/samples;
 	mkdir -p $(SUNDIAL_BASE_PATH)/checkpoints;
@@ -96,9 +96,9 @@ setup_env:
 	mkdir -p $(SUNDIAL_BASE_PATH)/configs;
 	mkdir -p $(SUNDIAL_BASE_PATH)/src/models/backbones;
 	if [[ "$(ARCH)" == aarch64 ]]; then \
-		conda env create -f $(SUNDIAL_BASE_PATH)/environment_a64.yaml -n $(SUNDIAL_ENV_NAME) -y --force; \
+		conda env create -f $(SUNDIAL_BASE_PATH)/environment_a64.yaml -n $(SUNDIAL_ENV_NAME) -y; \
 	else \
-		conda env create -f $(SUNDIAL_BASE_PATH)/environment_x86.yaml -n $(SUNDIAL_ENV_NAME) -y --force; \
+		conda env create -f $(SUNDIAL_BASE_PATH)/environment_x86.yaml -n $(SUNDIAL_ENV_NAME) -y; \
 	fi; \
 	echo "Sundial setup complete!";
 
