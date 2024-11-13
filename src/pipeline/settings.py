@@ -68,7 +68,7 @@ GEO_POP_PATH = os.path.join(SAMPLE_PATH, "gpop_data")
 
 # non configurable GEE, image, and meta data settings
 RANDOM_SEED = 42
-STRATA_LABEL = "strata"
+CLASS_LABEL = "strata"
 DATETIME_LABEL = "datetime"
 NO_DATA_VALUE = 0
 GEE_REQUEST_LIMIT = 40
@@ -93,59 +93,113 @@ SAMPLER_CONFIG = {
         "end_day": 1
     },
 
-    # sampling settings
-    # (str) method to use for sampling
+    # Sampling settings
+
+    # (str) Method to used for generating squares around the polygons given in the original geodataframe.
+    # See pipeline.generate_squares.
     "method": "centroid",
-    # (float| int | None) number of points to sample. If float, a fraction of sample = n is used.
+
+    # (float| int | None) Number of points to sample. If float, a fraction of sample = n is used. If None, all samples are included.
+    # See pipeline.stratified_sample.
     "num_points": 2.0e-2,
-    # (List[str] | None) columns in provided geo_raw_path to use for strata
-    "strata_columns": None,
-    # (List[str] | None) columns to group by for annotation generation in addition to strata columns
+    
+    # (List[str] | None) Columns in provided in file at GEO_RAW_PATH to use for defining classes.
+    # See pipeline.preprocess_data.
+    "class_columns": None,
+
+    # (List[str] | None) Columns in grouping during annotation generation in addition to class columns.
+    # See pipeline.annotator.
     "groupby_columns": None,
-    # (dict) List of actions to perform on shapefile before sampling
+
+    # (dict) List of actions to perform on shapefile before sampling.
+    # See pipeline.preprocess_actions.
     "preprocess_actions": [],
-    # (dict) List of actions to perform on chip and anno data after sampling
+
+    # (dict) List of actions to perform on chip and anno data after sampling.
+    # See pipeline.postprocess_actions.
     "postprocess_actions": [],
-    # (str) Column to use for datetime value in geo file
+
+    # (str) Column to use for saving datetime value in file at GEO_POP_PATH. This is currently unused.
+    # See pipeline.preprocess_actions.
     "datetime_column": "year",
-    # (bool) Toggle for splitting time range at one location into multiple samples
+
+    # (bool) Toggle for generating sliding time windows into sample as separate samples to be injested into the model. This is currently unused.
+    # See pipeline.generate_time_combinations.
     "generate_time_combinations": False,
-    # (int | None) number of time steps between each sample, or number of years to include in model including observation year
+
+    # (int | None) Number of time steps between each sample. This is currently unused.
+    # See pipeline.generate_time_combinations.
     "time_step": None,
 
-    # square generation settings
-    # (dict | None) settings for passing to square generator function
+    # Square generation settings
+
+    # (dict | None) settings for passing to square generator function.
+    # See pipeline.generate_squares
     "squares_config": {},
 
-    # Tuple(float) | None ratio of validate, test samples from total samples
+    # Tuple(float) | None ratio of [validate, test] samples from total samples.
+    # See utils.train_validate_test_split.
     "split_ratios": [2e-1, 2e-2],
 
-    # image and downloadng settings
-    # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE
-    "file_type": "ZARR",
-    # (bool) whether to overwrite existing files
-    "overwrite": False,
-    # (int) scale in meters/pixel of images
-    "scale": 30,
-    # (int) edge size of square in meters
-    "pixel_edge_size": 256,
-    # (str) projection to save polygons and images in
-    "projection": "EPSG:5070",
-    # (int) n time step to look back from observation date (i.e. 2 = 3 years total including observation year)
-    "look_range": 2,
-    # (str) function in pipeline/utils to parse metadata
-    "meta_data_parser": "medoid_from_year",
-    # (str) function in pipeline/utils to generate expression in google earth engine
-    "ee_image_factory": "lt_medoid_image_factory",
-    # (str) function in pipeline/utils to reshape resulting download from GEE
-    "image_reshaper": "unstack_band_years",
+    # Image and downloadng settings
 
+    # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE.
+    # See downloader.Downloader.image_consumer.
+    "file_type": "ZARR",
+    
+    # (bool) Whether to overwrite existing files.
+    # See downloader.Downloader.image_generator.
+    "overwrite": False,
+    
+    # (int) Scale in meters/pixel of images.
+    # See downloader.Downloader.image_generator.
+    "scale": 30,
+    
+    # (int) Edge size of square in meters.
+    # See downloader.Downloader.image_generator.
+    "pixel_edge_size": 256,
+    
+    # (str) Projection to save polygons and images. Will reproject coordinates if necessary.
+    # See downloader.Downloader.image_generator.
+    "projection": "EPSG:5070",
+    
+    # (int) Number of time steps to look back from observation date (i.e. 2 = 3 years total including observation year). Currently only years is supported.
+    # See downloader.Downloader.image_generator.
+    "look_range": 2,
+    
+    # (str) Name of function in pipeline.meta_data_parser to parse metadata in Downloader. An example is provided but more can be defined there.
+    # Must consume (META_DATA_PATH, index: int, **kwargs).
+    "meta_data_parser": "medoid_from_year",
+    
+    # (dict) Kwargs to be passed to meta_data_parser.
+    "parser_kwargs": {},
+    
+    # (str) Name of function in pipeline.ee_image_factory to generate expression in google earth engine consumed by Downloader. An example is provided but more can be defined there.
+    # Must consume (square_coords: list[tuple[float, float]], start_date: datetime, end_date: datetime, pixel_edge_size: int, scale: int, projection: str, **kwargs)
+    "ee_image_factory": "lt_medoid_image_factory",
+    
+    # (dict) Kwargs to be passed to ee_image_factory.
+    "factory_kwargs": {},
+    
+    # (str) Name of function in pipeline.image_reshaper to reshape resulting download from GEE via Downloader. An example is provided but more can be defined there.
+    # Must consume (arr: np.ndarray, index: str,pixel_edge_size: int,square_name: str,point_name: str, attributes: Optional[dict] = {}, **kwargs)
+    "image_reshaper": "unstack_band_years",
+    
+    # (dict) Kwargs to be passed to image_reshaper.
+    "reshaper_kwargs": {},
+    
     # MP and GEE specific settings
-    # (int) number of parallel workers to use for annotation generation
+
+    # (int) Number of parallel workers to use for annotation generation.
+    # See pipeline.annotator.
     "num_workers": 64,
-    # (int) number of parallel workers to use for download
+    
+    # (int) Number of parallel workers to use for download.
+    # See downloader.Downloader.
     "gee_workers": GEE_REQUEST_LIMIT,
-    # (int) number of chips to download before locking IO and writing
+    
+    # (int) Number of chips to download before locking IO and writing.
+    # See downloader.Downloader._image_consumer.
     "io_limit": 32,
 }
 

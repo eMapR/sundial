@@ -29,7 +29,7 @@ from pipeline.settings import (
     METHOD,
     NO_DATA_VALUE,
     RANDOM_SEED,
-    STRATA_LABEL,
+    CLASS_LABEL,
 )
 from pipeline.settings import (
     ALL_SAMPLE_PATH,
@@ -77,7 +77,7 @@ def preprocess_data(
             "action": Literal[">", "<", "==", "!=", "replace"],
             "targets": int, float, str, list]],
         projection: Optional[str] = None,
-        strata_columns: Optional[list[str]] = None,
+        class_columns: Optional[list[str]] = None,
         datetime_column: Optional[str] = None) -> gpd.GeoDataFrame:
     epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
     if projection is not None and epsg != projection:
@@ -112,8 +112,8 @@ def preprocess_data(
     if datetime_column is not None:
         geo_dataframe.loc[:, DATETIME_LABEL] = geo_dataframe[datetime_column]
 
-    if strata_columns is not None:
-        geo_dataframe.loc[:, STRATA_LABEL] = geo_dataframe[strata_columns]\
+    if class_columns is not None:
+        geo_dataframe.loc[:, CLASS_LABEL] = geo_dataframe[class_columns]\
             .apply(lambda x: '__'.join(x.astype(str)).replace(" ", "_"), axis=1)
 
     return geo_dataframe
@@ -226,7 +226,7 @@ def rasterizer(polygons: gpd.GeoSeries,
 def annotator(population_gdf: gpd.GeoDataFrame,
               sample_gdf: gpd.GeoDataFrame,
               groupby_columns: list[str | int],
-              strata_list: dict[str, int],
+              class_indices: dict[str, int],
               pixel_edge_size: int,
               scale: int,
               anno_data_path: str,
@@ -245,13 +245,13 @@ def annotator(population_gdf: gpd.GeoDataFrame,
         # rasterizing multipolygon and clipping to square
         xarr_anno_list = []
         LOGGER.info(
-            f"Creating annotations for sample {index} from strata list...")
+            f"Creating annotations for sample {index} from class list...")
 
-        # strata list should already be in order of index value
-        for default_value, strata in zip(range(1, len(strata_list) + 1), strata_list):
+        # class list should already be in order of index value
+        for default_value, class_name in zip(range(1, len(class_indices) + 1), class_indices):
             try:
                 mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
-                    (population_gdf[STRATA_LABEL] == strata)
+                    (population_gdf[CLASS_LABEL] == class_name)
                 mp = population_gdf[mask].geometry
                 if len(mp) == 0:
                     annotation = np.zeros((pixel_edge_size, pixel_edge_size))
@@ -263,7 +263,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
             annotation = xr.DataArray(annotation, dims=["y", "x"])
 
             xarr_anno_list.append(annotation)
-        xarr_anno = xr.concat(xarr_anno_list, dim=STRATA_LABEL)
+        xarr_anno = xr.concat(xarr_anno_list, dim=CLASS_LABEL)
 
         # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index} of shape {xarr_anno.shape} to batch...")
@@ -295,7 +295,7 @@ def generate_annotation_data(
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    strata_list = sorted(sample_gdf[STRATA_LABEL].unique())
+    class_indices = sorted(sample_gdf[CLASS_LABEL].unique())
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -312,7 +312,7 @@ def generate_annotation_data(
             args=(population_gdf,
                   sample_gdf,
                   groupby_columns,
-                  strata_list,
+                  class_indices,
                   pixel_edge_size,
                   scale,
                   anno_data_path,
@@ -343,7 +343,7 @@ def sample():
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
                 "projection": SAMPLER_CONFIG["projection"],
-                "strata_columns": SAMPLER_CONFIG["strata_columns"],
+                "class_columns": SAMPLER_CONFIG["class_columns"],
                 "datetime_column": SAMPLER_CONFIG["datetime_column"],
             }
             geo_dataframe = preprocess_data(**sample_config)
@@ -426,6 +426,8 @@ def download():
             "io_limit": SAMPLER_CONFIG["io_limit"],
             "logger": LOGGER,
             "parser_kwargs": parser_kwargs,
+            "factory_kwargs": SAMPLER_CONFIG["factory_kwargs"],
+            "reshaper_kwargs": SAMPLER_CONFIG["reshaper_kwargs"],
         }
         generate_image_chip_data(downloader_kwargs)
     except Exception as e:
@@ -440,7 +442,7 @@ def calculate():
         stat = {}
         
         gdf = gpd.read_file(META_DATA_PATH)
-        stat["strata_count"] = gdf.groupby(STRATA_LABEL).size().to_dict()
+        stat["class_count"] = gdf.groupby(CLASS_LABEL).size().to_dict()
         
         match SAMPLER_CONFIG["file_type"]:
             case "ZARR":
@@ -482,7 +484,7 @@ def index():
             "anno_data": anno_data,
             "postprocess_actions": SAMPLER_CONFIG["postprocess_actions"],
         }
-        # TODO: resample data so sample strata ratios stays consistent postprocessing
+        # TODO: resample data so sample class ratios stays consistent postprocessing
         samples = postprocess_data(**sample_config)
     np.save(ALL_SAMPLE_PATH, samples)
 

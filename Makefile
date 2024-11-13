@@ -25,6 +25,10 @@ ifndef SUNDIAL_PACKAGE_FORMAT
 SUNDIAL_PACKAGE_FORMAT := tar
 endif
 
+ifndef SUNDIAL_BASE_PATH
+SUNDIAL_BASE_PATH := $(shell pwd)
+endif
+
 SUNDIAL_EXPERIMENT_BASE_NAME := $(SUNDIAL_EXPERIMENT_PREFIX)_$(SUNDIAL_SAMPLE_NAME)
 ifndef SUNDIAL_EXPERIMENT_SUFFIX
 SUNDIAL_EXPERIMENT_FULL_NAME := $(SUNDIAL_EXPERIMENT_BASE_NAME)
@@ -90,10 +94,12 @@ setup_env:
 	mkdir -p $(SUNDIAL_BASE_PATH)/checkpoints;
 	mkdir -p $(SUNDIAL_BASE_PATH)/predictions;
 	mkdir -p $(SUNDIAL_BASE_PATH)/configs;
-	mkdir -p $(SUNDIAL_BASE_PATH)/models/backbones;
-	mkdir -p $(SUNDIAL_BASE_PATH)/models/heads;
-	conda env create -f $(SUNDIAL_BASE_PATH)/environment.yaml -n $(SUNDIAL_ENV_NAME) -p $(CONDA_PREFIX) -y --force;
-	conda activate $(SUNDIAL_ENV_NAME);
+	mkdir -p $(SUNDIAL_BASE_PATH)/src/models/backbones;
+	if [[ "$(ARCH)" == aarch64 ]]; then \
+		conda env create -f $(SUNDIAL_BASE_PATH)/environment_a64.yaml -n $(SUNDIAL_ENV_NAME) -y --force; \
+	else \
+		conda env create -f $(SUNDIAL_BASE_PATH)/environment_x86.yaml -n $(SUNDIAL_ENV_NAME) -y --force; \
+	fi; \
 	echo "Sundial setup complete!";
 
 setup: _experiment_name_check

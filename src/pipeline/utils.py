@@ -2,6 +2,7 @@ import geopandas as gpd
 import ee
 import pandas as pd
 import numpy as np
+import os
 import time
 import utm
 import xarray as xr
@@ -14,7 +15,7 @@ from pipeline.settings import (NO_DATA_VALUE,
                                LOG_PATH, METHOD,
                                DATETIME_LABEL,
                                RANDOM_SEED,
-                               STRATA_LABEL)
+                               CLASS_LABEL)
 
 
 def clip_xy_xarray(xarr: xr.DataArray, 
@@ -222,7 +223,7 @@ def gee_generate_random_points(
 @function_timer
 def gee_stratified_sampling(
         num_points: int,
-        num_strata: int,
+        num_classes: int,
         scale: int,
         start_date: datetime,
         end_date: datetime,
@@ -231,7 +232,7 @@ def gee_stratified_sampling(
         projection: str) -> ee.FeatureCollection:
     # creating percentiles for stratification
     num_images = len(sources)
-    percentiles = ee.List.sequence(0, 100, count=num_strata+1)
+    percentiles = ee.List.sequence(0, 100, count=num_classes+1)
 
     # Getting data images for stratification
     raw_images = []
@@ -289,7 +290,7 @@ def stratified_sample(
         geo_dataframe: gpd.GeoDataFrame,
         num_points: Optional[float | int] = None):
     if num_points is not None:
-        groupby = geo_dataframe.groupby(STRATA_LABEL)
+        groupby = geo_dataframe.groupby(CLASS_LABEL)
         match num_points:
             case num if isinstance(num, float):
                 sample = groupby.sample(frac=num)

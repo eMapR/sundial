@@ -37,6 +37,7 @@ class SundialCLI(LightningCLI):
     def add_arguments_to_parser(self,
                                 parser: LightningArgumentParser):
         # placeholders to avoid parsing errors
+        parser.add_argument("--comet_ml", default=True, type=bool)
         parser.add_argument("--criterion", default={}, type=dict)
         parser.add_argument("--activation", default={}, type=dict)
         parser.add_argument("--model_checkpoint", default={}, type=dict)
@@ -64,7 +65,7 @@ def run():
     }
 
     # set up comet logger if no logger is specified
-    if not run_configs["trainer"].get("logger"):
+    if run_configs.get("comet_ml", True):
         trainer_defaults["logger"] = {
             "class_path": "lightning.pytorch.loggers.CometLogger",
             "init_args": LOGGER_CONFIG}
@@ -101,6 +102,7 @@ def run():
                 ckpt_path = "null"
             args.append(f"--ckpt_path={ckpt_path}")
 
+    # using cli api instead of Trainer to avoid some code
     SundialCLI(
         seed_everything_default=RANDOM_SEED,
         args=args,
