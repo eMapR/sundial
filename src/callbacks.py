@@ -29,7 +29,7 @@ from pipeline.settings import (EXPERIMENT_FULL_NAME,
                                SAMPLER_CONFIG,
                                STAT_DATA_PATH)
 from pipeline.utils import load_yaml
-from utils import log_rgb_ir_image, save_rgb_ir_tensor, tensors_to_tifs
+from utils import log_rgb_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -354,7 +354,7 @@ class LogTestCallback(L.Callback):
             pred = output[i]
 
             # save rgb and ir band separately
-            log_rgb_ir_image(chip, index_name, "chip", pl_module.logger.experiment)
+            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
 
             # save original annotations
             for c in range(anno.shape[0]):
@@ -417,9 +417,9 @@ class LogTestReconstructCallback(L.Callback):
             diff = diffs[i]
 
             # save rgb and ir band separately
-            log_rgb_ir_image(chip, index_name, "chip", pl_module.logger.experiment)
-            log_rgb_ir_image(pred, index_name, "pred", pl_module.logger.experiment)
-            log_rgb_ir_image(diff, index_name, "diff", pl_module.logger.experiment)
+            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
+            log_rgb_image(pred, index_name, "pred", pl_module.logger.experiment)
+            log_rgb_image(diff, index_name, "diff", pl_module.logger.experiment)
 
 
 class SaveTestCallback(L.Callback):
