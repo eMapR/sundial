@@ -243,7 +243,10 @@ class GenericChipsDataModule(L.LightningDataModule):
         if stat_data_path and os.path.exists(self.stat_data_path):
             stats = load_yaml(self.stat_data_path)
             if not self.static_transform_config.get("transforms"):
-                self.static_transform_config = {"transforms": []}
+                self.static_transform_config["transforms"] = []
+            if not self.extension_config.get("extensions"):
+                self.extension_config["extensions"] = []
+            
             means = stats.get("chip_stats")["band_means"]
             stds = stats.get("chip_stats")["band_stds"]
             self.static_transform_config["transforms"].insert(0, {

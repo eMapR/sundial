@@ -322,6 +322,7 @@ def sample():
     try:
         LOGGER.info("Loading geo file into GeoDataFrame...")
         geo_dataframe = gpd.read_file(GEO_RAW_PATH)
+
         LOGGER.info("Preprocessing data in geo file...")
         if SAMPLER_CONFIG["preprocess_actions"]:
             sample_config = {

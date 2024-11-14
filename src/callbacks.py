@@ -75,8 +75,7 @@ class DefineCriterionCallback(L.Callback):
                     for module in modules:
                         try:
                             criterion_mod = importlib.import_module(module)
-                            criterion_cls = getattr(
-                                criterion_mod, self.class_path)
+                            criterion_cls = getattr(criterion_mod, self.class_path)
                             if "device" in inspect.signature(criterion_cls).parameters:
                                 self.init_args |= {"device": pl_module.device}
                             success = True

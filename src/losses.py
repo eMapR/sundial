@@ -196,7 +196,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                  ignore_index: int = -100,
                  reduce: Any | None = None,
                  reduction: str = 'mean',
-                 label_epsiloning: float = 0,
+                 label_smoothing: float = 0,
                  device: torch.device | None = None):
         if weight is not None:
             weight = torch.tensor(weight, device=device, dtype=torch.float)
@@ -205,7 +205,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                          ignore_index=ignore_index,
                          reduce=reduce,
                          reduction=reduction,
-                         label_epsiloning=label_epsiloning)
+                         label_smoothing=label_smoothing)
 
 
 class SSIMLoss(nn.Module):
