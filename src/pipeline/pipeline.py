@@ -174,22 +174,6 @@ def generate_squares(
     return gdf
 
 
-@function_timer
-def generate_time_combinations(
-        samples: np.array,
-        look_range: int,
-        time_step: int) -> np.ndarray:
-    start = look_range % time_step
-    time_arr = np.arange(look_range)[start::time_step]
-
-    sample_arr, time_arr = np.meshgrid(samples, time_arr)
-    sample_arr = sample_arr.flatten()
-    time_arr = time_arr.flatten()
-    time_arr = np.column_stack((sample_arr, time_arr))
-
-    return time_arr
-
-
 def rasterizer(polygons: gpd.GeoSeries,
                square: Polygon,
                pixel_edge_size: int,
@@ -210,7 +194,7 @@ def rasterizer(polygons: gpd.GeoSeries,
 def annotator(population_gdf: gpd.GeoDataFrame,
               sample_gdf: gpd.GeoDataFrame,
               groupby_columns: list[str | int],
-              class_indices: dict[str, int],
+              class_names: dict[str, int],
               pixel_edge_size: int,
               scale: int,
               anno_data_path: str,
@@ -233,7 +217,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
             f"Creating annotations for sample {index_name} from class list...")
 
         # class list should already be in order of index value
-        for default_value, class_name in zip(range(1, len(class_indices) + 1), class_indices):
+        for class_name in class_names:
             try:
                 mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
                     (population_gdf[CLASS_LABEL] == class_name)
@@ -242,7 +226,7 @@ def annotator(population_gdf: gpd.GeoDataFrame,
                     annotation = np.zeros((pixel_edge_size, pixel_edge_size))
                 else:
                     annotation = rasterizer(
-                        mp, square, pixel_edge_size, NO_DATA_VALUE, default_value)
+                        mp, square, pixel_edge_size, NO_DATA_VALUE, 1)
             except Exception as e:
                 raise e
             # TODO: add support for tif
@@ -281,7 +265,7 @@ def generate_annotation_data(
         num_workers: int,
         io_limit: int,):
     num_samples = len(sample_gdf)
-    class_indices = sorted(sample_gdf[CLASS_LABEL].unique())
+    class_names = sorted(sample_gdf[CLASS_LABEL].unique())
 
     manager = mp.Manager()
     index_queue = manager.Queue()
@@ -298,7 +282,7 @@ def generate_annotation_data(
             args=(population_gdf,
                   sample_gdf,
                   groupby_columns,
-                  class_indices,
+                  class_names,
                   pixel_edge_size,
                   scale,
                   anno_data_path,
@@ -329,8 +313,6 @@ def sample():
                 "geo_dataframe": geo_dataframe,
                 "preprocess_actions": SAMPLER_CONFIG["preprocess_actions"],
                 "projection": SAMPLER_CONFIG["projection"],
-                "class_columns": SAMPLER_CONFIG["class_columns"],
-                "datetime_column": SAMPLER_CONFIG["datetime_column"],
             }
             geo_dataframe = preprocess_data(**sample_config)
         
@@ -478,14 +460,6 @@ def index():
         # TODO: resample data so sample class ratios stays consistent postprocessing
         samples = postprocess_data(**sample_config)
 
-    if SAMPLER_CONFIG["generate_time_combinations"]:
-        LOGGER.info("Generating time combinations...")
-        time_sample_config = {
-            "samples": samples,
-            "look_range": SAMPLER_CONFIG["look_range"],
-            "time_step": SAMPLER_CONFIG["time_step"]
-        }
-        samples = generate_time_combinations(**time_sample_config)
     np.save(ALL_SAMPLE_PATH, samples)
     
     if SAMPLER_CONFIG["split_ratios"]:
