@@ -123,11 +123,11 @@ class DefineActivationCallback(L.Callback):
 
 class GenerateGifCallback(L.Callback):
     def __init__(self,
-                 save_path: Optional[str] = None,
-                 index_name: Optional[int] = 0):
+                 index_name):
         super().__init__()
-        self.save_path = save_path
         self.index_name = index_name
+        self.index = int(self.index_name)
+        self.input = False
         self.frames = []
     
     def on_validation_batch_end(self,
@@ -137,17 +137,28 @@ class GenerateGifCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
-        output = outputs["output"]
-
-        frame_tensor = output[0].detach().cpu()
-        self.frames.append(frame_tensor)
+        if self.index in batch["indx"]:
+            batch_index = (batch["indx"] == self.index).nonzero(as_tuple=True)[0].item()
+            frame_tensor = outputs["output"][batch_index].detach().cpu()
+            self.frames.append(frame_tensor)
+            if not self.input:
+                anno = batch["anno"][batch_index]
+                chip = batch["chip"][batch_index]
+                log_rgb_image(chip, self.index_name + "_gif_input", "chip", pl_module.logger.experiment)
+                pl_module.logger.experiment.log_image(
+                    image_data=anno.detach().cpu(),
+                    name=f"{self.index_name}_gif_input_anno.png",
+                    image_scale=2.0,
+                    image_minmax=(0, 1)
+                )
+                self.input = True
         
     def on_train_end(self,
                     trainer: L.Trainer,
                     pl_module: L.LightningModule):
         pil_frames = [to_pil_image(frame) for frame in self.frames]
         if pil_frames:
-            pil_frames[0].save(self.save_path, save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
+            pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
 
 
 class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
