@@ -121,9 +121,51 @@ class DefineActivationCallback(L.Callback):
             pl_module.activation = torch.nn.Identity()
 
 
-class GenerateGifCallback(L.Callback):
+class GenerateTrainGifCallback(L.Callback):
     def __init__(self,
-                 index_name):
+                 index_name: str):
+        super().__init__()
+        self.index_name = index_name
+        self.index = int(self.index_name)
+        self.input = False
+        self.frames = []
+    
+    def on_train_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: Tuple[torch.Tensor],
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        if self.index in batch["indx"]:
+            batch_index = (batch["indx"] == self.index).nonzero(as_tuple=True)[0].item()
+            frame_tensor = outputs["output"][batch_index].detach().cpu()
+            self.frames.append(frame_tensor)
+            if not self.input:
+                anno = batch["anno"][batch_index].detach().cpu()
+                chip = batch["chip"][batch_index].detach().cpu()
+                log_rgb_image(chip, f"{self.index_name}_gif", "chip", pl_module.logger.experiment)
+                for c in range(anno.shape[0]):
+                    pl_module.logger.experiment.log_image(
+                        image_data=anno[c].unsqueeze(-1),
+                        name=f"{self.index_name}_c{c+1}_gif_anno_gif.png",
+                        image_scale=2.0,
+                        image_minmax=(0, 1)
+                    )
+                self.input = True
+        
+    def on_train_end(self,
+                    trainer: L.Trainer,
+                    pl_module: L.LightningModule):
+        for c in range(self.frames[0].shape[0]):
+            pil_frames = [to_pil_image(frame[c]) for frame in self.frames]
+            if pil_frames:
+                pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
+
+
+class GenerateValidateGifCallback(L.Callback):
+    def __init__(self,
+                 index_name: str):
         super().__init__()
         self.index_name = index_name
         self.index = int(self.index_name)
@@ -142,23 +184,25 @@ class GenerateGifCallback(L.Callback):
             frame_tensor = outputs["output"][batch_index].detach().cpu()
             self.frames.append(frame_tensor)
             if not self.input:
-                anno = batch["anno"][batch_index]
-                chip = batch["chip"][batch_index]
-                log_rgb_image(chip, self.index_name + "_gif_input", "chip", pl_module.logger.experiment)
-                pl_module.logger.experiment.log_image(
-                    image_data=anno.detach().cpu(),
-                    name=f"{self.index_name}_gif_input_anno.png",
-                    image_scale=2.0,
-                    image_minmax=(0, 1)
-                )
-                self.input = True
+                anno = batch["anno"][batch_index].detach().cpu()
+                chip = batch["chip"][batch_index].detach().cpu()
+                log_rgb_image(chip, f"{self.index_name}_gif", "chip", pl_module.logger.experiment)
+                for c in range(anno.shape[0]):
+                    pl_module.logger.experiment.log_image(
+                        image_data=anno[c].unsqueeze(-1),
+                        name=f"{self.index_name}_c{c+1}_gif_anno.png",
+                        image_scale=2.0,
+                        image_minmax=(0, 1)
+                    )
+                self.input = True       
         
     def on_train_end(self,
                     trainer: L.Trainer,
                     pl_module: L.LightningModule):
-        pil_frames = [to_pil_image(frame) for frame in self.frames]
-        if pil_frames:
-            pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
+        for c in range(self.frames[0].shape[0]):
+            pil_frames = [to_pil_image(frame[c]) for frame in self.frames]
+            if pil_frames:
+                pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
 
 
 class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
@@ -224,12 +268,7 @@ class LogTrainImageCallback(L.Callback):
                                 dataloader_idx: int = 0):
         diff = outputs["diff"]
         output = outputs["output"]
-
-        ssim0 = structural_similarity_index_measure(output[:,:,0,...], diff[:,:,0,...])
-        ssim1 = structural_similarity_index_measure(output[:,:,1,...], diff[:,:,1,...])
-        ssim2 = structural_similarity_index_measure(output[:,:,2,...], diff[:,:,2,...])
-        
-        ssim = (ssim0 + ssim1 + ssim2) / 3
+        ssim = sum([structural_similarity_index_measure(output[:,:,i,...], diff[:,:,i,...])  for i in output.shape[2]]) / output.shape[2]
         
         metrics = {
             "ssim": ssim,
@@ -280,8 +319,8 @@ class LogTrainMulticlassExtCallback(L.Callback):
                                 dataloader_idx: int = 0):
         annotations = batch["anno"]
         output = outputs["output"]
-        preds = torch.argmax(output, dim=1)
-        target = torch.argmax(annotations, dim=1)
+        preds = torch.argmax(output, dim=1, keepdim=True).to(torch.float32)
+        target = torch.argmax(annotations, dim=1, keepdim=True).to(torch.float32)
 
         metrics = {
             "accuracy": multiclass_accuracy(preds, target, pl_module.num_classes),
@@ -365,7 +404,7 @@ class LogTestCallback(L.Callback):
             pred = output[i]
 
             # save rgb and ir band separately
-            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
+            log_rgb_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment)
 
             # save original annotations
             for c in range(anno.shape[0]):
@@ -423,9 +462,9 @@ class LogTestReconstructCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            pred = output[i]
-            diff = diffs[i]
+            chip = chips[i].detach().cpu()
+            pred = output[i].detach().cpu()
+            diff = diffs[i].detach().cpu()
 
             # save rgb and ir band separately
             log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)

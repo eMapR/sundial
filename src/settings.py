@@ -39,6 +39,7 @@ CHECKPOINT_CONFIG = {
     "filename": "{epoch:04d}",
     "monitor": "val_loss",
     "save_top_k": 4,
+    "save_last": True,
     "auto_insert_metric_name": True,
     "save_weights_only": False,
     "every_n_epochs": 1,

@@ -36,15 +36,25 @@ class BinaryStep(nn.Module):
 class BeforeAfter(nn.Module):
     def forward(self, x):
         return torch.stack([x[:,-3,:,:], x[:,-1,:,:]], dim=1)
+
+class SingleClass(nn.Module):
+    def __init__(self, class_index: int):
+        super().__init__()
+        self.class_index = class_index
+    
+    def forward(self, x):
+        return x[self.class_index,...].unsqueeze(0)
     
 
 class RandomAffineAugmentation(nn.Module):
     def __init__(self):
         super().__init__()
-        self.rotation = torchvision.transforms.RandomChoice([torchvision.transforms.v2.RandomRotation((0, 0)),
-                                                            torchvision.transforms.v2.RandomRotation((90, 90)),
-                                                            torchvision.transforms.v2.RandomRotation((180, 180)),
-                                                            torchvision.transforms.v2.RandomRotation((270, 270))])
+        rot0 = torchvision.transforms.v2.RandomRotation((0, 0))
+        rot90 = torchvision.transforms.v2.RandomRotation((90, 90))
+        rot180 = torchvision.transforms.v2.RandomRotation((180, 180))
+        rot270 = torchvision.transforms.v2.RandomRotation((270, 270))
+        
+        self.rotation = torchvision.transforms.v2.RandomChoice([rot0, rot90, rot180, rot270])
         self.hflip = torchvision.transforms.v2.RandomHorizontalFlip()
         self.vflip = torchvision.transforms.v2.RandomVerticalFlip()
     

@@ -135,7 +135,7 @@ class PrithviGlobalBackbone(L.LightningModule):
         self.model = MaskedAutoencoderViT(
             **self.prithvi_params["model_args"])
         if self.prithvi_path is not None:
-            checkpoint = torch.load(self.prithvi_path)
+            checkpoint = torch.load(self.prithvi_path, weights_only=False)
             if not decoder:
                 for k, v in checkpoint.items():
                     if "decoder" in k:
@@ -332,15 +332,65 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         x6 = self.up2(x5, x1)  
         x7 = self.out(x6)
         return x7
+    
+
+class PrithviGlobal2dUNet(SundialPLBase):
+    def __init__(self,
+        num_classes: int,
+        num_channels: int,
+        bilinear: bool,
+        prithvi_params: dict,
+        prithvi_freeze: bool = True,
+        prithvi_path: str = None,
+        **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_channels = num_channels
+        self.bilinear = bilinear
+
+        from models.basic_unet import DoubleConv, Down, Up, OutConv
+        self.inc = DoubleConv(self.num_channels, 256)
+        self.down1 = Down(256, 512)
+        self.down2 = Down(512, 1024)
+        
+        factor = 2 if bilinear else 1
+        self.up1 = Up(1024, 512 // factor, bilinear)
+        self.up2 = Up(512, 256 // factor, bilinear)
+        self.out = OutConv(256, self.num_classes)
+        
+        self.prithvi = PrithviGlobalBackbone(
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path,
+            decoder=False,
+            reshape=True)
+        
+    def forward(self, data):
+        x = data["chip"]
+        x = x.reshape(x.shape[0], -1, x.shape[-2], x.shape[-1])
+
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        
+        x4 = x3.unsqueeze(2)
+        x4 = self.prithvi(x4)
+        
+        x5 = self.up1(x4, x2)
+        x6 = self.up2(x5, x1)  
+        x7 = self.out(x6)
+        return x7 
+    
 
 class PrithviGlobalDiffReconstruction(SundialPLBase):
     def __init__(self,
                  prithvi_params: dict,
-                 prithvi_path: str = None):
+                 prithvi_path: str = None,
+                 prithvi_freeze: bool = True):
         super().__init__()
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=True,
+            prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path,
             decoder=True,
             reshape=False)
@@ -373,6 +423,7 @@ class PrithviGlobalDiffReconstruction(SundialPLBase):
         
         mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
         loss = self.prithvi.model.forward_loss(diff, pred, mask)
+        # recon = self.prithvi.model.unpatchify(pred) # boy this will slow down training...
         
         return {"loss": loss}
 
@@ -385,7 +436,7 @@ class PrithviGlobalDiffReconstruction(SundialPLBase):
         loss = self.prithvi.model.forward_loss(diff, pred, mask)
         recon = self.prithvi.model.unpatchify(pred)
 
-        return {"loss": loss, "output": recon.detach(), "diff": diff.detach()}
+        return {"loss": loss, "output": recon, "diff": diff}
     
     def test_step(self, batch):
         data = batch
@@ -396,4 +447,4 @@ class PrithviGlobalDiffReconstruction(SundialPLBase):
         loss = self.prithvi.model.forward_loss(diff, pred, mask)
         recon = self.prithvi.model.unpatchify(pred)
 
-        return {"loss": loss, "output": recon.detach(), "diff": diff.detach()}
+        return {"loss": loss, "output": recon, "diff": diff}

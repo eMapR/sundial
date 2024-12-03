@@ -89,15 +89,15 @@ class Upsampler(nn.Module):
 
         self.upsample1 = ResizeConv2d(in_channels, 512, kernel_size=3, scale_factor=2)
         self.upsample2 = ResizeConv2d(512, 256, kernel_size=3, scale_factor=2) 
-        # self.upsample3 = ResizeConv2d(256, 128, kernel_size=3, scale_factor=2)
-        # self.upsample4 = ResizeConv2d(128, out_channels, kernel_size=3, scale_factor=2)
+        self.upsample3 = ResizeConv2d(256, 128, kernel_size=3, scale_factor=2)
+        self.upsample4 = ResizeConv2d(128, out_channels, kernel_size=3, scale_factor=2)
 
 
     def forward(self, x):
         x = self.upsample1(x)
         x = self.upsample2(x)
-        # x = self.upsample3(x)
-        # x = self.upsample4(x)
+        x = self.upsample3(x)
+        x = self.upsample4(x)
         return x
     
 class FirstOrderDifference(nn.Module):

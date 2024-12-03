@@ -56,7 +56,8 @@ class Downloader:
             io_limit: int,
             logger: logging.Logger,
 
-            reproject: Optional[bool] = False,
+            pixel_grid: Optional[bool] = True,
+            reproject: Optional[bool] = True,
             parser_kwargs: Optional[dict] = {},
             factory_kwargs: Optional[dict] = {},
             reshaper_kwargs: Optional[dict] = {},
@@ -77,6 +78,7 @@ class Downloader:
         self._io_limit = io_limit
         self._logger = logger
 
+        self._pixel_grid = pixel_grid
         self._reproject = reproject
         self._parser_kwargs = parser_kwargs
         self._factory_kwargs = factory_kwargs
@@ -233,14 +235,30 @@ class Downloader:
                 if self._reproject and epsg_str is not None:
                     report_queue.put(
                         ("INFO", f"Reprojecting image payload square {index_name} to {epsg_str}... {square_coords}"))
-                    image = image.reproject(
-                        crs=epsg_str, scale=self._scale)
+                    image = image.reproject(crs=epsg_str, scale=self._scale)
 
                 # encoding the image for the image consumer
                 payload = {
                     "expression": ee.serializer.encode(image),
-                    "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY",
+                    "fileFormat": self._file_type if self._file_type != "ZARR" else "NUMPY_NDARRAY"
                 }
+                
+                if self._pixel_grid:
+                    payload["grid"] = {
+                        'dimensions': {
+                            'width': self._pixel_edge_size,
+                            'height': self._pixel_edge_size
+                        },
+                        'affineTransform': {
+                            'scaleX': self._scale,
+                            'shearX': 0,
+                            'translateX': point_coords[0],
+                            'shearY': 0,
+                            'scaleY': -self._scale,
+                            'translateY': point_coords[1]
+                        },
+                        'crsCode': epsg_str,
+                    }
 
                 # sending expression payload to the image consumer
                 image_queue.put(

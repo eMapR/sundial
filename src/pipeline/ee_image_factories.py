@@ -3,21 +3,18 @@ import ee
 from ltgee import LandsatComposite
 from datetime import datetime
 
-from pipeline.settings import DATETIME_LABEL
-
 
 def lt_medoid_image_factory(
         square_coords: list[tuple[float, float]],
         start_date: datetime,
         end_date: datetime,
-        pixel_edge_size: int,
-        scale: int,
+        # pixel_edge_size: int,
+        # scale: int,
         projection: str,
         mask_labels: list[str] = ["snow", "cloud", "shadow"]) -> ee.Image:
     # TODO: actually parse the projection string
     even_odd = (projection == "EPSG:4326")
-    square = ee.Geometry.Polygon(
-        square_coords, proj=projection, evenOdd=even_odd)
+    square = ee.Geometry.Polygon(square_coords, proj=projection, evenOdd=even_odd)
     collection = LandsatComposite(
         start_date=start_date,
         end_date=end_date,
@@ -36,9 +33,9 @@ def lt_medoid_image_factory(
     image = collection\
         .toBands()\
         .select(old_band_names, new_band_names)\
-        .divide(10000)\
-        .reproject(crs=projection, scale=scale)\
-        .clipToBoundsAndScale(geometry=square, maxDimension=pixel_edge_size)
+        .divide(10000)
+        # .reproject(crs=projection, scale=scale)
+        # .clipToBoundsAndScale(geometry=square, maxDimension=pixel_edge_size)
 
     return image
 

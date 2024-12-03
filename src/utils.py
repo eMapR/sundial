@@ -166,7 +166,7 @@ def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any):
     for t in range(chip.shape[1]):
         image = rgb[t, :, :, :]
         logger.log_image(
-            image_data=image.detach().cpu(),
+            image_data=image,
             name=f"{index_name}_rgb_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(rgb_min, rgb_max)

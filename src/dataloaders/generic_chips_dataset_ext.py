@@ -41,14 +41,19 @@ class MultiYearDayFromMeta():
     def __init__(self,
                  year_col: str,
                  year_range: int,
-                 month_day: str):
+                 month_day: str,
+                 forward: bool):
         self.year_col = year_col
         self.year_range = year_range
         self.month_day = month_day
+        self.forward = forward
     
     def get_item(self, idx: int, meta_data: gpd.GeoDataFrame):
         yearbase = meta_data[self.year_col].iloc[idx]
         yeardays = []
+        
+        if self.forward:
+            yearbase += 1
 
         for i in range(self.year_range - 1, -1, -1):
             year = yearbase - 1
