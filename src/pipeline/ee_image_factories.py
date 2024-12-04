@@ -42,6 +42,6 @@ def lt_medoid_image_factory(
 
 def lt_medoid_image_factory_forward(*args, **kwargs):
     """factory to increment end year by one"""
-    square_coords, start_date, end_date, pixel_edge_size, scale, epsg_str = args
+    square_coords, start_date, end_date, epsg_str = args
     end_date = end_date.replace(year=end_date.year + 1)
-    return lt_medoid_image_factory(square_coords, start_date, end_date, pixel_edge_size, scale, epsg_str)
+    return lt_medoid_image_factory(square_coords, start_date, end_date, epsg_str)

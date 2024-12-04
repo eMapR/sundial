@@ -290,7 +290,7 @@ def stratified_sample(
                 sample = groupby.sample(n=num)
     else:
         sample = geo_dataframe
-    sample = sample.reset_index().rename(columns={'index': 'geo_file_index'})
+    sample = sample.reset_index().rename(columns={'index': 'geo_index'})
     return sample
 
 

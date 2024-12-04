@@ -331,6 +331,7 @@ def sample():
                 "class_label": CLASS_LABEL,
                 "num_points": SAMPLER_CONFIG["num_points"],
             }
+            # TODO: do a better job at filtering close proximity polygon 
             geo_dataframe = stratified_sample(**group_config)
 
         LOGGER.info("Generating square polygons...")

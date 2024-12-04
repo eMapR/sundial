@@ -226,8 +226,8 @@ class Downloader:
                     square_coords,
                     start_date,
                     end_date,
-                    self._pixel_edge_size,
-                    self._scale,
+                    # self._pixel_edge_size,
+                    # self._scale,
                     epsg_str,
                     **self._factory_kwargs)
 
@@ -252,10 +252,10 @@ class Downloader:
                         'affineTransform': {
                             'scaleX': self._scale,
                             'shearX': 0,
-                            'translateX': point_coords[0],
+                            'translateX': point_coords[0][0],
                             'shearY': 0,
                             'scaleY': -self._scale,
-                            'translateY': point_coords[1]
+                            'translateY': point_coords[0][1]
                         },
                         'crsCode': epsg_str,
                     }
