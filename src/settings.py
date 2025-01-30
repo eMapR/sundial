@@ -24,7 +24,7 @@ DATALOADER_CONFIG = {
     "batch_size": 32,
     "num_workers": 16,
     "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
-    "time_step": SAMPLER_CONFIG["time_step"],
+    "time_step": None,
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
     "split_tif": None,
     "start_idx": None,

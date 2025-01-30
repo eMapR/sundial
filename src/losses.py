@@ -97,11 +97,9 @@ class GeneralizedDiceLoss(nn.Module):
 
         weight = 1 / ((einsum("bkwh->bk", targets) + self.epsilon) ** 2)
         intersection = weight * einsum("bcwh,bcwh->bc", inputs, targets)
-        sum_probs = weight * einsum("bkwh->bk", inputs) + \
-            einsum("bkwh->bk", targets)
+        sum_probs = weight * einsum("bkwh->bk", inputs) + einsum("bkwh->bk", targets)
 
-        generalized_dice = (2. * einsum("bk->b", intersection) + self.epsilon) / \
-            (einsum("bk->b", sum_probs) + self.epsilon)
+        generalized_dice = (2. * einsum("bk->b", intersection) + self.epsilon) / (einsum("bk->b", sum_probs) + self.epsilon)
 
         return self.reducer(1 - generalized_dice)
 
@@ -276,4 +274,32 @@ class GeneralzedDiceBoundaryLoss(nn.Module):
 
         boundary_loss = einsum('bcwh,bcwh->bcwh', inputs, distances).mean()
         loss = self.gdl(inputs, targets) + self.alpha * boundary_loss
+        return loss
+    
+    
+class DiceCrossEntropyLoss(nn.Module):
+    def __init__(self,
+                 epsilon: float = 1e-6,
+                 weight: list[float] | None = None,
+                 size_average: Any | None = None,
+                 ignore_index: int = -100,
+                 reduce: Any | None = None,
+                 reduction: str = 'mean',
+                 label_smoothing: float = 0,
+                 device: torch.device | None = None):
+        super().__init__()
+        self.epsilon = epsilon
+        self.dice = DiceLoss(epsilon=epsilon, logits=False)
+        self.ce = CrossEntropyLoss(
+            weight=weight,
+            size_average=size_average,
+            ignore_index=ignore_index,
+            reduce=reduce,
+            reduction=reduction,
+            label_smoothing=label_smoothing,
+            device=device
+        )
+    
+    def forward(self, inputs, targets):
+        loss = self.dice(inputs, targets) + self.ce(inputs, targets)
         return loss

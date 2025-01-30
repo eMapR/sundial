@@ -12,6 +12,7 @@ import re
 import shutil
 
 from cupyx.scipy.ndimage import distance_transform_edt
+from rasterio.transform import from_bounds
 from sklearn.manifold import TSNE
 from typing import Any, Optional
 
@@ -158,10 +159,8 @@ def save_rgb_ir_tensor(chip: torch.Tensor, index_name: int, path: str):
         torch.save(image, img_path)
 
 
-def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any):
+def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, min_sr: float, max_sr: float):
     rgb = chip[0:3].flip(0).permute(1, 2, 3, 0)
-    rgb_max = torch.max(rgb).item()
-    rgb_min = torch.min(rgb).item()
     times = list(range(chip.shape[1]-1, -1, -1))
     for t in range(chip.shape[1]):
         image = rgb[t, :, :, :]
@@ -169,8 +168,30 @@ def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any):
             image_data=image,
             name=f"{index_name}_rgb_t-{times[t]}_{label}.png",
             image_scale=2.0,
-            image_minmax=(rgb_min, rgb_max)
+            image_minmax=(min_sr, max_sr)
         )
+        
+
+def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, min_sr: float, max_sr: float):
+    false_color = chip.index_select(0, torch.tensor([5,4,3])).permute(1, 2, 3, 0)
+    times = list(range(chip.shape[1]-1, -1, -1))
+    for t in range(chip.shape[1]):
+        image = false_color[t, :, :, :]
+        logger.log_image(
+            image_data=image,
+            name=f"{index_name}_false_color_t-{times[t]}_{label}.png",
+            image_scale=2.0,
+            image_minmax=(min_sr, max_sr)
+        )
+        
+    image =  false_color[1, :, :, :] - false_color[0, :, :, :]
+    logger.log_image(
+        image_data=image,
+        name=f"{index_name}_false_color_diff_{label}.png",
+        image_scale=2.0,
+        image_minmax=(0, max_sr)
+    )
+
 
 
 def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
@@ -195,7 +216,7 @@ def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
             'count': bands,
             'dtype': 'float32',
             'crs': crs,
-            'transform': rasterio.transform.from_bounds(minx, miny, maxx, maxy, tensor.shape[2], tensor.shape[1])
+            'transform': from_bounds(minx, miny, maxx, maxy, tensor.shape[2], tensor.shape[1])
         }
 
         with rasterio.open(os.path.join(output_path, f"{base_name}.tif"), 'w', **profile) as dst:

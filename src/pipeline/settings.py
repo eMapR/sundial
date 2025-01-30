@@ -50,7 +50,7 @@ GEO_POP_PATH = os.path.join(SAMPLE_PATH, "gpop_data")
 
 # non configurable GEE, image, and meta data settings
 RANDOM_SEED = 42
-CLASS_LABEL = "strata"
+CLASS_LABEL = "class"
 DATETIME_LABEL = "datetime"
 NO_DATA_VALUE = 0
 IDX_NAME_ZFILL = 8
@@ -67,7 +67,7 @@ FILE_EXT_MAP = {
 
 # configs relating to sampler methods
 SAMPLER_CONFIG = {
-    # Sampling settings
+    ### Sampling settings
 
     # (str) Method to used for generating squares around the polygons given in the original geodataframe.
     # See pipeline.generate_squares.
@@ -97,15 +97,7 @@ SAMPLER_CONFIG = {
     # See pipeline.preprocess_actions.
     "datetime_column": "year",
 
-    # (bool) Toggle for generating sliding time windows into sample as separate samples to be injested into the model. This is currently unused.
-    # See pipeline.generate_time_combinations.
-    "generate_time_combinations": False,
-
-    # (int | None) Number of time steps between each sample. This is currently unused.
-    # See pipeline.generate_time_combinations.
-    "time_step": None,
-
-    # Square generation settings
+    ### Square generation settings
 
     # (dict | None) settings for passing to square generator function.
     # See pipeline.generate_squares
@@ -115,7 +107,7 @@ SAMPLER_CONFIG = {
     # See utils.train_validate_test_split.
     "split_ratios": [2e-1, 2e-2],
 
-    # Image and downloadng settings
+    ### Image and downloadng settings
 
     # (Literal["GEO_TIFF", "ZARR", "NPY", "NUMPY_NDARRAY"]) file type to download from GEE.
     # See downloader.Downloader.image_consumer.
@@ -137,10 +129,6 @@ SAMPLER_CONFIG = {
     # See downloader.Downloader.image_generator.
     "projection": "EPSG:5070",
     
-    # (int) Number of time steps to look back from observation date (i.e. 2 = 3 years total including observation year). Currently only years is supported.
-    # See downloader.Downloader.image_generator.
-    "look_range": 3,
-    
     # (str) Name of function in pipeline.meta_data_parser to parse metadata in Downloader. An example is provided but more can be defined there.
     # Must consume (META_DATA_PATH, index: int, **kwargs).
     "meta_data_parser": "medoid_from_year",
@@ -148,9 +136,10 @@ SAMPLER_CONFIG = {
     # (dict) Kwargs to be passed to meta_data_parser.
     "parser_kwargs": {
         "start_month": 7,
-        "start_day": 15,
+        "start_day": 1,
         "end_month": 9,
         "end_day": 1,
+        # (int) Number of time steps to look back from observation date (i.e. 2 = 3 years total including observation year). Currently only years is supported.
         "look_range": 3
     },
     
@@ -168,7 +157,19 @@ SAMPLER_CONFIG = {
     # (dict) Kwargs to be passed to image_reshaper.
     "reshaper_kwargs": {},
     
-    # MP and GEE specific settings
+    # (str) Name of function in pipeline.annotator
+    "annotator": "single_xarr_annotator",
+    
+    # (dict) Kwargs to be passed to annotator.
+    "annotator_kwargs": {},
+    
+    # (str) Name of indexing function
+    "indexer": "train_validate_test_split",
+    
+    # (dict) Kwargs to be passed to image_reshaper.
+    "indexer_kwargs": {},
+    
+    ### MP and GEE specific settings
 
     # (int) Number of parallel workers to use for annotation generation.
     # See pipeline.annotator.

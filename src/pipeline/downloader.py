@@ -244,6 +244,7 @@ class Downloader:
                 }
                 
                 if self._pixel_grid:
+                    translateX, translateY = max(square_coords, key=lambda coords: (coords[1], -coords[0]))
                     payload["grid"] = {
                         'dimensions': {
                             'width': self._pixel_edge_size,
@@ -252,10 +253,10 @@ class Downloader:
                         'affineTransform': {
                             'scaleX': self._scale,
                             'shearX': 0,
-                            'translateX': point_coords[0][0],
+                            'translateX': translateX,
                             'shearY': 0,
                             'scaleY': -self._scale,
-                            'translateY': point_coords[0][1]
+                            'translateY': translateY
                         },
                         'crsCode': epsg_str,
                     }

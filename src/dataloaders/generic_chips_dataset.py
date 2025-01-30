@@ -80,9 +80,10 @@ class GenericChipsDataset(Dataset):
         
         if not isinstance(self.samples, list) and len(self.samples.shape) == 2:
             img_indx, time_indx = self.samples[sample_indx]
-            slicer = slice(time_indx, time_indx + self.time_step)
+            slicer = slice(time_indx-self.time_step, time_indx+1)
         else:
             img_indx = self.samples[sample_indx]
+            time_indx = None
             slicer = slice(-self.time_step, None) if self.time_step else None
         if isinstance(img_indx, str):
             img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
@@ -111,6 +112,8 @@ class GenericChipsDataset(Dataset):
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None:
             anno = self.anno_loader(img_name)
+            if time_indx is not None:
+                anno = anno[time_indx-self.time_step]
             with torch.no_grad(): # see https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
                 if self.anno_static_transforms is not None:
                     anno = self.anno_static_transforms(anno)
@@ -148,7 +151,7 @@ class GenericChipsDataset(Dataset):
 
     def _zarr_loader(self, xarr: xr.Dataset, name: int):
         chip = xarr[name]
-        if self.chip_size < max(chip["x"].size, chip["y"].size):
+        if self.chip_size < max(chip["y"].size, chip["x"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
         chip = torch.tensor(chip.values.copy(), dtype=torch.float)
         return chip
@@ -156,7 +159,7 @@ class GenericChipsDataset(Dataset):
     def _tif_loader(self, data_path: str, name: int, split_tif: int | None):
         image_path = os.path.join(data_path, f"{name}.tif")
         with open_rasterio(image_path) as chip:
-            if self.chip_size < max(chip["x"].size, chip["y"].size):
+            if self.chip_size < max(chip["y"].size, chip["x"].size):
                 chip = clip_xy_xarray(chip, self.chip_size)
                 
             chip = torch.tensor(chip.values.copy(), dtype=torch.float)
@@ -271,6 +274,8 @@ class GenericChipsDataModule(L.LightningDataModule):
             "extension_config": self.extension_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,
+            "means": means,
+            "stds": stds,
         } | kwargs
 
         self.dataloader_config = {

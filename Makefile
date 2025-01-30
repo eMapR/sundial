@@ -49,7 +49,6 @@ default:
 	echo "        annotate:       Collects image annotations for experiment using sample polygons."
 	echo "        download:       Downloads image chips for experiment using sample polygons."
 	echo "        index:          Creates indicies for training from chip and anno data."
-	echo "        calculate:      Calculate means and stds for experiment sample and verify simple sums"
 	echo
 	echo "        fit:            Train model using subset of data from sample."
 	echo "        validate:       Validate model using subset of data from sample."
@@ -111,7 +110,7 @@ setup: _experiment_name_check
 	if [[ -d $(SUNDIAL_BASE_PATH)/configs/$(SUNDIAL_EXPERIMENT_BASE_NAME) ]]; then \
 		echo "WARNING: Configs directory found. To restart experiment from scratch, use 'make clean_nuke' then 'make setup'..."; \
 	else \
-		echo "Generateing Sundial config files for experiment with values from settings.py..."; \
+		echo "Generating Sundial config files for experiment with values from settings.py..."; \
 		python $(SUNDIAL_BASE_PATH)/src/settings.py; \
 	fi;
 
@@ -170,11 +169,6 @@ download: _download
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
-calculate: _calculate
-	echo "Calculating metrics for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
-	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
-	$(MAKE) -s _run
-
 index: _index
 	echo "Creating indicies for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
@@ -215,9 +209,6 @@ annotate_err: _annotate
 	$(MAKE) -s _read_err;
 
 download_err: _download
-	$(MAKE) -s _read_err;
-
-calculate_err: _calculate
 	$(MAKE) -s _read_err;
 
 index_err: _index
@@ -314,9 +305,6 @@ _annotate:
 
 _download:
 	$(eval export SUNDIAL_METHOD=download)
-
-_calculate:
-	$(eval export SUNDIAL_METHOD=calculate)
 
 _index:
 	$(eval export SUNDIAL_METHOD=index)

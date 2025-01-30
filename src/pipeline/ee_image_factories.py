@@ -34,8 +34,6 @@ def lt_medoid_image_factory(
         .toBands()\
         .select(old_band_names, new_band_names)\
         .divide(10000)
-        # .reproject(crs=projection, scale=scale)
-        # .clipToBoundsAndScale(geometry=square, maxDimension=pixel_edge_size)
 
     return image
 

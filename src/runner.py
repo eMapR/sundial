@@ -14,7 +14,6 @@ from pipeline.pipeline import (
     sample,
     annotate,
     download,
-    calculate,
     index,
 )
 from pipeline.settings import (
@@ -140,8 +139,6 @@ if __name__ == "__main__":
             annotate()
         case "download":
             download()
-        case "calculate":
-            calculate()
         case "index":
             index()
         case "fit" | "validate" | "test" | "predict":

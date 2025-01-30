@@ -7,12 +7,9 @@ import operator
 import os
 import pandas as pd
 import random
+import shapely
 import xarray as xr
 
-from rasterio.transform import from_bounds
-from rasterio.features import rasterize
-from shapely.geometry import Polygon
-from shapely import unary_union
 from typing import Any, Optional, Literal
 
 from pipeline.downloader import Downloader
@@ -41,14 +38,11 @@ from pipeline.settings import (
     VALIDATE_SAMPLE_PATH,
 )
 from pipeline.utils import (
-    gee_stratified_sampling,
-    gee_download_features,
     generate_centroid_squares,
     get_class_weights,
     get_band_stats,
     get_xarr_stats,
     stratified_sample,
-    train_validate_test_split,
     update_yaml,
 )
 
@@ -108,61 +102,63 @@ def preprocess_data(
 def postprocess_data(
     chip_data: xr.Dataset,
     anno_data: xr.Dataset | None,
-    postprocess_actions: list[dict[
-        "data": Literal["chip", "anno"],
-        "action": Literal["sum"],
-        "operator": Literal[">", "<", ">=", "<=", "==", "!="],
-        "targets": int, float, str, list]]):
-    pre_calc = {"chip": {}, "anno": {}}
-    data_map = {"chip": chip_data, "anno": anno_data}
-
+    postprocess_actions: list[str]):
+    stat_data = {}
     for postprocess in postprocess_actions:
-        data = postprocess["data"]
-        action = postprocess["action"]
-        compare = OPS_MAP[postprocess["operator"]]
-        target = postprocess["targets"]
         match action:
-            case "sum":
-                sums_ds = pre_calc[data].setdefault(action, data_map[data].sum())
-                to_drop = [v for v in sums_ds.data_vars if not compare(sums_ds[v].values, target)]
-                data_map[data] = data_map[data].drop_vars(to_drop, errors="ignore")
-            case "filter":
-                pass
+            case "band_mean_stdv":
+                match SAMPLER_CONFIG["file_type"]:
+                    case "ZARR":
+                        LOGGER.info(f"Verifying chip data...")
+                        chip_data = xr.open_zarr(CHIP_DATA_PATH)
+                        # TODO: fix redudant summing
+                        stat_data["chip_stats"] = {"count": len(chip_data.variables)}
+                        stat_data["chip_stats"] |= get_band_stats(chip_data, DATETIME_LABEL)
+                    case _:
+                        raise ValueError(
+                            f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
+            case "class_counts":
+                gdf = gpd.read_file(META_DATA_PATH)
+                gdf.loc[:, "area"] = gdf.area
+                
+                groupby = gdf.groupby(CLASS_LABEL)
+                stat_data["class_geo_count"] = groupby.size().to_dict()
+                stat_data["class_geo_area"] = groupby.sum()["area"].to_dict()
+                if os.path.isdir(ANNO_DATA_PATH):
+                    LOGGER.info(f"Verifying annotation data...")
+                    anno_data = xr.open_zarr(ANNO_DATA_PATH)
+                    # TODO: choice in weighting scheme
+                    stat_data["anno_stats"] = get_xarr_stats(anno_data)
+                    stat_data["anno_stats"] |= get_class_weights(anno_data)
             case _:
                 raise ValueError(f"Invalid action: {action}")
-    chip_vars = np.array(data_map["chip"].data_vars, dtype=int)
-    anno_vars = np.array(data_map["anno"].data_vars, dtype=int)
-    return np.intersect1d(chip_vars, anno_vars)
+    update_yaml(stat_data, STAT_DATA_PATH)
 
 
 @function_timer
 def generate_squares(
         geo_dataframe: gpd.GeoDataFrame,
-        method: Literal["convering_grid", "random", "gee_stratified", "centroid"],
-        meter_edge_size: int | float,
+        method: Literal["convering_grid", "random", "centroid"],
+        meter_edge_size: int,
         squares_config: dict) -> gpd.GeoDataFrame:
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
-        case "convering_grid":
-            raise NotImplementedError
+        case "covering_grid":
+            xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
+            grid_cells = []
+            for x0 in np.arange(xmin, xmax+meter_edge_size, meter_edge_size):
+                for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size):
+                    x1 = x0 - meter_edge_size
+                    y1 = y0 + meter_edge_size
+                    new_cell = shapely.geometry.box(x0, y0, x1, y1)
+                    if new_cell.intersects(geo_dataframe.geometry).any():
+                        grid_cells.append(new_cell)
+                    else:
+                        pass
+            gdf = gpd.GeoDataFrame(geometry=grid_cells, crs=geo_dataframe.crs)
+            gdf.loc[:, DATETIME_LABEL] = max(geo_dataframe[DATETIME_LABEL].unique())
         case "random":
             raise NotImplementedError
-        case "gee_stratified":
-            ee.Initialize()
-            even_odd = True if epsg == "EPSG:4326" else False
-            epsg = f"EPSG:{geo_dataframe.crs.to_epsg()}"
-            area_of_interest = unary_union(geo_dataframe.geometry)
-            area_of_interest = ee.Geometry.Polygon(
-                list(area_of_interest.exterior.coords), proj=epsg, evenOdd=even_odd)
-            squares_config["area_of_interest"] = area_of_interest
-            squares_config["projection"] = epsg
-
-            points = gee_stratified_sampling(**squares_config)
-            points = gee_download_features(points)\
-                .set_crs("EPSG:4326")\
-                .to_crs(epsg)
-            gdf = generate_centroid_squares(points, meter_edge_size)
-            gdf.loc[:, DATETIME_LABEL] = squares_config["end_date"]
         case "centroid":
             gdf = generate_centroid_squares(
                 geo_dataframe,
@@ -174,128 +170,46 @@ def generate_squares(
     return gdf
 
 
-def rasterizer(polygons: gpd.GeoSeries,
-               square: Polygon,
-               pixel_edge_size: int,
-               fill: int | float,
-               default_value: int | float):
-
-    transform = from_bounds(*square.bounds, pixel_edge_size, pixel_edge_size)
-    raster = rasterize(
-        shapes=polygons,
-        out_shape=(pixel_edge_size, pixel_edge_size),
-        fill=fill,
-        transform=transform,
-        default_value=default_value)
-
-    return raster
-
-
-def annotator(population_gdf: gpd.GeoDataFrame,
-              sample_gdf: gpd.GeoDataFrame,
-              groupby_columns: list[str | int],
-              class_names: dict[str, int],
-              pixel_edge_size: int,
-              scale: int,
-              anno_data_path: str,
-              io_limit: int,
-              io_lock: Any = None,
-              index_queue: Optional[mp.Queue] = None):
-    batch = []
-    while (index := index_queue.get()) is not None:
-        index_name = str(index).zfill(IDX_NAME_ZFILL)
-        
-        # getting annotation information from sample
-        LOGGER.info(f"Rasterizing sample {index_name}...")
-        target = sample_gdf.iloc[index]
-        group = target[groupby_columns]
-        square = target.geometry
-
-        # rasterizing multipolygon and clipping to square
-        xarr_anno_list = []
-        LOGGER.info(
-            f"Creating annotations for sample {index_name} from class list...")
-
-        # class list should already be in order of index value
-        for class_name in class_names:
-            try:
-                mask = (population_gdf[groupby_columns] == group).all(axis=1) & \
-                    (population_gdf[CLASS_LABEL] == class_name)
-                mp = population_gdf[mask].geometry
-                if len(mp) == 0:
-                    annotation = np.zeros((pixel_edge_size, pixel_edge_size))
-                else:
-                    annotation = rasterizer(
-                        mp, square, pixel_edge_size, NO_DATA_VALUE, 1)
-            except Exception as e:
-                raise e
-            # TODO: add support for tif
-            annotation = xr.DataArray(annotation, dims=["y", "x"])
-
-            xarr_anno_list.append(annotation)
-        xarr_anno = xr.concat(xarr_anno_list, dim=CLASS_LABEL)
-
-        # writing in batches to avoid io bottleneck
-        LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_anno.shape} to batch...")
-        xarr_anno.name = index_name
-        batch.append(xarr_anno)
-        if len(batch) == io_limit:
-            xarr_anno = xr.merge(batch)
-            with io_lock:
-                xarr_anno.to_zarr(store=anno_data_path, mode="a")
-            batch.clear()
-            indices = list(xarr_anno.data_vars)
-            LOGGER.info(f"Rasterized sample batch submitted... {indices}")
-
-    # writing remaining batch
-    if len(batch) > 0:
-        with io_lock:
-            xarr_anno = xr.merge(batch)
-            xarr_anno.to_zarr(store=anno_data_path, mode="a")
-
-
 @function_timer
 def generate_annotation_data(
+        annotator: str,
+        annotator_kwargs: dict,
         population_gdf: gpd.GeoDataFrame,
-        sample_gdf: gpd.GeoDataFrame,
-        groupby_columns: list[str],
+        squares_gdf: gpd.GeoDataFrame,
         pixel_edge_size: int,
-        scale: int,
         anno_data_path: str,
         num_workers: int,
-        io_limit: int,):
-    num_samples = len(sample_gdf)
-    class_names = sorted(sample_gdf[CLASS_LABEL].unique())
+        io_limit: int):
+    num_samples = len(squares_gdf)
+    class_names = sorted(population_gdf[CLASS_LABEL].unique())
+    annotator = getattr(importlib.import_module("pipeline.annotators"), annotator)
 
     manager = mp.Manager()
     index_queue = manager.Queue()
     io_lock = manager.Lock()
 
-    LOGGER.info(
-        f"Starting parallel process for {num_samples} samples using {num_workers}...")
+    LOGGER.info(f"Starting parallel process for {num_samples} samples using {num_workers}...")
     [index_queue.put(i) for i in range(num_samples)]
     [index_queue.put(None) for _ in range(num_workers)]
     annotators = set()
     for _ in range(num_workers):
         p = mp.Process(
             target=annotator,
-            args=(population_gdf,
-                  sample_gdf,
-                  groupby_columns,
-                  class_names,
-                  pixel_edge_size,
-                  scale,
-                  anno_data_path,
-                  io_limit,
-                  io_lock,
-                  index_queue),
+            kwargs={
+                "population_gdf": population_gdf,
+                "squares_gdf": squares_gdf,
+                "class_names": class_names,
+                "pixel_edge_size": pixel_edge_size,
+                "anno_data_path": anno_data_path,
+                "io_limit": io_limit,
+                "io_lock": io_lock,
+                "index_queue": index_queue} | annotator_kwargs,
             daemon=True)
         p.start()
         annotators.add(p)
     [r.join() for r in annotators]
 
 
-@function_timer
 def generate_image_chip_data(downloader_kwargs: dict):
     downloader = Downloader(**downloader_kwargs)
     downloader.start()
@@ -331,7 +245,6 @@ def sample():
                 "class_label": CLASS_LABEL,
                 "num_points": SAMPLER_CONFIG["num_points"],
             }
-            # TODO: do a better job at filtering close proximity polygon 
             geo_dataframe = stratified_sample(**group_config)
 
         LOGGER.info("Generating square polygons...")
@@ -350,24 +263,24 @@ def sample():
         LOGGER.critical(f"Failed to generate sample: {type(e)} {e}")
         raise e
 
-
+    
 @function_timer
 def annotate():
     try:
         LOGGER.info("Loading geo files into GeoDataFrame...")
-        if SAMPLER_CONFIG["preprocess_actions"] and os.path.exists(GEO_POP_PATH):
+        if os.path.exists(GEO_POP_PATH):
             population_gdf = gpd.read_file(GEO_POP_PATH)
         else:
             population_gdf = gpd.read_file(GEO_RAW_PATH)
-        sample_gdf = gpd.read_file(META_DATA_PATH)
+        squares_gdf = gpd.read_file(META_DATA_PATH)
 
         LOGGER.info("Generating annotations...")
         annotation_config = {
+            "annotator": SAMPLER_CONFIG["annotator"],
+            "annotator_kwargs": SAMPLER_CONFIG["annotator_kwargs"],
             "population_gdf": population_gdf,
-            "sample_gdf": sample_gdf,
-            "groupby_columns": SAMPLER_CONFIG["groupby_columns"],
+            "squares_gdf": squares_gdf,
             "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
-            "scale": SAMPLER_CONFIG["scale"],
             "anno_data_path": ANNO_DATA_PATH,
             "num_workers": SAMPLER_CONFIG["num_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
@@ -410,63 +323,33 @@ def download():
 
 
 @function_timer
-def calculate():
-    try:
-        LOGGER.info("Calculating sample statistics...")
-        stat = {}
-        
-        gdf = gpd.read_file(META_DATA_PATH)
-        stat["class_count"] = gdf.groupby(CLASS_LABEL).size().to_dict()
-        
-        match SAMPLER_CONFIG["file_type"]:
-            case "ZARR":
-                LOGGER.info(f"Verifying chip data...")
-                chip_data = xr.open_zarr(CHIP_DATA_PATH)
-                # TODO: fix redudant summing
-                stat["chip_stats"] = get_xarr_stats(chip_data)
-                stat["chip_stats"] |= get_band_stats(chip_data, DATETIME_LABEL)
-
-                if os.path.isdir(ANNO_DATA_PATH):
-                    LOGGER.info(f"Verifying annotation data...")
-                    anno_data = xr.open_zarr(ANNO_DATA_PATH)
-                    # TODO: choice in weighting scheme
-                    stat["anno_stats"] = get_xarr_stats(anno_data)
-                    stat["anno_stats"] |= get_class_weights(anno_data)
-            case _:
-                raise ValueError(
-                    f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
-        update_yaml(stat, STAT_DATA_PATH)
-    except Exception as e:
-        LOGGER.critical(
-            f"Error in calculating sample statistics: {type(e)} {e}")
-        raise e
-
-
-@function_timer
 def index():
-    num_samples = len(gpd.read_file(META_DATA_PATH))
-    samples = np.arange(num_samples)
+    chip_data = xr.open_zarr(CHIP_DATA_PATH)
+    anno_data = xr.open_zarr(ANNO_DATA_PATH) if os.path.exists(ANNO_DATA_PATH) else None
 
     if SAMPLER_CONFIG["postprocess_actions"]:
         LOGGER.info("Postprocessing data in geo file...")
         # TODO: implement tif version
-        chip_data = xr.open_zarr(CHIP_DATA_PATH)
-        anno_data = xr.open_zarr(ANNO_DATA_PATH) if \
-            os.path.exists(ANNO_DATA_PATH) else None
         sample_config = {
             "chip_data": chip_data,
             "anno_data": anno_data,
             "postprocess_actions": SAMPLER_CONFIG["postprocess_actions"],
         }
         # TODO: resample data so sample class ratios stays consistent postprocessing
-        samples = postprocess_data(**sample_config)
+        postprocess_data(**sample_config)
 
+    num_samples = len(gpd.read_file(META_DATA_PATH))
+    samples = np.arange(num_samples)
     np.save(ALL_SAMPLE_PATH, samples)
     
     if SAMPLER_CONFIG["split_ratios"]:
-        LOGGER.info(
-            "Splitting sample data into training, validation, test, and predict sets...")
-        train, validate, test = train_validate_test_split(samples, SAMPLER_CONFIG["split_ratios"], RANDOM_SEED)
+        LOGGER.info("Splitting sample data into training, validation, test, and predict sets...")
+        indexer = getattr(importlib.import_module("pipeline.indexers"), SAMPLER_CONFIG["indexer"])
+        train, validate, test = indexer(chip_data,
+                                        anno_data,
+                                        SAMPLER_CONFIG["split_ratios"],
+                                        RANDOM_SEED,
+                                        **SAMPLER_CONFIG["indexer_kwargs"])
         idx_payload = {
             TRAIN_SAMPLE_PATH: train,
             VALIDATE_SAMPLE_PATH: validate,
@@ -484,6 +367,9 @@ def index():
             },
             STAT_DATA_PATH)
     else:
+        num_samples = len(chip_data)
+        samples = np.arange(len(chip_data))
+
         LOGGER.info("Saving sample data indices to paths...")
         np.save(PREDICT_SAMPLE_PATH, samples)
         update_yaml({"predict_count": len(samples)}, STAT_DATA_PATH)
