@@ -114,7 +114,7 @@ class PrithviUNet(SundialPLBase):
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
 
-        from models.basic_unet import UNet
+        from models.unet2d import UNet
         self.head = UNet(prithvi_params["model_args"]["embed_dim"], self.num_classes)
 
 
@@ -125,7 +125,8 @@ class PrithviGlobalBackbone(L.LightningModule):
                  prithvi_path: str = None,
                  view_size: int | None = 16,
                  reshape: bool = True,
-                 decoder: bool = False):
+                 decoder: bool = False,
+                 freeze_patch_embed: bool = False):
         super().__init__()
         self.prithvi_path = prithvi_path
         self.prithvi_params = prithvi_params
@@ -137,7 +138,7 @@ class PrithviGlobalBackbone(L.LightningModule):
         if self.prithvi_path is not None:
             checkpoint = torch.load(self.prithvi_path, weights_only=False)
             if not decoder:
-                for k, v in checkpoint.items():
+                for k, v in checkpoint.model.items():
                     if "decoder" in k:
                         del v
             _ = self.model.load_state_dict(checkpoint, strict=False)
@@ -145,9 +146,10 @@ class PrithviGlobalBackbone(L.LightningModule):
         self.reshaper = PrithviReshape(view_size) if reshape else nn.Identity()
         self.decoder = decoder
         if self.prithvi_freeze:
-            self.model.patch_embed.eval()
-            for param in self.model.patch_embed.parameters():
-                param.requires_grad = False
+            if freeze_patch_embed:
+                self.model.patch_embed.eval()
+                for param in self.model.patch_embed.parameters():
+                    param.requires_grad = False
             self.model.blocks.eval()
             for blk in self.model.blocks:
                 for param in blk.parameters():
@@ -219,7 +221,7 @@ class PrithviGlobalAttentionUNet(SundialPLBase):
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path)
 
-        from models.attention_unet import AttentionUNet, DownsampleBlock
+        from models.attention_unet2d import AttentionUNet, DownsampleBlock
         from models.utils import Upsampler
         self.head = nn.Sequential(
             Upsampler(prithvi_params["model_args"]["embed_dim"], 64),
@@ -232,88 +234,175 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
-        kernel_size: tuple,
+        num_frames: int,
+        kernel_size: tuple | int,
+        stride: tuple | int,
+        padding: tuple | int,
         prithvi_params: dict,
         prithvi_freeze: bool = True,
         prithvi_path: str = None,
+        freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_channels = num_channels
-        self.kernel_size = kernel_size
-
-        from models.utils import Conv3dBlock, ConvTranspose3dBlock
-        self.down1 = Conv3dBlock(self.num_channels, 64, kernel_size=kernel_size, stride=kernel_size)
-        self.down2 = Conv3dBlock(64, 128)
-        self.down3 = Conv3dBlock(128, 256)
-        self.down4 = Conv3dBlock(256, 512)
-        self.down5 = Conv3dBlock(512, 1024) 
+        self.num_frames = num_frames
+        params = {
+            "kernel_size": kernel_size,
+            "stride": stride,
+            "padding": padding
+        }
+        
+        from models.utils import DoubleConv3d, Up3d, OutConv3d
+        self.inc = DoubleConv3d(self.num_channels, 64, **params)
+        self.down1 = DoubleConv3d(64, 128, **params)
+        self.down2 = DoubleConv3d(128, 256, **params)
+        self.down3 = DoubleConv3d(256, 512, **params)
+        self.down4 = DoubleConv3d(512, 1024, **params)
 
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path,
             decoder=True,
-            reshape=False)
+            reshape=False,
+            freeze_patch_embed=freeze_patch_embed)
 
-        self.up1 = Conv3dBlock(1536, 256)
-        self.up2 = Conv3dBlock(512, 128)
-        self.up3 = Conv3dBlock(256, 64)
-        self.up4 = ConvTranspose3dBlock(128, 128, kernel_size=(1, 4, 4), stride=(1, 4, 4))
-        self.up5 = Conv3dBlock(128, self.num_classes)
+        self.up1 = Up3d(1024, 512, **params)
+        self.up2 = Up3d(512, 256, **params)
+        self.up3 = Up3d(256, 128, **params)
+        self.up4 = Up3d(128, 64, **params)
+        params["kernel_size"] = (self.num_frames, 3, 3)
+        self.out = OutConv3d(64, self.num_classes, **params)
+    
+    def forward(self, data):
+        x1 = data["chip"]
+        x1 = self.inc(x1)
+
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        x6 = self.prithvi(x5)
+        x6 = self.prithvi.model.unpatchify(x6)
+        
+        x7 = self.up1(x6, x4)
+        x8 = self.up2(x7, x3)
+        x9 = self.up3(x8, x2)
+        x10 = self.up4(x9, x1)
+        x11 = self.out(x10).squeeze(2)
+        return x11
+
+
+class PrithviGlobal3dUNet(SundialPLBase):
+    def __init__(self,
+        num_classes: int,
+        num_channels: int,
+        num_frames: int,
+        kernel_size: tuple | int,
+        stride: tuple | int,
+        padding: tuple | int,
+        prithvi_params: dict,
+        prithvi_freeze: bool = True,
+        prithvi_path: str = None,
+        freeze_patch_embed: bool = False,
+        **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_channels = num_channels
+        self.num_frames = num_frames
+
+        from models.utils import DoubleConv3d
+        from models.unet2d import Up, OutConv
+        params = {
+            "kernel_size": kernel_size,
+            "stride": stride,
+            "padding": padding
+        }
+        
+        self.inc = DoubleConv3d(self.num_channels, 64, **params)
+        self.down1 = DoubleConv3d(64, 128, **params)
+        self.down2 = DoubleConv3d(128, 256, **params)
+        self.down3 = DoubleConv3d(256, 512, **params)
+        self.down4 = DoubleConv3d(512, 1024, **params)
+
+        self.prithvi = PrithviGlobalBackbone(
+            prithvi_params=prithvi_params,
+            prithvi_freeze=prithvi_freeze,
+            prithvi_path=prithvi_path,
+            decoder=False,
+            reshape=True,
+            freeze_patch_embed=freeze_patch_embed)
+
+        self.up1 = Up(1024, 512, **params)
+        self.up2 = Up(512, 256, **params)
+        self.up3 = Up(256, 128, **params)
+        self.up4 = Up(128, 64, **params)
+        self.out = OutConv(64, self.num_classes, **params)
     
     def forward(self, data):
         x = data["chip"]
-        x1 = self.down1(x)
-        x2 = self.down2(x1)
-        x3 = self.down3(x2)
-        x4 = self.down4(x3)
-        x5 = self.down5(x4)
 
-        pri_out = self.prithvi(x5)
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        x6 = self.prithvi(x5)
         
-        x5_concatted = torch.cat((pri_out, x4), dim=1)
-        x6 = self.up1(x5_concatted)
-        x6_concatted = torch.cat((x6, x3), dim=1)
-        x7 = self.up2(x6_concatted)
-        x7_concatted = torch.cat((x7, x2), dim=1)
-        x8 = self.up3(x7_concatted)
-        x8_concatted = torch.cat((x8, x1), dim=1)
-        x9 = self.up4(x8_concatted)
-        x10 = self.up5(x9)
+        x7 = self.up1(x6, x4)
+        x8 = self.up2(x7, x3)
+        x9 = self.up3(x8, x2)
+        x10 = self.up4(x9, x1)
+        x11 = self.out(x10)
+        return x11
 
-        return x10
-   
+
 class PrithviGlobalDecoder2dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
-        bilinear: bool,
+        kernel_size: tuple,
+        patch_size: tuple,
+        padding: tuple,
         prithvi_params: dict,
         prithvi_freeze: bool = True,
         prithvi_path: str = None,
+        freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_channels = num_channels
-        self.bilinear = bilinear
-
-        from models.basic_unet import DoubleConv, Down, Up, OutConv
-        self.inc = DoubleConv(self.num_channels, 256)
-        self.down1 = Down(256, 512)
-        self.down2 = Down(512, 1024)
         
-        factor = 2 if bilinear else 1
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.out = OutConv(256, self.num_classes)
+
+        from models.unet2d import DoubleConv2d, Up2d, Down2d, OutConv2d
+        params = {
+            "kernel_size": kernel_size,
+            "stride": stride,
+            "padding": padding
+        }
+        
+        self.inc = DoubleConv2d(self.num_channels, 64, **params)
+        self.down1 = Down2d(64, 128, **params)
+        self.down2 = Down2d(128, 256, **params)
+        self.down3 = Down2d(256, 512, **params)
+        self.down4 = Down2d(512, 1024, **params)
+
+        self.up1 = Up2d(1024, 512, **params)
+        self.up2 = Up2d(512, 256, **params)
+        self.up3 = Up2d(256, 128, **params)
+        self.up4 = Up2d(128, 64, **params)
+        self.out = OutConv2d(64, self.num_classes)
         
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path,
             decoder=True,
-            reshape=False)
+            reshape=False,
+            freeze_patch_embed=freeze_patch_embed)
         
     def forward(self, data):
         x = data["chip"]
@@ -322,48 +411,56 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
         
-        x4 = x3.unsqueeze(2)
-        x4 = self.prithvi(x4)
-        x4 = self.prithvi.model.unpatchify(x4)
-        x4 = x4.squeeze(2)
+        x6 = x4.unsqueeze(2)
+        x6 = self.prithvi(x4)
+        x6 = self.prithvi.model.unpatchify(x4)
+        x6 = x4.squeeze(2)
         
-        x5 = self.up1(x4, x2)
-        x6 = self.up2(x5, x1)  
-        x7 = self.out(x6)
-        return x7
+        x7 = self.up1(x6, x4)
+        x8 = self.up2(x7, x3)
+        x9 = self.up3(x8, x2)
+        x10 = self.up4(x9, x1)
+        x11 = self.out(x10)
+        return x11
     
 
 class PrithviGlobal2dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
-        bilinear: bool,
         prithvi_params: dict,
         prithvi_freeze: bool = True,
         prithvi_path: str = None,
+        freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_channels = num_channels
         self.bilinear = bilinear
 
-        from models.basic_unet import DoubleConv, Down, Up, OutConv
-        self.inc = DoubleConv(self.num_channels, 256)
-        self.down1 = Down(256, 512)
-        self.down2 = Down(512, 1024)
-        
-        factor = 2 if bilinear else 1
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.out = OutConv(256, self.num_classes)
+        from models.unet2d import DoubleConv2d, Up2d, Down2d, OutConv2d
+        self.inc = DoubleConv2d(self.num_channels, 64)
+        self.down1 = Down2d(64, 128)
+        self.down2 = Down2d(128, 256)
+        self.down3 = Down2d(256, 512)
+        self.down4 = Down2d(512, 1024)
+
+        self.up1 = Up2d(1024, 512)
+        self.up2 = Up2d(512, 256)
+        self.up3 = Up2d(256, 128)
+        self.up4 = Up2d(128, 64)
+        self.out = OutConv2d(64, self.num_classes)
         
         self.prithvi = PrithviGlobalBackbone(
             prithvi_params=prithvi_params,
             prithvi_freeze=prithvi_freeze,
             prithvi_path=prithvi_path,
             decoder=False,
-            reshape=True)
+            reshape=True,
+            freeze_patch_embed=freeze_patch_embed)
         
     def forward(self, data):
         x = data["chip"]
@@ -372,14 +469,19 @@ class PrithviGlobal2dUNet(SundialPLBase):
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        x6 = x4.unsqueeze(2)
+        x6 = self.prithvi(x5)
         
-        x4 = x3.unsqueeze(2)
-        x4 = self.prithvi(x4)
+        x7 = self.up1(x6, x5)
+        x8 = self.up2(x7, x4)
+        x9 = self.up3(x8, x3) 
+        x10 = self.up4(x9, x2)
+        x11 = self.out(x10)
         
-        x5 = self.up1(x4, x2)
-        x6 = self.up2(x5, x1)  
-        x7 = self.out(x6)
-        return x7 
+        return x11
     
 
 class PrithviGlobalDiffReconstruction(SundialPLBase):

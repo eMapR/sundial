@@ -173,7 +173,7 @@ def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, 
         
 
 def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, min_sr: float, max_sr: float):
-    false_color = chip.index_select(0, torch.tensor([5,4,3])).permute(1, 2, 3, 0)
+    false_color = chip.index_select(0, torch.tensor([3,2,1])).permute(1, 2, 3, 0)
     times = list(range(chip.shape[1]-1, -1, -1))
     for t in range(chip.shape[1]):
         image = false_color[t, :, :, :]

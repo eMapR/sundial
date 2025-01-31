@@ -4,6 +4,8 @@ import xarray as xr
 
 from typing import Tuple
 
+from pipeline.settings import IDX_NAME_ZFILL
+
 
 def train_validate_test_split(chip_data: xr.Dataset,
                               anno_data: xr.Dataset,
@@ -36,7 +38,7 @@ def time_window_split(chip_data: xr.Dataset,
                       random_seed: float | int,
                       time_range: Tuple[int],
                       time_step: int) -> np.array:
-    train, val, test = train_validate_test_split(chip_data, anno_data, samples, ratios, random_seed)
+    train, val, test = train_validate_test_split(chip_data, anno_data, ratios, random_seed)
     times = np.arange(*time_range, time_step)
     
     train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train))])
@@ -48,9 +50,11 @@ def time_window_split(chip_data: xr.Dataset,
 
 def check_class_sums_helper(class_sums: np.array,
                             class_filters: dict):
-    assert len(class_sums.shape) == 2
-
-    ratios = class_sums / class_sums.sum()
+    total = class_sums.sum()
+    if total == 0:
+        return False
+    
+    ratios = class_sums / total
     for class_index in range(len(class_filters)):
         class_filter = class_filters[class_index]
         ratio = ratios[class_index]
@@ -59,7 +63,7 @@ def check_class_sums_helper(class_sums: np.array,
         ceiling = class_filter[1] if class_filter[1] else sys.maxsize
         if floor <= ratio < ceiling:
             pass
-        else
+        else:
             return False
     return True
 
@@ -68,10 +72,10 @@ def check_class_sums(anno_data: xr.Dataset,
                      sample: Tuple[int],
                      time_step: int,
                      class_filters: dict):
-    class_sums = anno_data[str(sample[0]).zfill(IDX_NAME_ZFILL)].attrs["class_sums"]
-    class_sums = class_sums[sample[1] - time_index]
+    class_sums = np.array(anno_data[str(sample[0]).zfill(IDX_NAME_ZFILL)].attrs["class_sums"])
+    class_sums = class_sums[sample[1] - time_step]
     
-    if check_class_sums(class_sums, class_filters):
+    if check_class_sums_helper(class_sums, class_filters):
         return sample
     else:
         return np.array([np.nan, np.nan])
@@ -85,12 +89,14 @@ def time_window_split_class_filter(chip_data: xr.Dataset,
                                    time_step: int,
                                    class_filters: dict,
                                    num_workers: int = 48) -> np.array:
-    splits = time_window_split(chip_data, anno_data, samples, ratios, random_seed)
+    splits = time_window_split(chip_data, anno_data, ratios, random_seed, time_range, time_step)
     proc_splits = []
     
     vec_func = lambda t: check_class_sums(anno_data, t, time_step, class_filters)
     for split in splits:
         vec = np.apply_along_axis(vec_func, axis=1, arr=split)
+        vec = np.where(vec < 0, np.nan, vec) # TODO: negative max value bug
+        vec = vec[~np.isnan(vec).any(axis=1)]
         proc_splits.append(vec)
         
     return proc_splits

@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
 
+
+from models.base import SundialPLBase
+
+
 class DownConvBlock(nn.Module):
     def __init__(self, ch_in, ch_out):
         super().__init__()
@@ -29,7 +33,7 @@ class UpConvBlock(nn.Module):
         )
 
     def forward(self, x):
-        x = x = self.up(x)
+        x = self.up(x)
         return x
 
 
@@ -64,10 +68,13 @@ class AttentionBlock(nn.Module):
         return psi * x
 
 
-class AttentionUNet(nn.Module):
+class AttentionUNet2D(SundialPLBase):
     def __init__(self, in_channel=64, out_channel=1):
         super().__init__()
-
+        
+        # for logging
+        self.num_classes = out_channel
+        
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.conv1 = DownConvBlock(ch_in=in_channel, ch_out=64)
@@ -95,6 +102,10 @@ class AttentionUNet(nn.Module):
         self.conv_1x1 = nn.Conv2d(64, out_channel, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
+        x = x["chip"]
+        if len(x.shape) == 5:
+            x = x.reshape(x.shape[0], -1, x.shape[-2], x.shape[-1])
+
         # encoder
         x1 = self.conv1(x)
 

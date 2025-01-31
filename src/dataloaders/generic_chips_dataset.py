@@ -80,11 +80,13 @@ class GenericChipsDataset(Dataset):
         
         if not isinstance(self.samples, list) and len(self.samples.shape) == 2:
             img_indx, time_indx = self.samples[sample_indx]
+            img_indx = int(img_indx)
+            time_indx = int(time_indx)
             slicer = slice(time_indx-self.time_step, time_indx+1)
         else:
             img_indx = self.samples[sample_indx]
             time_indx = None
-            slicer = slice(-self.time_step, None) if self.time_step else None
+            slicer = slice(-(self.time_step+1), None) if self.time_step else None
         if isinstance(img_indx, str):
             img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
 

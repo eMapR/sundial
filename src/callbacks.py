@@ -29,7 +29,7 @@ from pipeline.settings import (EXPERIMENT_FULL_NAME,
                                SAMPLER_CONFIG,
                                STAT_DATA_PATH)
 from pipeline.utils import load_yaml
-from utils import log_rgb_image, save_rgb_ir_tensor, tensors_to_tifs
+from utils import log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -352,7 +352,7 @@ class LogTrainRegressionExtCallback(L.Callback):
         target = torch.argmax(annotations, dim=1)
 
         metrics = {
-            "mean_absolute_erro": MeanAbsoluteError(preds, target),
+            "mean_absolute_error": MeanAbsoluteError(preds, target),
             "mean_squared_error": MeanSquaredError(preds, target),
         }
 
@@ -362,7 +362,52 @@ class LogTrainRegressionExtCallback(L.Callback):
             prog_bar=False,
             sync_dist=True
         )
+        
+        
+class LogGradientCallback(L.Callback):
+    def on_after_backward(self,
+                          trainer: L.Trainer,
+                          pl_module: L.LightningModule):
+        if trainer.global_step % 16 == 0:
+            mags = {}
+            counts = {}
+            layers = ["inc_grad_mag", "down_grad_mag", "encoder_grad_mag", "decoder_grad_mag", "up_grad_mag", "out_grad_mag"]
 
+            for k in layers:
+                counts[k] = 0
+                mags[k] = 0
+
+            for name, param in pl_module.named_parameters():
+                if param.requires_grad and param.grad is not None:
+                    mag = param.grad.norm().item() 
+                    if "inc" in name:
+                        mags["inc_grad_mag"] += mag
+                        counts["inc_grad_mag"] += 1
+                    if "down" in name:
+                        mags["down_grad_mag"] += mag
+                        counts["down_grad_mag"] += 1
+                    elif "prithvi.model.blocks" in name:
+                        mags["encoder_grad_mag"] += mag
+                        counts["encoder_grad_mag"] += 1
+                    elif "prithvi.model.decoder_blocks" in name:
+                        mags["decoder_grad_mag"] += mag
+                        counts["decoder_grad_mag"] += 1
+                    elif  "up" in name:
+                        mags["up_grad_mag"] += mag
+                        counts["up_grad_mag"] += 1
+                    elif "out" in name:
+                        mags["out_grad_mag"] += mag
+                        counts["out_grad_mag"] += 1
+
+            for k, v in mags.items():
+                mags[k] /= counts[k]
+
+            pl_module.log_dict(
+                dictionary=mags,
+                logger=True,
+                prog_bar=False,
+                sync_dist=True
+            )
 
 class LogTestCallback(L.Callback):
     def on_test_batch_end(self,
@@ -396,6 +441,10 @@ class LogTestCallback(L.Callback):
                 dtype=torch.float,
                 device=pl_module.device).view(-1, 1, 1, 1)
             chips = chips * stds + means
+            max_bands = means + (stds * 2)
+            min_bands = means - (stds * 2)
+            max_sr = torch.max(max_bands).item()
+            min_sr = torch.min(min_bands).item()
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
@@ -404,8 +453,9 @@ class LogTestCallback(L.Callback):
             pred = output[i]
 
             # save rgb and ir band separately
-            log_rgb_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment)
-
+            log_rgb_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
+            log_false_color_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
+            
             # save original annotations
             for c in range(anno.shape[0]):
                 image = anno[c].unsqueeze(-1)

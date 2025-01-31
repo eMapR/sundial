@@ -72,7 +72,7 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
 
         xarr_anno.name = index_name
         if include_class_sums:
-            xarr_anno.attrs["class_sums"] = xarr_anno.sum(dim=["y", "x"])
+            xarr_anno.attrs["class_sums"] = xarr_anno.sum(dim=["y", "x"]).values
 
         # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_anno.shape} to batch...")
@@ -127,7 +127,7 @@ def multi_year_xarr_annotator(population_gdf: gpd.GeoDataFrame,
 
         xarr_years.name = index_name
         if include_class_sums:
-            xarr_years.attrs["class_sums"] = xarr_anno.sum(dim=["y", "x"])
+            xarr_years.attrs["class_sums"] = xarr_years.sum(dim=["y", "x"]).values
 
         # writing in batches to avoid io bottleneck
         LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_years.shape} to batch...")

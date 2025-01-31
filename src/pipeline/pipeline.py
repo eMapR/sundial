@@ -104,7 +104,8 @@ def postprocess_data(
     anno_data: xr.Dataset | None,
     postprocess_actions: list[str]):
     stat_data = {}
-    for postprocess in postprocess_actions:
+
+    for action in postprocess_actions:
         match action:
             case "band_mean_stdv":
                 match SAMPLER_CONFIG["file_type"]:
@@ -118,10 +119,10 @@ def postprocess_data(
                         raise ValueError(
                             f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
             case "class_counts":
-                gdf = gpd.read_file(META_DATA_PATH)
+                gdf = gpd.read_file(GEO_POP_PATH)
                 gdf.loc[:, "area"] = gdf.area
                 
-                groupby = gdf.groupby(CLASS_LABEL)
+                groupby = gdf.loc[:, [CLASS_LABEL, "area"]].groupby(CLASS_LABEL)
                 stat_data["class_geo_count"] = groupby.size().to_dict()
                 stat_data["class_geo_area"] = groupby.sum()["area"].to_dict()
                 if os.path.isdir(ANNO_DATA_PATH):
@@ -358,7 +359,7 @@ def index():
 
         LOGGER.info("Saving sample data splits to paths...")
         for path, idx_lst in idx_payload.items():
-            np.save(path, idx_lst)
+            np.save(path, idx_lst.astype(int))
         update_yaml(
             {
                 "train_count": len(train),

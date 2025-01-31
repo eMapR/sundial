@@ -164,10 +164,9 @@ shapes/
 logs/
 samples/
 checkpoints/
+notebooks/
 predictions/
-src/models/backbones/*
-src/huggingface.py
-slurm/tar.slurm
-slurm/huggingface.slurm
+utils/
+src/models/backbones/
 *.tar.gz
 .vscode

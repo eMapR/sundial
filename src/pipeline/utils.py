@@ -119,10 +119,17 @@ def get_xarr_stats(data: xr.Dataset) -> dict:
 
 
 def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
-    class_totals = data.attrs["class_sums"].sum(axis=0)
+    # TODO: fix dataset attribute error in annotator
+    class_totals = np.array([data[v].attrs["class_sums"] for v in data.data_vars]).sum(axis=(0,1))
     class_probs = class_totals / class_totals.sum()
-    weights = 1 / class_probs
-    return {"totals": class_totals.values.tolist(), "weights": weights.values.tolist()}
+    if class_probs.sum() > 0:
+        weights = 1 / class_probs
+        print(class_probs)
+        print(weights)
+    else:
+        weights = np.repeat(1, len(class_probs))
+    return {"totals": class_totals.tolist(), "weights": weights.tolist()}
+
 
 
 def get_band_stats(data: xr.Dataset,
