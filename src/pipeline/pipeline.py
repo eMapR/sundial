@@ -38,6 +38,7 @@ from pipeline.settings import (
     VALIDATE_SAMPLE_PATH,
 )
 from pipeline.utils import (
+    covering_grid,
     generate_centroid_squares,
     get_class_weights,
     get_band_stats,
@@ -145,19 +146,9 @@ def generate_squares(
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "covering_grid":
-            xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
-            grid_cells = []
-            for x0 in np.arange(xmin, xmax+meter_edge_size, meter_edge_size):
-                for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size):
-                    x1 = x0 - meter_edge_size
-                    y1 = y0 + meter_edge_size
-                    new_cell = shapely.geometry.box(x0, y0, x1, y1)
-                    if new_cell.intersects(geo_dataframe.geometry).any():
-                        grid_cells.append(new_cell)
-                    else:
-                        pass
-            gdf = gpd.GeoDataFrame(geometry=grid_cells, crs=geo_dataframe.crs)
-            gdf.loc[:, DATETIME_LABEL] = max(geo_dataframe[DATETIME_LABEL].unique())
+            gdf = covering_grid(geodataframe, meter_edge_size)
+        case "half_overlapping_covering_grid":
+            gdf = covering_grid(geodataframe, meter_edge_size//2)
         case "random":
             raise NotImplementedError
         case "centroid":

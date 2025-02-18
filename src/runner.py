@@ -29,7 +29,7 @@ from pipeline.settings import (
     SAMPLER_CONFIG,
 )
 from pipeline.logging import function_timer
-from pipeline.utils import load_yaml
+from pipeline.config_utils import load_yaml
 
 
 class SundialCLI(LightningCLI):

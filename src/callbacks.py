@@ -28,7 +28,7 @@ from pipeline.settings import (EXPERIMENT_FULL_NAME,
                                PREDICTION_PATH,
                                SAMPLER_CONFIG,
                                STAT_DATA_PATH)
-from pipeline.utils import load_yaml
+from pipeline.config_utils import load_yaml
 from utils import log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
@@ -139,11 +139,11 @@ class GenerateTrainGifCallback(L.Callback):
                                 dataloader_idx: int = 0):
         if self.index in batch["indx"]:
             batch_index = (batch["indx"] == self.index).nonzero(as_tuple=True)[0].item()
-            frame_tensor = outputs["output"][batch_index].detach().cpu()
+            frame_tensor = outputs["output"][batch_index]
             self.frames.append(frame_tensor)
             if not self.input:
-                anno = batch["anno"][batch_index].detach().cpu()
-                chip = batch["chip"][batch_index].detach().cpu()
+                anno = batch["anno"][batch_index]
+                chip = batch["chip"][batch_index]
                 log_rgb_image(chip, f"{self.index_name}_gif", "chip", pl_module.logger.experiment)
                 for c in range(anno.shape[0]):
                     pl_module.logger.experiment.log_image(
@@ -181,11 +181,11 @@ class GenerateValidateGifCallback(L.Callback):
                                 dataloader_idx: int = 0):
         if self.index in batch["indx"]:
             batch_index = (batch["indx"] == self.index).nonzero(as_tuple=True)[0].item()
-            frame_tensor = outputs["output"][batch_index].detach().cpu()
+            frame_tensor = outputs["output"][batch_index]
             self.frames.append(frame_tensor)
             if not self.input:
-                anno = batch["anno"][batch_index].detach().cpu()
-                chip = batch["chip"][batch_index].detach().cpu()
+                anno = batch["anno"][batch_index]
+                chip = batch["chip"][batch_index]
                 log_rgb_image(chip, f"{self.index_name}_gif", "chip", pl_module.logger.experiment)
                 for c in range(anno.shape[0]):
                     pl_module.logger.experiment.log_image(
@@ -364,46 +364,36 @@ class LogTrainRegressionExtCallback(L.Callback):
         )
         
         
-class LogGradientCallback(L.Callback):
+class LogAvgMagGradientCallback(L.Callback):
+    def __init__(self,
+                 layers: list[str],
+                 freq: int = 16,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.layers = layers
+        self.freq = freq
+
     def on_after_backward(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule):
-        if trainer.global_step % 16 == 0:
-            mags = {}
-            counts = {}
-            layers = ["inc_grad_mag", "down_grad_mag", "encoder_grad_mag", "decoder_grad_mag", "up_grad_mag", "out_grad_mag"]
-
-            for k in layers:
-                counts[k] = 0
-                mags[k] = 0
+        if trainer.global_step % freq == 0:
+            mags = {f"{k}_avgmag": [] for k in self.layers}
 
             for name, param in pl_module.named_parameters():
                 if param.requires_grad and param.grad is not None:
-                    mag = param.grad.norm().item() 
-                    if "inc" in name:
-                        mags["inc_grad_mag"] += mag
-                        counts["inc_grad_mag"] += 1
-                    if "down" in name:
-                        mags["down_grad_mag"] += mag
-                        counts["down_grad_mag"] += 1
-                    elif "prithvi.model.blocks" in name:
-                        mags["encoder_grad_mag"] += mag
-                        counts["encoder_grad_mag"] += 1
-                    elif "prithvi.model.decoder_blocks" in name:
-                        mags["decoder_grad_mag"] += mag
-                        counts["decoder_grad_mag"] += 1
-                    elif  "up" in name:
-                        mags["up_grad_mag"] += mag
-                        counts["up_grad_mag"] += 1
-                    elif "out" in name:
-                        mags["out_grad_mag"] += mag
-                        counts["out_grad_mag"] += 1
-
+                    mag = torch.abs(param.grad.clone().detach().norm()).item() 
+                    for layer in self.layers:
+                        if layer in name:
+                            mags[f"{layer}_avgmag"].append(mag)
+                            continue
+            
+            log_dict = {}
             for k, v in mags.items():
-                mags[k] /= counts[k]
+                if count := len(mags[k]) > 0:
+                    log_dict[k] = sum(mags[k]) / count
 
             pl_module.log_dict(
-                dictionary=mags,
+                dictionary=log_dict,
                 logger=True,
                 prog_bar=False,
                 sync_dist=True
@@ -448,19 +438,19 @@ class LogTestCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            anno = annotations[i]
-            pred = output[i]
+            chip = chips[i].cpu()
+            anno = annotations[i].cpu()
+            pred = output[i].cpu()
 
             # save rgb and ir band separately
-            log_rgb_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
-            log_false_color_image(chip.detach().cpu(), index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
+            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
+            log_false_color_image(chip, index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
             
             # save original annotations
             for c in range(anno.shape[0]):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
-                    image_data=image.detach().cpu(),
+                    image_data=image,
                     name=f"{index_name}_c{c+1}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
@@ -470,7 +460,7 @@ class LogTestCallback(L.Callback):
             for c in range(pred.shape[0]):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
-                    image_data=image.to(torch.float32).detach().cpu(),
+                    image_data=image.to(torch.float32),
                     name=f"{index_name}_c{c+1}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
@@ -512,9 +502,9 @@ class LogTestReconstructCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i].detach().cpu()
-            pred = output[i].detach().cpu()
-            diff = diffs[i].detach().cpu()
+            chip = chips[i].cpu()
+            pred = output[i].cpu()
+            diff = diffs[i].cpu()
 
             # save rgb and ir band separately
             log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
@@ -549,9 +539,9 @@ class SaveTestCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            anno = annotations[i]
-            pred = output[i]
+            chip = chips[i].cpu()
+            anno = annotations[i].cpu()
+            pred = output[i].cpu()
 
             # save rgb and ir bands separately
             save_rgb_ir_tensor(chip, index_name, "chip", PREDICTION_PATH)

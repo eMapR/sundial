@@ -4,10 +4,6 @@ from torch import nn
 
 
 class SundialPLBase(L.LightningModule):
-    def forward(self, batch):
-        features = self.backbone(batch)
-        return self.head(features)
-
     def training_step(self, batch):
         data = {k: v for k, v in batch.items() if k != "anno"}
         anno = batch["anno"]

@@ -1,6 +1,6 @@
 import os
 
-from pipeline.utils import  load_yaml, recursive_merge
+from pipeline.config_utils import  load_yaml, recursive_merge
 
 
 # experiment information

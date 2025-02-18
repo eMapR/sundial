@@ -8,8 +8,6 @@ def lt_medoid_image_factory(
         square_coords: list[tuple[float, float]],
         start_date: datetime,
         end_date: datetime,
-        # pixel_edge_size: int,
-        # scale: int,
         projection: str,
         mask_labels: list[str] = ["snow", "cloud", "shadow"]) -> ee.Image:
     # TODO: actually parse the projection string
@@ -29,7 +27,6 @@ def lt_medoid_image_factory(
     new_band_names = [f"{str(start_date.year + i)}_{band}" for i in range(size)
                       for band in collection._band_names]
 
-    # TODO: fix hacky filter bounds to reprojections
     image = collection\
         .toBands()\
         .select(old_band_names, new_band_names)\

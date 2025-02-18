@@ -15,38 +15,6 @@ from shapely.geometry import Polygon
 from typing import Literal, Optional, Tuple
 
 
-def save_yaml(config: dict, path: str | os.PathLike):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        yaml.dump(config, f)
-
-
-def load_yaml(path: str | os.PathLike) -> dict:
-    with open(path, "r") as f:
-        config = yaml.safe_load(f)
-        return config if config else {}
-
-
-def update_yaml(config: dict, path: str | os.PathLike) -> dict:
-    if os.path.exists(path):
-        old_config = load_yaml(path)
-        config = recursive_merge(old_config, config)
-    save_yaml(config, path)
-
-
-def recursive_merge(dict1: dict, dict2: dict):
-    result = dict1.copy()
-    for key, value in dict2.items():
-        if key in result:
-            if isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = recursive_merge(result[key], value)
-            else:
-                result[key] = value
-        else:
-            result[key] = value
-    return result
-
-
 def clip_xy_xarray(xarr: xr.DataArray, 
                    pixel_edge_size: int) -> xr.DataArray:
     x_diff = xarr["x"].size - pixel_edge_size
@@ -124,8 +92,6 @@ def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     class_probs = class_totals / class_totals.sum()
     if class_probs.sum() > 0:
         weights = 1 / class_probs
-        print(class_probs)
-        print(weights)
     else:
         weights = np.repeat(1, len(class_probs))
     return {"totals": class_totals.tolist(), "weights": weights.tolist()}
@@ -180,3 +146,21 @@ def rasterizer(polygons: gpd.GeoSeries,
         default_value=default_value)
 
     return raster
+
+
+def covering_grid(geo_dataframe: gpd.GeoDataFrame,
+                              meter_edge_size: int):
+    xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
+    grid_cells = []
+    for x0 in np.arange(xmin, xmax+meter_edge_size, meter_edge_size):
+        for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size):
+            x1 = x0 - meter_edge_size
+            y1 = y0 + meter_edge_size
+            new_cell = shapely.geometry.box(x0, y0, x1, y1)
+            if new_cell.intersects(geo_dataframe.geometry).any():
+                grid_cells.append(new_cell)
+            else:
+                pass
+    gdf = gpd.GeoDataFrame(geometry=grid_cells, crs=geo_dataframe.crs)
+    gdf.loc[:, DATETIME_LABEL] = max(geo_dataframe[DATETIME_LABEL].unique())
+    return gdf

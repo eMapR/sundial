@@ -1,5 +1,4 @@
 import os
-
 from pipeline.settings import (
     CHECKPOINT_PATH,
     CONFIG_PATH,
@@ -11,7 +10,7 @@ from pipeline.settings import (
     SAMPLER_CONFIG,
     SAMPLE_NAME,
 )
-from pipeline.utils import save_yaml
+from pipeline.config_utils import save_yaml
 
 
 # default package settings

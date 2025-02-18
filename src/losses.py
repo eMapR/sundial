@@ -8,6 +8,30 @@ from typing import Any, Literal, Sequence
 from utils import distance_transform
 
 
+class Base(nn.Module):
+    def __init__(self,
+                 logits: bool = True,
+                 multiclass: bool = True,
+                 reduction: Literal["none", "mean", "sum"] = "mean"):
+        super().__init__()
+        self.logits = logits
+        self.multiclass = multiclass
+        self.reducer = Reducer(reduction)
+    
+    def forward_activation(self, inputs):
+        if self.logits:
+            if self.multiclass:
+                inputs = nn.functional.sigmoid(inputs)
+            else:
+                inputs = nn.functional.softmax(inputs, dim=1)
+        return inputs
+
+    def forward(self, inputs, targets):
+        inputs = self.forward_activation(inputs)
+        loss = self.forward_loss(inputs, targets)
+        return self.reducer(loss)
+
+
 class Reducer(nn.Module):
     def __init__(self,
                  reduction: str,
@@ -40,68 +64,53 @@ class RMSELoss(nn.Module):
         return torch.sqrt(self.mse(inputs, targets))
 
 
-class JaccardLoss(nn.Module):
+class JaccardLoss(Base):
     def __init__(self,
                  epsilon: int = 1e-6,
-                 reduction: Literal["none", "mean", "sum"] = "mean"):
-        super().__init__()
+                 **kwargs):
+        super().__init__(**kwargs)
         self.epsilon = epsilon
-        self.reducer = Reducer(reduction)
 
-    def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
-
+    def forward_loss(self, inputs, targets):
         intersection = einsum("bcwh,bcwh->bc", inputs, targets)
         union = einsum("bkwh->bk", inputs) + \
             einsum("bkwh->bk", targets) - intersection
 
         jaccard = (intersection + self.epsilon)/(union + self.epsilon)
 
-        return self.reducer(1 - einsum("bk->b", jaccard))
+        return 1 - einsum("bk->b", jaccard)
 
 
-class DiceLoss(nn.Module):
+class DiceLoss(Base):
     def __init__(self,
                  epsilon: float = 1e-6,
-                 logits: bool = True,
-                 reduction: Literal["none", "mean", "sum"] = "mean"):
-        super().__init__()
+                 **kwargs):
+        super().__init__(**kwargs)
         self.epsilon = epsilon
-        self.logits = logits
-        self.reducer = Reducer(reduction)
 
-    def forward(self, inputs, targets):
-        if self.logits:
-            inputs = nn.functional.sigmoid(inputs)
-
+    def forward_loss(self, inputs, targets):
         intersection = einsum("bcwh,bcwh->bc", inputs, targets)
         sum_probs = einsum("bkwh->bk", inputs) + einsum("bkwh->bk", targets)
         dice = (2. * intersection + self.epsilon) / (sum_probs + self.epsilon)
 
-        return self.reducer(1 - einsum("bk->b", dice))
+        return 1 - einsum("bk->b", dice)
 
 
-class GeneralizedDiceLoss(nn.Module):
+class GeneralizedDiceLoss(Base):
     def __init__(self,
                  epsilon: float = 1e-6,
-                 logits: bool = True,
-                 reduction: Literal["none", "mean", "sum"] = "mean"):
-        super().__init__()
+                 **kwargs):
+        super().__init__(**kwargs)
         self.epsilon = epsilon
-        self.logits = logits
-        self.reducer = Reducer(reduction)
 
-    def forward(self, inputs, targets):
-        if self.logits:
-            inputs = nn.functional.sigmoid(inputs)
-
+    def forward_loss(self, inputs, targets):
         weight = 1 / ((einsum("bkwh->bk", targets) + self.epsilon) ** 2)
         intersection = weight * einsum("bcwh,bcwh->bc", inputs, targets)
         sum_probs = weight * einsum("bkwh->bk", inputs) + einsum("bkwh->bk", targets)
 
         generalized_dice = (2. * einsum("bk->b", intersection) + self.epsilon) / (einsum("bk->b", sum_probs) + self.epsilon)
 
-        return self.reducer(1 - generalized_dice)
+        return 1 - generalized_dice
 
 
 class FocalLoss(nn.Module):
@@ -123,21 +132,18 @@ class FocalLoss(nn.Module):
         return loss
 
 
-class TverskyLoss(nn.Module):
+class TverskyLoss(Base):
     def __init__(self,
                  alpha: float = 0.5,
                  beta: float = 0.5,
                  epsilon: float = 1e-6,
-                 reduction: Literal["none", "mean", "sum"] = "mean"):
-        super().__init__()
+                 **kwargs):
+        super().__init__(**kwargs)
         self.alpha = alpha
         self.beta = beta
         self.epsilon = epsilon
-        self.reducer = Reducer(reduction)
 
-    def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
-
+    def forward_loss(self, inputs, targets):
         TP = einsum("bcwh,bcwh->b", inputs, targets)
         FP = einsum("bcwh,bcwh->b", inputs, 1-targets)
         FN = einsum("bcwh,bcwh->b", targets, 1-inputs)
@@ -145,27 +151,7 @@ class TverskyLoss(nn.Module):
         tversky = (TP + self.epsilon) / (TP + self.alpha *
                                          FP + self.beta*FN + self.epsilon)
 
-        return self.reducer(1 - tversky)
-
-
-class FocalTverskyLoss(nn.Module):
-    def __init__(self,
-                 alpha: float = 0.5,
-                 beta: float = 0.5,
-                 gamma: int = 1,
-                 epsilon: float = 1e-6):
-        super().__init__()
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.tversky = TverskyLoss(
-            alpha=alpha, beta=beta, epsilon=epsilon, reduction='none'
-        )
-
-    def forward(self, inputs, targets):
-        tversky = self.tversky(inputs, targets)
-        return tversky**self.gamma
+        return 1 - tversky
 
 
 class BCEWithLogitsLoss(nn.BCEWithLogitsLoss):
@@ -206,7 +192,7 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                          label_smoothing=label_smoothing)
 
 
-class SSIMLoss(nn.Module):
+class SSIMLoss(Base):
     def __init__(self,
                  gaussian_kernel: bool = True,
                  sigma: float | Sequence[float] = 1.5,
@@ -215,8 +201,9 @@ class SSIMLoss(nn.Module):
                                     'sum', 'none'] | None = "elementwise_mean",
                  data_range: float | tuple[float, float] | None = None,
                  k1: float = 0.01,
-                 k2: float = 0.03):
-        super().__init__()
+                 k2: float = 0.03,
+                 **kwargs):
+        super().__init__(reduction=None, **kwargs)
         self.gaussian_kernel = gaussian_kernel
         self.sigma = sigma
         self.kernel_size = kernel_size
@@ -225,8 +212,7 @@ class SSIMLoss(nn.Module):
         self.k1 = k1
         self.k2 = k2
 
-    def forward(self, inputs, targets):
-        inputs = nn.functional.sigmoid(inputs)
+    def forward_loss(self, inputs, targets):
         loss = structural_similarity_index_measure(preds=inputs,
                                                    target=targets,
                                                    gaussian_kernel=self.gaussian_kernel,
@@ -239,45 +225,45 @@ class SSIMLoss(nn.Module):
         return 1 - loss
 
 
-class DiceBoundaryLoss(nn.Module):
+class DiceBoundaryLoss(Base):
     def __init__(self,
                  alpha: float = 0.01,
-                 epsilon: float = 1e-6):
-        super().__init__()
+                 epsilon: float = 1e-6,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.alpha = alpha
         self.epsilon = epsilon
-        self.dice = DiceLoss(epsilon=epsilon, logits=False)
+        self.dice = DiceLoss(epsilon=epsilon, logits=False, reduction=None)
 
-    def forward(self, inputs, targets):
+    def forward_loss(self, inputs, targets):
         distances = torch.stack([distance_transform(targets[b])
                                 for b in range(targets.shape[0])])
-        inputs = nn.functional.sigmoid(inputs)
-
+                
         boundary_loss = einsum('bcwh,bcwh->bcwh', inputs, distances).mean()
         loss = self.dice(inputs, targets) + self.alpha * boundary_loss
         return loss
 
 
-class GeneralzedDiceBoundaryLoss(nn.Module):
+class GeneralzedDiceBoundaryLoss(Base):
     def __init__(self,
                  alpha: float = 0.01,
-                 epsilon: float = 1e-6):
-        super().__init__()
+                 epsilon: float = 1e-6,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.alpha = alpha
         self.epsilon = epsilon
-        self.gdl = GeneralizedDiceLoss(epsilon=epsilon, logits=False)
+        self.gdl = GeneralizedDiceLoss(epsilon=epsilon, logits=False, reduction=None)
 
-    def forward(self, inputs, targets):
+    def forward_loss(self, inputs, targets):
         distances = torch.stack([distance_transform(targets[b])
                                 for b in range(targets.shape[0])])
-        inputs = nn.functional.sigmoid(inputs)
 
         boundary_loss = einsum('bcwh,bcwh->bcwh', inputs, distances).mean()
         loss = self.gdl(inputs, targets) + self.alpha * boundary_loss
         return loss
     
     
-class DiceCrossEntropyLoss(nn.Module):
+class DiceCrossEntropyLoss(Base):
     def __init__(self,
                  epsilon: float = 1e-6,
                  weight: list[float] | None = None,
@@ -286,10 +272,12 @@ class DiceCrossEntropyLoss(nn.Module):
                  reduce: Any | None = None,
                  reduction: str = 'mean',
                  label_smoothing: float = 0,
-                 device: torch.device | None = None):
+                 device: torch.device | None = None,
+                 logits: bool = True,
+                 multiclass: bool = True):
         super().__init__()
         self.epsilon = epsilon
-        self.dice = DiceLoss(epsilon=epsilon, logits=False)
+        self.dice = DiceLoss(epsilon=epsilon, logits=logits, multiclass=multiclass, reduction=reduction)
         self.ce = CrossEntropyLoss(
             weight=weight,
             size_average=size_average,

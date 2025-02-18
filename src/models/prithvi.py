@@ -202,32 +202,6 @@ class PrithviGlobalFCN(SundialPLBase):
             Upsampler(prithvi_params["model_args"]["embed_dim"], 64),
             FCNHead(256, self.num_classes)
         )
-        
-class PrithviGlobalAttentionUNet(SundialPLBase):
-    def __init__(self,
-        num_classes: int,
-        view_size: int,
-        prithvi_params: dict,
-        prithvi_freeze: bool = True,
-        prithvi_path: str = None,
-        **kwargs):
-        super().__init__(**kwargs)
-        self.num_classes = num_classes
-        self.view_size = view_size
-
-        self.backbone = PrithviGlobalBackbone(
-            view_size=view_size,
-            prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path)
-
-        from models.attention_unet2d import AttentionUNet, DownsampleBlock
-        from models.utils import Upsampler
-        self.head = nn.Sequential(
-            Upsampler(prithvi_params["model_args"]["embed_dim"], 64),
-            AttentionUNet(64, 64),
-            DownsampleBlock(64, self.num_classes)
-        )
 
 
 class PrithviGlobalDecoder3dUNet(SundialPLBase):
@@ -267,6 +241,8 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
             decoder=True,
             reshape=False,
             freeze_patch_embed=freeze_patch_embed)
+
+        # self.prithvi = DoubleConv3d(1024, 1024, **params) # leftover from ablation
 
         self.up1 = Up3d(1024, 512, **params)
         self.up2 = Up3d(512, 256, **params)

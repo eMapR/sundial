@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 from typing import Literal, Optional
 
+from pipeling.config_utils import load_yaml
 from pipeline.settings import (
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
@@ -23,7 +24,7 @@ from pipeline.settings import (
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
 )
-from pipeline.utils import clip_xy_xarray, load_yaml
+from pipeline.utils import clip_xy_xarray
 from pipeline.settings import IDX_NAME_ZFILL
 from settings import DATALOADER_CONFIG
 from utils import dynamic_import
