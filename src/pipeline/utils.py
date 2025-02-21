@@ -6,7 +6,6 @@ import os
 import time
 import utm
 import xarray as xr
-import yaml
 
 from datetime import datetime
 from rasterio.features import rasterize

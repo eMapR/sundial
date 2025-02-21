@@ -18,6 +18,25 @@ class GeoNormalization(nn.Module):
         return x
 
 
+class ReverseTime(nn.Module):
+    def __init__(self, dim=2):
+        super().__init__()
+        self.dim = dim
+        
+    def forward(self, x):
+        return x.flip(self.dim)
+
+
+class Flatten(nn.Module):
+    def __init__(self, start_dim=0, end_dim=-1):
+        super().__init__()
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+    
+    def forward(self, x):
+        return torch.flatten(x, self.start_dim, self.end_dim)
+
+
 class FirstOrderDifference(nn.Module):
     def forward(self, x):
         return x[:, 1:, :, :] - x[:, :-1, :, :]

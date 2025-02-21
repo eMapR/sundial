@@ -12,6 +12,7 @@ import xarray as xr
 
 from typing import Any, Optional, Literal
 
+from pipeline.config_utils import update_yaml
 from pipeline.downloader import Downloader
 from pipeline.logging import function_timer, get_logger
 from pipeline.settings import (
@@ -44,7 +45,6 @@ from pipeline.utils import (
     get_band_stats,
     get_xarr_stats,
     stratified_sample,
-    update_yaml,
 )
 
 LOGGER = get_logger(LOG_PATH, METHOD)

@@ -1,4 +1,5 @@
 import os
+import yaml
 
 
 def save_yaml(config: dict, path: str | os.PathLike):

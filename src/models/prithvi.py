@@ -27,125 +27,30 @@ class PrithviReshape(nn.Module):
 class PrithviBackbone(L.LightningModule):
     def __init__(self,
                  prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 view_size: int | None = 16,
-                 reshape: bool = True,
-                 decoder: bool = False):
-        super().__init__()
-        self.view_size = view_size
-        self.prithvi_path = prithvi_path
-        self.prithvi_params = prithvi_params
-        self.prithvi_freeze = prithvi_freeze
-
-        from models.backbones.prithvi.Prithvi import MaskedAutoencoderViT
-        self.model = MaskedAutoencoderViT(
-            **self.prithvi_params["model_args"])
-        if self.prithvi_path is not None:
-            checkpoint = torch.load(self.prithvi_path)
-            del checkpoint['pos_embed']
-            if not decoder:
-                for k, v in checkpoint.items():
-                    if "decoder" in k:
-                        del v
-            _ = self.model.load_state_dict(checkpoint, strict=False)
-        self.reshaper = PrithviReshape(self.view_size) if reshape else nn.Identity()
-        self.decoder = decoder
-        if self.prithvi_freeze:
-            self.model.patch_embed.eval()
-            for param in self.model.patch_embed.parameters():
-                param.requires_grad = False
-            self.model.blocks.eval()
-            for blk in self.model.blocks:
-                for param in blk.parameters():
-                    param.requires_grad = False
-        
-
-    def forward(self, chips):
-        latent, _, ids_restore = self.model.forward_encoder(chips, mask_ratio=0.0)
-        if self.decoder:
-            latent = self.model.forward_decoder(latent, ids_restore)
-        return self.reshaper(latent)
-
-
-class PrithviFCN(SundialPLBase):
-    def __init__(self,
-                 num_classes: int,
-                 upscale_depth: int,
-                 view_size: int,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.num_classes = num_classes
-        self.upscale_depth = upscale_depth
-        self.view_size = view_size
-
-        self.backbone = PrithviBackbone(
-            view_size=view_size,
-            prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path)
-
-        from torchvision.models.segmentation.fcn import FCNHead
-        from models.utils import Upscaler
-        self.head = nn.Sequential(
-            Upscaler(prithvi_params["model_args"]["embed_dim"], self.upscale_depth),
-            FCNHead(prithvi_params["model_args"]["embed_dim"], self.num_classes)
-        )
-
-
-class PrithviUNet(SundialPLBase):
-    def __init__(self,
-                 num_classes: int,
-                 view_size: int,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.num_classes = num_classes
-        self.view_size = view_size
-
-        self.backbone = PrithviBackbone(
-            view_size=view_size,
-            prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path)
-
-        from models.unet2d import UNet
-        self.head = UNet(prithvi_params["model_args"]["embed_dim"], self.num_classes)
-
-
-class PrithviGlobalBackbone(L.LightningModule):
-    def __init__(self,
-                 prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
+                 freeze_encoder: bool = True,
+                 prithvi_ckpt_path: str = None,
                  view_size: int | None = 16,
                  reshape: bool = True,
                  decoder: bool = False,
                  freeze_patch_embed: bool = False):
         super().__init__()
-        self.prithvi_path = prithvi_path
+        self.prithvi_ckpt_path = prithvi_ckpt_path
         self.prithvi_params = prithvi_params
-        self.prithvi_freeze = prithvi_freeze
+        self.freeze_encoder = freeze_encoder
 
         from models.backbones.prithvi.PrithviGlobal import MaskedAutoencoderViT
-        self.model = MaskedAutoencoderViT(
-            **self.prithvi_params["model_args"])
-        if self.prithvi_path is not None:
-            checkpoint = torch.load(self.prithvi_path, weights_only=False)
+        self.model = MaskedAutoencoderViT(**self.prithvi_params)
+        if self.prithvi_ckpt_path is not None:
+            checkpoint = torch.load(self.prithvi_ckpt_path, weights_only=False)
             if not decoder:
-                for k, v in checkpoint.model.items():
+                for k, v in checkpoint["model"].items():
                     if "decoder" in k:
                         del v
             _ = self.model.load_state_dict(checkpoint, strict=False)
             
         self.reshaper = PrithviReshape(view_size) if reshape else nn.Identity()
         self.decoder = decoder
-        if self.prithvi_freeze:
+        if self.freeze_encoder:
             if freeze_patch_embed:
                 self.model.patch_embed.eval()
                 for param in self.model.patch_embed.parameters():
@@ -176,25 +81,25 @@ class PrithviGlobalBackbone(L.LightningModule):
         return self.reshaper(latent)
 
 
-class PrithviGlobalFCN(SundialPLBase):
+class PrithviFCN(SundialPLBase):
     def __init__(self,
                  num_classes: int,
                  upscale_depth: int,
                  view_size: int,
                  prithvi_params: dict,
-                 prithvi_freeze: bool = True,
-                 prithvi_path: str = None,
+                 freeze_encoder: bool = True,
+                 prithvi_ckpt_path: str = None,
                  **kwargs):
         super()._init__(**kwargs)
         self.num_classes = num_classes
         self.upscale_depth = upscale_depth
         self.view_size = view_size
 
-        self.backbone = PrithviGlobalBackbone(
+        self.backbone = PrithviBackbone(
             view_size=view_size,
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path)
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path)
 
         from torchvision.models.segmentation.fcn import FCNHead
         from models.utils import Upsampler
@@ -204,7 +109,7 @@ class PrithviGlobalFCN(SundialPLBase):
         )
 
 
-class PrithviGlobalDecoder3dUNet(SundialPLBase):
+class PrithviDecoder3dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
@@ -213,8 +118,8 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
         stride: tuple | int,
         padding: tuple | int,
         prithvi_params: dict,
-        prithvi_freeze: bool = True,
-        prithvi_path: str = None,
+        freeze_encoder: bool = True,
+        prithvi_ckpt_path: str = None,
         freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
@@ -234,10 +139,10 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
         self.down3 = DoubleConv3d(256, 512, **params)
         self.down4 = DoubleConv3d(512, 1024, **params)
 
-        self.prithvi = PrithviGlobalBackbone(
+        self.prithvi = PrithviBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
             decoder=True,
             reshape=False,
             freeze_patch_embed=freeze_patch_embed)
@@ -271,7 +176,7 @@ class PrithviGlobalDecoder3dUNet(SundialPLBase):
         return x11
 
 
-class PrithviGlobal3dUNet(SundialPLBase):
+class Prithvi3dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
@@ -280,8 +185,8 @@ class PrithviGlobal3dUNet(SundialPLBase):
         stride: tuple | int,
         padding: tuple | int,
         prithvi_params: dict,
-        prithvi_freeze: bool = True,
-        prithvi_path: str = None,
+        freeze_encoder: bool = True,
+        prithvi_ckpt_path: str = None,
         freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
@@ -303,10 +208,10 @@ class PrithviGlobal3dUNet(SundialPLBase):
         self.down3 = DoubleConv3d(256, 512, **params)
         self.down4 = DoubleConv3d(512, 1024, **params)
 
-        self.prithvi = PrithviGlobalBackbone(
+        self.prithvi = PrithviBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
             decoder=False,
             reshape=True,
             freeze_patch_embed=freeze_patch_embed)
@@ -336,7 +241,7 @@ class PrithviGlobal3dUNet(SundialPLBase):
         return x11
 
 
-class PrithviGlobalDecoder2dUNet(SundialPLBase):
+class PrithviDecoder2dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
@@ -344,8 +249,8 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         patch_size: tuple,
         padding: tuple,
         prithvi_params: dict,
-        prithvi_freeze: bool = True,
-        prithvi_path: str = None,
+        freeze_encoder: bool = True,
+        prithvi_ckpt_path: str = None,
         freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
@@ -372,10 +277,10 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         self.up4 = Up2d(128, 64, **params)
         self.out = OutConv2d(64, self.num_classes)
         
-        self.prithvi = PrithviGlobalBackbone(
+        self.prithvi = PrithviBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
             decoder=True,
             reshape=False,
             freeze_patch_embed=freeze_patch_embed)
@@ -403,13 +308,13 @@ class PrithviGlobalDecoder2dUNet(SundialPLBase):
         return x11
     
 
-class PrithviGlobal2dUNet(SundialPLBase):
+class Prithvi2dUNet(SundialPLBase):
     def __init__(self,
         num_classes: int,
         num_channels: int,
         prithvi_params: dict,
-        prithvi_freeze: bool = True,
-        prithvi_path: str = None,
+        freeze_encoder: bool = True,
+        prithvi_ckpt_path: str = None,
         freeze_patch_embed: bool = False,
         **kwargs):
         super().__init__(**kwargs)
@@ -430,10 +335,10 @@ class PrithviGlobal2dUNet(SundialPLBase):
         self.up4 = Up2d(128, 64)
         self.out = OutConv2d(64, self.num_classes)
         
-        self.prithvi = PrithviGlobalBackbone(
+        self.prithvi = PrithviBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
             decoder=False,
             reshape=True,
             freeze_patch_embed=freeze_patch_embed)
@@ -459,17 +364,29 @@ class PrithviGlobal2dUNet(SundialPLBase):
         
         return x11
     
+class PrithviEmbed(SundialPLBase):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.prithvi = PrithviBackbone(**kwargs)
+        
+    def forward(self, batch):
+        return self.prithvi(batch["chip"])
+        
+    def predict_step(self, batch):
+        output = self(batch)
+        return {"output": output.detach(), "anno": batch["anno"]} 
+    
 
-class PrithviGlobalDiffReconstruction(SundialPLBase):
+class PrithviDiffReconstruction(SundialPLBase):
     def __init__(self,
                  prithvi_params: dict,
-                 prithvi_path: str = None,
-                 prithvi_freeze: bool = True):
+                 prithvi_ckpt_path: str = None,
+                 freeze_encoder: bool = True):
         super().__init__()
-        self.prithvi = PrithviGlobalBackbone(
+        self.prithvi = PrithviBackbone(
             prithvi_params=prithvi_params,
-            prithvi_freeze=prithvi_freeze,
-            prithvi_path=prithvi_path,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
             decoder=True,
             reshape=False)
         input_size = prithvi_params["model_args"]["input_size"]
