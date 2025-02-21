@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 from typing import Literal, Optional
 
-from pipeling.config_utils import load_yaml
+from pipeline.config_utils import load_yaml
 from pipeline.settings import (
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
@@ -92,7 +92,9 @@ class GenericChipsDataset(Dataset):
             img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
 
         # parsing img name for index
-        data["indx"] = img_indx 
+        data["indx"] = img_indx
+        if time_indx:
+            data["time_indx"] = time_indx
         img_name = str(img_indx).zfill(IDX_NAME_ZFILL)
 
         # loading chip and slicing time if necessary
@@ -113,7 +115,7 @@ class GenericChipsDataset(Dataset):
         data["chip"] = chip
         
         # including annotations if anno_data_path is set
-        if self.anno_data_path is not None:
+        if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
             anno = self.anno_loader(img_name)
             if time_indx is not None:
                 anno = anno[time_indx-self.time_step]
@@ -328,8 +330,7 @@ class GenericChipsDataModule(L.LightningDataModule):
                 self.predict_ds = GenericChipsDataset(
                     **self.dataset_config | {
                         "sample_path": self.predict_sample_path,
-                        "static_transform_config": predict_static_transform_config,
-                        "anno_data_path": None})
+                        "static_transform_config": predict_static_transform_config})
 
     def train_dataloader(self):
         return DataLoader(
