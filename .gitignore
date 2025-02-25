@@ -167,6 +167,10 @@ checkpoints/
 notebooks/
 predictions/
 utils/
+models/sundial.py
 src/models/backbones/
-*.tar.gz
 .vscode
+
+*.tar.gz
+*.pt
+*.png
