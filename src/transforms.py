@@ -137,8 +137,8 @@ class CatNDVI(nn.Module):
         self.red_band_idx = red_band_idx
 
     def forward(self, x):
-        nir = x[:, :, self.nir_band_idx, :, :]
-        red = x[:, :, self.red_band_idx, :, :]
+        nir = x[:, self.nir_band_idx, :, :, :]
+        red = x[:, self.red_band_idx, :, :, :]
         ndvi = (nir - red) / (nir + red)
         return torch.cat([x, ndvi.unsqueeze(2)], dim=2)
 
@@ -152,8 +152,8 @@ class CatNDWI(nn.Module):
         self.swir_band_idx = swir_band_idx
 
     def forward(self, x):
-        nir = x[:, :, self.nir_band_idx, :, :]
-        swir = x[:, :, self.swir_band_idx, :, :]
+        nir = x[:, self.nir_band_idx, :, :, :]
+        swir = x[:, self.swir_band_idx, :, :, :]
         ndwi = (nir - swir) / (nir + swir)
         return torch.cat([x, ndwi.unsqueeze(2)], dim=2)
 
@@ -167,7 +167,7 @@ class CatNBR(nn.Module):
         self.swir_band_idx = swir_band_idx
 
     def forward(self, x):
-        nir = x[:, :, self.nir_band_idx, :, :]
-        swir = x[:, :, self.swir_band_idx, :, :]
+        nir = x[:, self.nir_band_idx, :, :, :]
+        swir = x[:, self.swir_band_idx, :, :, :]
         nbr = (nir - swir) / (nir + swir)
         return torch.cat([x, nbr.unsqueeze(2)], dim=2)

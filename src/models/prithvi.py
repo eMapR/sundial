@@ -154,6 +154,7 @@ class PrithviDecoder3dUNet(SundialPLBase):
         self.up3 = Up3d(256, 128, **params)
         self.up4 = Up3d(128, 64, **params)
         params["kernel_size"] = (self.num_frames, 3, 3)
+        params["padding"] = (0, 1, 1)
         self.out = OutConv3d(64, self.num_classes, **params)
     
     def forward(self, data):
@@ -172,7 +173,8 @@ class PrithviDecoder3dUNet(SundialPLBase):
         x8 = self.up2(x7, x3)
         x9 = self.up3(x8, x2)
         x10 = self.up4(x9, x1)
-        x11 = self.out(x10).squeeze(2)
+        x11 = self.out(x10)
+        x11 = x11.squeeze(2)
         return x11
 
 
@@ -376,70 +378,3 @@ class PrithviEmbed(SundialPLBase):
         output = self(batch)
         return {"output": output.detach(), "anno": batch["anno"]} 
     
-
-class PrithviDiffReconstruction(SundialPLBase):
-    def __init__(self,
-                 prithvi_params: dict,
-                 prithvi_ckpt_path: str = None,
-                 freeze_encoder: bool = True):
-        super().__init__()
-        self.prithvi = PrithviBackbone(
-            prithvi_params=prithvi_params,
-            freeze_encoder=freeze_encoder,
-            prithvi_ckpt_path=prithvi_ckpt_path,
-            decoder=True,
-            reshape=False)
-        input_size = prithvi_params["model_args"]["input_size"]
-        patch_size = prithvi_params["model_args"]["patch_size"]
-        s, p, q = patch_size
-        s -= 1
-        D = s * p * q * prithvi_params["model_args"]["in_chans"]
-        gs = [s // p for s, p in zip(input_size, patch_size)]
-        self.L = gs[1] * gs[2]
-        
-        self.prithvi.model.decoder_pred = nn.Linear(512,
-                                      D,
-                                      bias=True)
-
-        from einops import rearrange
-        self.prithvi.model.patchify = lambda imgs: rearrange(imgs, 'b c (t s) (h p) (w q) -> b (t h w) (s p q c)', s=s, p=p, q=q)
-        self.prithvi.model.unpatchify = lambda imgs: rearrange(imgs, 'b (t h w) (s p q c) -> b c (t s) (h p) (w q)', h=gs[1], w=gs[2], t=gs[0], s=s, p=p, q=q)
-
-        from models.utils import FirstOrderDifference
-        self.fo_diff = FirstOrderDifference()
-
-    def forward(self, data):
-        return self.prithvi(data)
-    
-    def training_step(self, batch):
-        data = batch
-        diff = self.fo_diff(data["chip"])
-        pred = self(data)
-        
-        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
-        loss = self.prithvi.model.forward_loss(diff, pred, mask)
-        # recon = self.prithvi.model.unpatchify(pred) # boy this will slow down training...
-        
-        return {"loss": loss}
-
-    def validation_step(self, batch):
-        data = batch
-        diff = self.fo_diff(data["chip"])
-        pred = self(data)
-        
-        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
-        loss = self.prithvi.model.forward_loss(diff, pred, mask)
-        recon = self.prithvi.model.unpatchify(pred)
-
-        return {"loss": loss, "output": recon, "diff": diff}
-    
-    def test_step(self, batch):
-        data = batch
-        diff = self.fo_diff(data["chip"])
-        pred = self(data)
-        
-        mask = torch.ones([data["chip"].shape[0], self.L], device=diff.device)
-        loss = self.prithvi.model.forward_loss(diff, pred, mask)
-        recon = self.prithvi.model.unpatchify(pred)
-
-        return {"loss": loss, "output": recon, "diff": diff}

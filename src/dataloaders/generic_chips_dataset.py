@@ -135,7 +135,6 @@ class GenericChipsDataset(Dataset):
             else:
                 ext_val = ext.get_item(img_indx)
             data[ext.name] = torch.tensor(ext_val, dtype=torch.float)
-
         return data
 
     def __len__(self):

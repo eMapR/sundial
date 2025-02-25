@@ -412,6 +412,8 @@ class LogTestCallback(L.Callback):
         indices = batch["indx"]
         loss = outputs["loss"]
         output = outputs["output"]
+        if 'time_indx' in batch:
+            time_indices = batch["time_indx"]
 
         pl_module.log(
             name="test_loss",
@@ -441,6 +443,10 @@ class LogTestCallback(L.Callback):
             chip = chips[i].cpu()
             anno = annotations[i].cpu()
             pred = output[i].cpu()
+            if 'time_indx' in batch:
+                time_indx = time_indices[i].cpu()
+                index_name += f"-{time_indx}"
+                
 
             # save rgb and ir band separately
             log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
@@ -451,7 +457,7 @@ class LogTestCallback(L.Callback):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image,
-                    name=f"{index_name}_c{c+1}_anno.png",
+                    name=f"{index_name}_c{c}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -461,7 +467,7 @@ class LogTestCallback(L.Callback):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
                     image_data=image.to(torch.float32),
-                    name=f"{index_name}_c{c+1}_pred.png",
+                    name=f"{index_name}_c{c}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
                 )
@@ -546,7 +552,6 @@ class SaveTestCallback(L.Callback):
             # save rgb and ir bands separately
             save_rgb_ir_tensor(chip, index_name, "chip", PREDICTION_PATH)
 
-
     def on_predict_batch_end(self,
                              trainer: L.Trainer,
                              pl_module: L.LightningModule,
@@ -555,13 +560,40 @@ class SaveTestCallback(L.Callback):
                              batch_idx: int,
                              dataloader_idx: int = 0):
         indices = batch["indx"]
+        times = batch["time_indx"]
         output = outputs["output"]
+        annos = outputs["anno"]
 
         for i in range(output.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
+            time = times[i]
             pred = output[i]
             path = os.path.join(PREDICTION_PATH, f"{index_name}_pred.pt")
             torch.save(pred, path)
+
+
+class SaveEmbedCallback(L.Callback):
+    def on_predict_batch_end(self,
+                             trainer: L.Trainer,
+                             pl_module: L.LightningModule,
+                             outputs: torch.Tensor,
+                             batch: Tuple[torch.Tensor],
+                             batch_idx: int,
+                             dataloader_idx: int = 0):
+        indices = batch["indx"]
+        times = batch["time_indx"]
+        output = outputs["output"]
+        annos = outputs["anno"]
+
+        for i in range(output.shape[0]):
+            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
+            time = times[i]
+            pred = output[i]
+            anno = annos[i]
+            embed_path = os.path.join(PREDICTION_PATH, f"{index_name}_t{time:02d}_embed_wcls.pt")
+            anno_path = os.path.join(PREDICTION_PATH, f"{index_name}_t{time:02d}_sumpool_anno.pt")
+            torch.save(pred, embed_path)
+            torch.save(anno, anno_path)
 
 
 class PackageCallback(L.Callback):
