@@ -322,8 +322,3 @@ dependencies:
       - typing-extensions==4.12.2
       - utm==0.7.0
       - yarl==1.17.1
-variables:
-  SUNDIAL_SAMPLE_NAME: placeholder_sample_name
-  SUNDIAL_EXPERIMENT_PREFIX: placeholder_experiment_prefix
-  SUNDIAL_GPU_PARTITION: placeholder_gpu_slurm_partition
-  SUNDIAL_CPU_PARTITION: placeholder_cpu_slurm_partition

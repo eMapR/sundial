@@ -376,7 +376,7 @@ class LogAvgMagGradientCallback(L.Callback):
     def on_after_backward(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule):
-        if trainer.global_step % freq == 0:
+        if trainer.global_step % self.freq == 0:
             mags = {f"{k}_avgmag": [] for k in self.layers}
 
             for name, param in pl_module.named_parameters():

@@ -68,12 +68,16 @@ class SingleClass(nn.Module):
 class RandomAffineAugmentation(nn.Module):
     def __init__(self):
         super().__init__()
-        rot0 = torchvision.transforms.v2.RandomRotation((0, 0))
-        rot90 = torchvision.transforms.v2.RandomRotation((90, 90))
-        rot180 = torchvision.transforms.v2.RandomRotation((180, 180))
-        rot270 = torchvision.transforms.v2.RandomRotation((270, 270))
-        
-        self.rotation = torchvision.transforms.v2.RandomChoice([rot0, rot90, rot180, rot270])
+        class Rot90(nn.Module):
+            def forward(self, x):
+                return torchvision.transforms.v2.functional.rotate(x, 90)
+        class Rot180(nn.Module):
+            def forward(self, x):
+                return torchvision.transforms.v2.functional.rotate(x, 180)
+        class Rot270(nn.Module):
+            def forward(self, x):
+                return torchvision.transforms.v2.functional.rotate(x, 270)
+        self.rotation = torchvision.transforms.v2.RandomChoice([torch.nn.Identity(), Rot90(), Rot180(), Rot270()])
         self.hflip = torchvision.transforms.v2.RandomHorizontalFlip()
         self.vflip = torchvision.transforms.v2.RandomVerticalFlip()
     

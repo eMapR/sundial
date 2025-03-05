@@ -103,31 +103,32 @@ class GenericChipsDataset(Dataset):
             chip = chip[:, :-self.start_idx, :, :]
         if slicer is not None:
             chip = chip[:, slicer, :, :]
-
-        with torch.no_grad():
-            if self.chip_static_transforms is not None:
-                chip = self.chip_static_transforms(chip)
-            if not self.dynamic_transforms.empty:
-                dynamic_transform = self.dynamic_transforms.iloc[transform_indx]["transform"]
-                image_only = self.dynamic_transforms.iloc[transform_indx]["image_only"]
-                torch.manual_seed(seed)
-                chip = dynamic_transform(chip)
-        data["chip"] = chip
+        if self.chip_static_transforms is not None:
+            chip = self.chip_static_transforms(chip)
+        
         
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
             anno = self.anno_loader(img_name)
             if time_indx is not None:
                 anno = anno[time_indx-self.time_step]
-            with torch.no_grad(): # see https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-                if self.anno_static_transforms is not None:
-                    anno = self.anno_static_transforms(anno)
-                if not self.dynamic_transforms.empty and not image_only:
-                    torch.manual_seed(seed)
-                    anno = dynamic_transform(anno)
+            if self.anno_static_transforms is not None:
+                anno = self.anno_static_transforms(anno)
         else:
             anno = torch.empty(0)
-        data["anno"] = anno
+            
+        if not self.dynamic_transforms.empty:
+            dynamic_transform = self.dynamic_transforms.iloc[transform_indx]["transform"]
+            image_only = self.dynamic_transforms.iloc[transform_indx]["image_only"]
+            if not image_only and anno.numel() > 0:
+                num_bands = chip.shape[0]
+                stack = torch.cat([chip, anno], dim=0)
+                stack = dynamic_transform(stack)
+                data["chip"] = stack[:num_bands]
+                data["anno"] = stack[num_bands:]
+            else:
+                data["chip"] = dynamic_transform(chip)
+                data["anno"] = anno
         
         for ext in self.extensions:
             if ext.meta_data:

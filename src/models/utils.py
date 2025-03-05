@@ -51,11 +51,11 @@ class Down3d(nn.Module):
 class Up3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding, mid_channels=None):
         super().__init__()
-        self.up = DoubleConv3d(in_channels, in_channels // 2, kernel_size=kernel_size, stride=stride, padding=padding)
+        # self.up = DoubleConv3d(in_channels, in_channels // 2, kernel_size=kernel_size, stride=stride, padding=padding)
         self.conv = DoubleConv3d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
 
     def forward(self, x1, x2):
-        x1 = self.up(x1)
+        # x1 = self.up(x1)
         x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
     

@@ -87,13 +87,13 @@ class DiceLoss(Base):
                  **kwargs):
         super().__init__(**kwargs)
         self.epsilon = epsilon
-
+            
     def forward_loss(self, inputs, targets):
         intersection = einsum("bcwh,bcwh->bc", inputs, targets)
-        sum_probs = einsum("bkwh->bk", inputs) + einsum("bkwh->bk", targets)
-        dice = (2. * intersection + self.epsilon) / (sum_probs + self.epsilon)
+        sum_probs = einsum("bcwh->bc", inputs) + einsum("bcwh->bc", targets)
+        loss = (2. * intersection + self.epsilon) / (sum_probs + self.epsilon)  
 
-        return 1 - einsum("bk->b", dice)
+        return loss
 
 
 class GeneralizedDiceLoss(Base):

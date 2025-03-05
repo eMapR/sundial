@@ -37,7 +37,7 @@ CHECKPOINT_CONFIG = {
     "dirpath": CHECKPOINT_PATH,
     "filename": "{epoch:04d}",
     "monitor": "val_loss",
-    "save_top_k": 4,
+    "save_top_k": 8,
     "save_last": True,
     "auto_insert_metric_name": True,
     "save_weights_only": False,
