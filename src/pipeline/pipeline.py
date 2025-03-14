@@ -146,9 +146,7 @@ def generate_squares(
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "covering_grid":
-            gdf = covering_grid(geodataframe, meter_edge_size)
-        case "half_overlapping_covering_grid":
-            gdf = covering_grid(geodataframe, meter_edge_size//2)
+            gdf = covering_grid(geo_dataframe, meter_edge_size // squares_config.get("overlap", 1))
         case "random":
             raise NotImplementedError
         case "centroid":
@@ -277,7 +275,7 @@ def annotate():
             "num_workers": SAMPLER_CONFIG["num_workers"],
             "io_limit": SAMPLER_CONFIG["io_limit"],
         }
-        generate_annotation_data(**annotation_config)
+        generate_annotation_data(**annotation_config,)
     except Exception as e:
         LOGGER.critical(f"Failed to generate annotations: {type(e)} {e}")
         raise e

@@ -38,7 +38,6 @@ class GenericChipsDataset(Dataset):
                  chip_data_path: str,
                  anno_data_path: str | None,
                  split_tif: int | None,
-                 start_idx: int | None,
                  extension_config: Optional[dict] = {},
                  dynamic_transform_config: Optional[dict] = {},
                  static_transform_config: Optional[dict] = {},
@@ -51,7 +50,6 @@ class GenericChipsDataset(Dataset):
         self.chip_data_path = chip_data_path
         self.anno_data_path = anno_data_path
         self.split_tif = split_tif
-        self.start_idx = start_idx
         self.extension_config = extension_config
         self.dynamic_transform_config = dynamic_transform_config
         self.static_transform_config = static_transform_config
@@ -75,7 +73,6 @@ class GenericChipsDataset(Dataset):
     def __getitem__(self, indx):
         # loading image indx
         data = {}
-        seed = int(datetime.now().timestamp())
         sample_indx = indx // len(self.dynamic_transforms)
         transform_indx = indx % len(self.dynamic_transforms)
         
@@ -87,7 +84,7 @@ class GenericChipsDataset(Dataset):
         else:
             img_indx = self.samples[sample_indx]
             time_indx = None
-            slicer = slice(-(self.time_step+1), None) if self.time_step else None
+            slicer = slice(-(self.time_step+1), None)  if self.time_step else slice(None)
         if isinstance(img_indx, str):
             img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
 
@@ -98,34 +95,31 @@ class GenericChipsDataset(Dataset):
         img_name = str(img_indx).zfill(IDX_NAME_ZFILL)
 
         # loading chip and slicing time if necessary
-        chip = self.chip_loader(img_name)
-        if self.start_idx is not None:
-            chip = chip[:, :-self.start_idx, :, :]
-        if slicer is not None:
-            chip = chip[:, slicer, :, :]
+        chip = self.chip_loader(img_name, slicer)
         if self.chip_static_transforms is not None:
             chip = self.chip_static_transforms(chip)
         
-        
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
-            anno = self.anno_loader(img_name)
-            if time_indx is not None:
-                anno = anno[time_indx-self.time_step]
+            anno_indx = None if time_indx is None else time_indx-self.time_step
+            anno = self.anno_loader(img_name, anno_indx)
             if self.anno_static_transforms is not None:
                 anno = self.anno_static_transforms(anno)
         else:
             anno = torch.empty(0)
             
-        if not self.dynamic_transforms.empty:
+        if self.dynamic_transforms.empty:
+            data["chip"] = chip
+            data["anno"] = anno
+        else:
             dynamic_transform = self.dynamic_transforms.iloc[transform_indx]["transform"]
             image_only = self.dynamic_transforms.iloc[transform_indx]["image_only"]
             if not image_only and anno.numel() > 0:
-                num_bands = chip.shape[0]
-                stack = torch.cat([chip, anno], dim=0)
-                stack = dynamic_transform(stack)
-                data["chip"] = stack[:num_bands]
-                data["anno"] = stack[num_bands:]
+                seed = int(datetime.now().timestamp())
+                torch.manual_seed(seed)
+                data["chip"] = dynamic_transform(chip)
+                torch.manual_seed(seed)
+                data["anno"] = dynamic_transform(anno)
             else:
                 data["chip"] = dynamic_transform(chip)
                 data["anno"] = anno
@@ -145,19 +139,21 @@ class GenericChipsDataset(Dataset):
         match self.file_type:
             case "zarr":
                 self.chips = xr.open_zarr(self.chip_data_path)
-                self.chip_loader = lambda name: self._zarr_loader(self.chips, name)
+                self.chip_loader = lambda name, slicer: self._zarr_loader(self.chips, name, slicer)
                 if self.anno_data_path is not None:
                     self.annos = xr.open_zarr(self.anno_data_path)
-                    self.anno_loader = lambda name: self._zarr_loader(self.annos, name)
+                    self.anno_loader = lambda name, slicer: self._zarr_loader(self.annos, name, slicer)
             case "tif":
                 self.chip_loader = lambda name: self._tif_loader(self.chip_data_path, name, self.split_tif)
                 if self.anno_data_path is not None:
                     self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
-    def _zarr_loader(self, xarr: xr.Dataset, name: int):
+    def _zarr_loader(self, xarr: xr.Dataset, name: int, slicer: slice | int):
         chip = xarr[name]
         if self.chip_size < max(chip["y"].size, chip["x"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
+        if slicer is not None:
+            chip = chip.isel(datetime=slicer)
         chip = torch.tensor(chip.values.copy(), dtype=torch.float)
         return chip
 
@@ -189,7 +185,7 @@ class GenericChipsDataset(Dataset):
 
         for transform in self.static_transform_config.get("transforms", []):
             transform_obj = dynamic_import(transform)
-            targets = transform.get("targets", [])
+            targets = transform.get("targets", ["chip", "anno"])
             if "chip" in targets:
                 chip_transforms.append(transform_obj)
             if "anno" in targets:
@@ -216,7 +212,6 @@ class GenericChipsDataModule(L.LightningDataModule):
             time_step: int = DATALOADER_CONFIG["time_step"],
             file_type: str = DATALOADER_CONFIG["file_type"],
             split_tif: int | None = DATALOADER_CONFIG["split_tif"],
-            start_idx: int | None = DATALOADER_CONFIG["start_idx"],
             extension_config: dict = DATALOADER_CONFIG["extension_config"],
             static_transform_config: dict = DATALOADER_CONFIG["static_transform_config"],
             dynamic_transform_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
@@ -235,7 +230,6 @@ class GenericChipsDataModule(L.LightningDataModule):
         self.time_step = time_step
         self.file_type = file_type
         self.split_tif = split_tif
-        self.start_idx = start_idx
         self.extension_config = extension_config
         self.static_transform_config = static_transform_config
         self.dynamic_transform_config = dynamic_transform_config
@@ -275,7 +269,6 @@ class GenericChipsDataModule(L.LightningDataModule):
             "time_step": self.time_step,
             "file_type": self.file_type,
             "split_tif": self.split_tif,
-            "start_idx": self.start_idx,
             "extension_config": self.extension_config,
             "chip_data_path": self.chip_data_path,
             "anno_data_path": self.anno_data_path,

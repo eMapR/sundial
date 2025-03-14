@@ -49,12 +49,13 @@ def time_window_split(chip_data: xr.Dataset,
 
 
 def check_class_sums_helper(class_sums: np.array,
-                            class_filters: dict):
+                            class_filters: dict,
+                            num_pixels: int):
     total = class_sums.sum()
     if total == 0:
         return False
     
-    ratios = class_sums / total
+    ratios = class_sums / num_pixels
     for class_index in range(len(class_filters)):
         class_filter = class_filters[class_index]
         ratio = ratios[class_index]
@@ -72,10 +73,12 @@ def check_class_sums(anno_data: xr.Dataset,
                      sample: Tuple[int],
                      time_step: int,
                      class_filters: dict):
-    class_sums = np.array(anno_data[str(sample[0]).zfill(IDX_NAME_ZFILL)].attrs["class_sums"])
+    sample_anno = anno_data[str(sample[0]).zfill(IDX_NAME_ZFILL)]
+    num_pixels = sample_anno.shape[-2]*sample_anno.shape[-1]
+    class_sums = np.array(sample_anno.attrs["class_sums"])
     class_sums = class_sums[sample[1] - time_step]
     
-    if check_class_sums_helper(class_sums, class_filters):
+    if check_class_sums_helper(class_sums, class_filters, num_pixels):
         return sample
     else:
         return np.array([np.nan, np.nan])

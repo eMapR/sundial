@@ -25,6 +25,23 @@ class ReverseTime(nn.Module):
         
     def forward(self, x):
         return x.flip(self.dim)
+    
+    
+class UnfoldTime(nn.Module):
+    def __init__(self, kernel_size=(16, 16)):
+        super().__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.unfold = torch.nn.Unfold(kernel_size=kernel_size, stride=kernel_size)
+    
+    def forward(self, x):
+        B, C, T, H, W = x.shape
+        x = x.permute(0, 2, 1, 3, 4).reshape(-1, C, H, W)
+        out = self.unfold(x)
+        V = int(H // self.kernel_size[-1])
+        
+        out = out.view(B, T, -1, 14, 14).permute(0, 2, 1, 3, 4) 
+        return out
 
 
 class Flatten(nn.Module):

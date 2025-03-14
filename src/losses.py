@@ -11,7 +11,7 @@ from utils import distance_transform
 class Base(nn.Module):
     def __init__(self,
                  logits: bool = True,
-                 multiclass: bool = True,
+                 multiclass: bool = False,
                  reduction: Literal["none", "mean", "sum"] = "mean"):
         super().__init__()
         self.logits = logits
@@ -21,35 +21,32 @@ class Base(nn.Module):
     def forward_activation(self, inputs):
         if self.logits:
             if self.multiclass:
-                inputs = nn.functional.sigmoid(inputs)
-            else:
                 inputs = nn.functional.softmax(inputs, dim=1)
+            else:
+                inputs = nn.functional.sigmoid(inputs)
         return inputs
 
     def forward(self, inputs, targets):
         inputs = self.forward_activation(inputs)
         loss = self.forward_loss(inputs, targets)
-        return self.reducer(loss)
+        loss = self.reducer(loss)
+        return loss
 
 
 class Reducer(nn.Module):
     def __init__(self,
-                 reduction: str,
-                 dim: int | tuple[int] = 0,
-                 keepdim: bool = False):
+                 reduction: str):
         super().__init__()
-        self.dim = dim
-        self.keepdim = keepdim
-        match reduction:
-            case "none":
-                self.reduction = torch.identity
-            case "mean":
-                self.reduction = torch.mean
-            case "sum":
-                self.reduction = torch.sum
+        self.reduction = reduction
 
     def forward(self, inputs):
-        return self.reduction(inputs, self.dim, self.keepdim)
+        match self.reduction:
+            case "none":
+                return torch.identity(inputs)
+            case "mean":
+                return torch.mean(inputs)
+            case "sum":
+                return torch.sum(inputs)
 
 
 class RMSELoss(nn.Module):
@@ -66,9 +63,8 @@ class RMSELoss(nn.Module):
 
 class JaccardLoss(Base):
     def __init__(self,
-                 epsilon: int = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 epsilon: int = 1e-6):
+        super().__init__()
         self.epsilon = epsilon
 
     def forward_loss(self, inputs, targets):
@@ -83,9 +79,8 @@ class JaccardLoss(Base):
 
 class DiceLoss(Base):
     def __init__(self,
-                 epsilon: float = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 epsilon: float = 1e-6):
+        super().__init__()
         self.epsilon = epsilon
             
     def forward_loss(self, inputs, targets):
@@ -93,14 +88,13 @@ class DiceLoss(Base):
         sum_probs = einsum("bcwh->bc", inputs) + einsum("bcwh->bc", targets)
         loss = (2. * intersection + self.epsilon) / (sum_probs + self.epsilon)  
 
-        return loss
+        return 1 - loss
 
 
 class GeneralizedDiceLoss(Base):
     def __init__(self,
-                 epsilon: float = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 epsilon: float = 1e-6):
+        super().__init__()
         self.epsilon = epsilon
 
     def forward_loss(self, inputs, targets):
@@ -136,9 +130,8 @@ class TverskyLoss(Base):
     def __init__(self,
                  alpha: float = 0.5,
                  beta: float = 0.5,
-                 epsilon: float = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 epsilon: float = 1e-6):
+        super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.epsilon = epsilon
@@ -201,9 +194,8 @@ class SSIMLoss(Base):
                                     'sum', 'none'] | None = "elementwise_mean",
                  data_range: float | tuple[float, float] | None = None,
                  k1: float = 0.01,
-                 k2: float = 0.03,
-                 **kwargs):
-        super().__init__(reduction=None, **kwargs)
+                 k2: float = 0.03):
+        super().__init__(reduction=None, )
         self.gaussian_kernel = gaussian_kernel
         self.sigma = sigma
         self.kernel_size = kernel_size
@@ -228,9 +220,8 @@ class SSIMLoss(Base):
 class DiceBoundaryLoss(Base):
     def __init__(self,
                  alpha: float = 0.01,
-                 epsilon: float = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 epsilon: float = 1e-6):
+        super().__init__()
         self.alpha = alpha
         self.epsilon = epsilon
         self.dice = DiceLoss(epsilon=epsilon, logits=False, reduction=None)
@@ -248,8 +239,8 @@ class GeneralzedDiceBoundaryLoss(Base):
     def __init__(self,
                  alpha: float = 0.01,
                  epsilon: float = 1e-6,
-                 **kwargs):
-        super().__init__(**kwargs)
+                 ):
+        super().__init__()
         self.alpha = alpha
         self.epsilon = epsilon
         self.gdl = GeneralizedDiceLoss(epsilon=epsilon, logits=False, reduction=None)
@@ -269,12 +260,13 @@ class DiceCrossEntropyLoss(Base):
                  weight: list[float] | None = None,
                  size_average: Any | None = None,
                  ignore_index: int = -100,
+                 
                  reduce: Any | None = None,
                  reduction: str = 'mean',
                  label_smoothing: float = 0,
                  device: torch.device | None = None,
                  logits: bool = True,
-                 multiclass: bool = True):
+                 multiclass: bool = False):
         super().__init__()
         self.epsilon = epsilon
         self.dice = DiceLoss(epsilon=epsilon, logits=logits, multiclass=multiclass, reduction=reduction)

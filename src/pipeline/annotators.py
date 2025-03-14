@@ -18,15 +18,16 @@ def xarr_annotator(population_gdf: gpd.GeoDataFrame,
                    square: Polygon,
                    class_names: dict[str, int],
                    pixel_edge_size: int,
-                   year: int):
+                   datetime: int | None):
     # rasterizing multipolygon and clipping to square
     xarr_anno_list = []
 
     # class list should already be in order of index value
     for class_name in class_names:
         try:
-            mask = (population_gdf[DATETIME_LABEL] == year) & \
-                (population_gdf[CLASS_LABEL] == class_name)
+            mask = population_gdf[CLASS_LABEL] == class_name
+            if datetime is not None:
+                mask &= population_gdf[DATETIME_LABEL] == datetime
             mp = population_gdf[mask].geometry
             if len(mp) == 0:
                 annotation = np.zeros((pixel_edge_size, pixel_edge_size))
@@ -51,7 +52,8 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
                           io_limit: int,
                           io_lock: Any,
                           index_queue: Optional[mp.Queue],
-                          include_class_sums: bool = True):
+                          include_class_sums: bool = True,
+                          **kwargs):
     batch = []
     while (index := index_queue.get()) is not None:
         index_name = str(index).zfill(IDX_NAME_ZFILL)
@@ -59,7 +61,10 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
         # getting annotation information from sample
         LOGGER.info(f"Rasterizing sample {index_name}...")
         target = squares_gdf.iloc[index]
-        year = target[DATETIME_LABEL]
+        if DATETIME_LABEL in squares_gdf.columns:
+            datetime = target[DATETIME_LABEL]
+        else:
+            datetime = None
         square = target.geometry
 
         # class list should already be in order of index value
@@ -68,7 +73,7 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
                                    square,
                                    class_names,
                                    pixel_edge_size,
-                                   year)
+                                   datetime)
 
         xarr_anno.name = index_name
         if include_class_sums:
@@ -101,7 +106,8 @@ def multi_year_xarr_annotator(population_gdf: gpd.GeoDataFrame,
                               io_lock: Any,
                               index_queue: Optional[mp.Queue],
                               year_range: Tuple,
-                              include_class_sums: bool = True):
+                              include_class_sums: bool = True,
+                              **kwargs):
     years = range(year_range[0], year_range[1])
     
     batch = []

@@ -12,22 +12,19 @@ class SundialPLBase(L.LightningModule):
 
     def validation_step(self, batch):
         logits = self(batch)
-        loss = self.criterion(logits, batch["anno"])
-        
-        output = self.activation(logits)
-        
-        return {"loss": loss, "output": output.detach()}
+        output = {"output": self.activation(logits).detach()} 
+        if self.criterion is not None:
+            output["loss"] = self.criterion(logits, batch["anno"])
+        return output 
 
     def test_step(self, batch):
         logits = self(batch)
-        loss = self.criterion(logits, batch["anno"])
-        
-        output = self.activation(logits)
-        
-        return {"loss": loss, "output": output.detach()}
+        output = {"output": self.activation(logits).detach()} 
+        if self.criterion is not None:
+            output["loss"] = self.criterion(logits, batch["anno"])
+        return output
 
     def predict_step(self, batch):
         logits = self(batch)
-        output = self.activation(logits)
-
-        return {"output": output.detach()}
+        output = {"output": self.activation(logits).detach()} 
+        return output

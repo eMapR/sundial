@@ -21,31 +21,38 @@ PACKAGE_CONFIG = {
 # default lightning dataloader settings
 DATALOADER_CONFIG = {
     "batch_size": 32,
-    "num_workers": 16,
-    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],
-    "time_step": None,
-    "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]],
-    "split_tif": None,
-    "start_idx": None,
-    "extension_config": {"extensions": []},
-    "static_transform_config": {"transforms": []},
-    "dynamic_transform_config": {"transforms": []},
+    "num_workers": 4,                                       # number of workers to use for loading onto GPU
+    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],         # chip size of the images. If smaller than what is stored, the loader will center crop
+    "time_step": None,                                      # number of time steps to slice into ndarray. (eg if time_step = 1, time dimension will include a single step back and the date of interest)
+    "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]], # file type to load. will default to same file type used in Downloader but if a custom dataset is added you may adjust here.
+    "split_tif": None,                                      # tifs can only hold 3 dimensions. If a dimensions need to be split perform so here.
+    "extension_config": {"extensions": []},                 # additional extensions to read into memory from meta_data shapefile
+    "static_transform_config": {"transforms": []},          # transforms defined as nn.Modules to perform sequentially. follows Pytorch Lightning format w/ class_path & init_args
+                                                                # set "image_only" to true if the transforms should only be performed on image and not annotation
+                                                                # transforms will be composed into sequential transformation
+                                                                # set "methods" to list [METHOD NAMES] to specify which methods to perform transformations on
+    "dynamic_transform_config": {"transforms": []},         # transforms defined as nn.Modules to augment dataset during training. follows Pytorch Lightning format w/ class_path & init_args
+                                                                # set "targets" to list ["chip" | "anno" | "chip", "anno"] if the transforms should only be performed on image, annotation or both
+                                                                # len(dataset) will be multiplied by number of transforms and each will be performed as its own sample
+                                                                # set "include_original" to true to include an original sample in training without transformation
 }
 
-# default lightning model checkpoint save settings
+# default lightning model checkpoint save settings (See https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html)
+# can be set in any of the config files under "model_checkpoint key"
 CHECKPOINT_CONFIG = {
-    "dirpath": CHECKPOINT_PATH,
+    "dirpath": CHECKPOINT_PATH,                             # directory path to save checkpoint files. will default to specification in settings.py
     "filename": "{epoch:04d}",
     "monitor": "val_loss",
     "save_top_k": 8,
-    "save_last": True,
+    "save_last": False,
     "auto_insert_metric_name": True,
     "save_weights_only": False,
     "every_n_epochs": 1,
     "enable_version_counter": True
 }
 
-# default lightning logger settings
+# default lightning logger settings (See https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet)
+# can be set in any of the config yamls under "trainer.logger" key
 LOGGER_CONFIG = {
     "api_key": os.getenv("COMET_API_KEY"),
     "workspace": os.getenv("COMET_WORKSPACE"),

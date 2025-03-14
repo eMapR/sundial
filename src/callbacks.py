@@ -22,6 +22,7 @@ from torchvision.transforms.functional import to_pil_image
 from typing import Optional, Tuple
 
 from pipeline.settings import (EXPERIMENT_FULL_NAME,
+                               EXPERIMENT_SUFFIX,
                                IDX_NAME_ZFILL,
                                LOG_PATH,
                                META_DATA_PATH,
@@ -91,8 +92,7 @@ class DefineCriterionCallback(L.Callback):
                     criterion_cls = getattr(criterion_mod, class_name)
             pl_module.criterion = criterion_cls(**self.init_args)
         else:
-            pl_module.criterion = torch.nn.Identity()
-
+            pl_module.criterion = None
 
 class DefineActivationCallback(L.Callback):
     def __init__(self,
@@ -550,7 +550,7 @@ class SaveTestCallback(L.Callback):
             pred = output[i].cpu()
 
             # save rgb and ir bands separately
-            save_rgb_ir_tensor(chip, index_name, "chip", PREDICTION_PATH)
+            save_rgb_ir_tensor(chip, index_name, PREDICTION_PATH)
 
     def on_predict_batch_end(self,
                              trainer: L.Trainer,
@@ -583,17 +583,23 @@ class SaveEmbedCallback(L.Callback):
         indices = batch["indx"]
         times = batch["time_indx"]
         output = outputs["output"]
-        annos = outputs["anno"]
+        annos = batch["anno"]
+        save_path = os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX)
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
 
         for i in range(output.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             time = times[i]
             pred = output[i]
             anno = annos[i]
-            embed_path = os.path.join(PREDICTION_PATH, f"{index_name}_t{time:02d}_embed_wcls.pt")
-            anno_path = os.path.join(PREDICTION_PATH, f"{index_name}_t{time:02d}_sumpool_anno.pt")
+            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_embed_wcls.pt")
+            anno_path = os.path.join(save_path, f"{index_name}_t{time:02d}_sumpool_anno.pt")
             torch.save(pred, embed_path)
             torch.save(anno, anno_path)
+            
+    def on_test_batch_end(self, *args, **kwargs):
+        self.on_predict_batch_end(*args, **kwargs)
 
 
 class PackageCallback(L.Callback):

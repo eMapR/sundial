@@ -3,6 +3,7 @@ import ee
 import pandas as pd
 import numpy as np
 import os
+import shapely
 import time
 import utm
 import xarray as xr
@@ -148,7 +149,8 @@ def rasterizer(polygons: gpd.GeoSeries,
 
 
 def covering_grid(geo_dataframe: gpd.GeoDataFrame,
-                              meter_edge_size: int):
+                    meter_edge_size: int,
+                    datetime_label: str = "datetime"):
     xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
     grid_cells = []
     for x0 in np.arange(xmin, xmax+meter_edge_size, meter_edge_size):
@@ -161,5 +163,5 @@ def covering_grid(geo_dataframe: gpd.GeoDataFrame,
             else:
                 pass
     gdf = gpd.GeoDataFrame(geometry=grid_cells, crs=geo_dataframe.crs)
-    gdf.loc[:, DATETIME_LABEL] = max(geo_dataframe[DATETIME_LABEL].unique())
+    gdf.loc[:, datetime_label] = max(geo_dataframe[datetime_label].unique())
     return gdf
