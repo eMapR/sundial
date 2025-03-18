@@ -307,6 +307,31 @@ class LogTrainBinaryExtCallback(L.Callback):
             prog_bar=False,
             sync_dist=True
         )
+    
+    def on_test_batch_end(self,
+                        trainer: L.Trainer,
+                        pl_module: L.LightningModule,
+                        outputs: torch.Tensor,
+                        batch: Tuple[torch.Tensor],
+                        batch_idx: int,
+                        dataloader_idx: int = 0):
+        annotations = batch["anno"]
+        output = outputs["output"]
+
+        metrics = {
+            "accuracy": binary_accuracy(output, annotations),
+            "jaccard_index": binary_jaccard_index(output, annotations),
+            "precision": binary_precision(output, annotations),
+            "recall": binary_recall(output, annotations),
+            "ssim": structural_similarity_index_measure(output, annotations),
+        }
+
+        pl_module.log_dict(
+            dictionary=metrics,
+            logger=True,
+            prog_bar=False,
+            sync_dist=True
+        )
 
 
 class LogTrainMulticlassExtCallback(L.Callback):

@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.base import SundialPLBase
-
+from models.utils import DoubleConv3d
 
 class Conv3dBlock(nn.Module):
     def __init__(self,
@@ -23,20 +23,6 @@ class Conv3dBlock(nn.Module):
         return self.block(x)
     
 
-class DoubleConv3d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, mid_channels=None):
-        super().__init__()
-        if not mid_channels:
-            mid_channels = out_channels
-        self.double_conv = nn.Sequential(
-            Conv3dBlock(in_channels, mid_channels, kernel_size, stride, padding),
-            Conv3dBlock(mid_channels, out_channels, kernel_size, stride, padding),
-        )
-
-    def forward(self, x):
-        return self.double_conv(x)
-    
-    
 class Down3d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=(1,3,3), stride=1, padding=(0,1,1), mid_channels=None):
         super().__init__()
@@ -79,13 +65,14 @@ class OutConv3d(nn.Module):
 
 
 class UNet3D(SundialPLBase):
-    def __init__(self, n_channels, n_classes, bilinear=False, kernel_size=(1,3,3), stride=1, padding=(0,1,1)):
+    def __init__(self, n_channels, n_classes, bilinear=False, kernel_size=(1,3,3), stride=1, padding=(0,1,1), embed=False):
         super().__init__()
 
         self.num_classes = n_classes
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
+        self.embed = embed
 
         self.inc = DoubleConv3d(n_channels, 64, kernel_size=(1,3,3), stride=1, padding=(0,1,1))
         self.down1 = Down3d(64, 128)
@@ -93,6 +80,9 @@ class UNet3D(SundialPLBase):
         self.down3 = Down3d(256, 512)
         factor = 2 if bilinear else 1
         self.down4 = Down3d(512, 1024 // factor)
+        
+        self.midc = DoubleConv3d(1024, 1024, kernel_size=(2,3,3), stride=(2,1,1), padding=(1,1,1))
+        
         self.up1 = Up3d(1024, 512 // factor, bilinear=bilinear)
         self.up2 = Up3d(512, 256 // factor, bilinear=bilinear)
         self.up3 = Up3d(256, 128 // factor, bilinear=bilinear)
@@ -107,6 +97,10 @@ class UNet3D(SundialPLBase):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
+        x5 = self.midc(x5)
+        if self.embed:
+            embed = x5.flatten(2).transpose(1,2)
+            return embed
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)

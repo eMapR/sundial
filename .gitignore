@@ -164,7 +164,6 @@ shapes/
 logs/
 samples/
 checkpoints/
-notebooks/
 predictions/
 utils/
 models/sundial.py
@@ -174,3 +173,10 @@ src/models/backbones/
 *.tar.gz
 *.pt
 *.png
+*.ckpt
+*.err
+*.log
+*.pkl
+*.npy
+*.tif
+*.zarr

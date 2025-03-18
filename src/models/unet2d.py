@@ -3,26 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.base import SundialPLBase
-
-
-class DoubleConv2d(nn.Module):
-    """(convolution => [BN] => ReLU) * 2"""
-
-    def __init__(self, in_channels, out_channels, mid_channels=None, kernel_size=3, stride=1, padding=1):
-        super().__init__()
-        if not mid_channels:
-            mid_channels = out_channels
-        self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        return self.double_conv(x)
+from models.utils import DoubleConv2d
 
 
 class Down2d(nn.Module):
