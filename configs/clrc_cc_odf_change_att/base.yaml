@@ -1,0 +1,60 @@
+model:
+    class_path: models.prithvi.PrithviGlobalDecoder2dUNet
+    init_args:
+        num_classes: 1
+        num_channels: 12
+        bilinear: false
+        # kernel_size: [4, 4, 4]
+        # view_size: 16
+        # upscale_depth: 2
+        prithvi_path: src/models/backbones/prithvi/PrithviGlobal.pt
+        prithvi_params:
+            model_args:
+                input_size: [1, 16, 16]
+                patch_size: [1, 4, 4]
+                in_chans: 1024
+                embed_dim: 1024
+                coords_encoding: []
+                # coords_encoding:
+                #     - time
+                #     - location
+        prithvi_freeze: true
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 64
+        num_workers: 4
+        chip_size: 256
+        time_step: 4
+        # extension_config:
+            # load_meta_data: true
+            # extensions:
+                # - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromMeta
+                #   init_args:
+                #     year_col: yod
+                #     year_range: 4
+                #     month_day: 08-15
+                # - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+        dynamic_transform_config:
+            include_original: false
+            transforms:
+            #   - class_path: transforms.RandomCropAndAffine
+              - class_path: torchvision.transforms.v2.RandomCrop
+                init_args:
+                    size: [64, 64]
+                image_only: false
+        static_transform_config:
+            transforms:
+              - class_path: torchvision.transforms.v2.CenterCrop
+                init_args:
+                    size: [128, 128]
+                methods: ["train"]
+                targets: ["chip", "anno"]
+              - class_path: torchvision.transforms.v2.CenterCrop
+                init_args:
+                    size: [64, 64]
+                methods: ["validate", "test"]
+                targets: ["chip", "anno"]
+              - class_path: transforms.BeforeAfter
+                methods: ["all"]
+                targets: ["chip"]

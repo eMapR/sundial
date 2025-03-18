@@ -1,0 +1,19 @@
+datetime_column: yod
+file_type: ZARR
+gee_workers: 14
+gee_stratafied_config: null
+ee_image_factory: lt_medoid_image_factory
+io_limit: 32
+method: centroid
+num_points: 2048
+num_workers: 32
+overwrite: false
+parser_kwargs:
+    look_range: 1
+pixel_edge_size: 256
+postprocess_actions: []
+preprocess_actions: []
+projection: EPSG:5070
+scale: 30
+class_columns: ["predicted"]
+split_ratios: [.2, .02]

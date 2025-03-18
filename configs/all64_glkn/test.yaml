@@ -1,0 +1,14 @@
+trainer:
+    callbacks:
+    #   - class_path: callbacks.LogTestCallback
+    #   - class_path: callbacks.SaveTestCallback
+      - class_path: callbacks.SaveEmbedCallback
+    precision: 32-true
+    devices: 1
+# criterion:
+#     class_path: BCEWithLogitsLoss
+# activation:
+#     class_path: Sigmoid
+# data:
+#     init_args:
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all64_glkn/train_sample.npy

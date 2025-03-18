@@ -1,0 +1,58 @@
+model:
+    class_path: models.prithvi.PrithviGlobal2dUNet
+    init_args:
+        num_classes: 2
+        num_channels: 18
+        bilinear: false
+        # kernel_size: [4, 4, 4]
+        # view_size: 16
+        # upscale_depth: 2
+        prithvi_path: src/models/backbones/prithvi/PrithviGlobal.pt
+        # prithvi_path: checkpoints/diff_odf_change_att/epoch=0062_val_loss=0.010_med_comp.ckpt
+        prithvi_params:
+            model_args:
+                input_size: [1, 16, 16]
+                patch_size: [1, 1, 1]
+                in_chans: 1024
+                embed_dim: 1024
+                coords_encoding: []
+                # coords_encoding:
+                #     - time
+                #     - location
+        prithvi_freeze: true
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 64
+        num_workers: 4
+        chip_size: 256
+        time_step: 3
+        # extension_config:
+        #     load_meta_data: true
+        #     extensions:
+        #         - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromMeta
+        #           init_args:
+        #             year_col: yod
+        #             year_range: 4
+        #             month_day: 08-15
+        #             forward: true
+        #         - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+        dynamic_transform_config:
+            include_original: false
+            transforms:
+              - class_path: transforms.RandomCropAndAffine
+                init_args:
+                    size: [64, 64]
+                image_only: false
+        static_transform_config:
+            transforms:
+              - class_path: torchvision.transforms.v2.CenterCrop
+                init_args:
+                    size: [128, 128]
+                methods: ["train"]
+                targets: ["chip", "anno"]
+              - class_path: torchvision.transforms.v2.CenterCrop
+                init_args:
+                    size: [64, 64]
+                methods: ["validate", "test"]
+                targets: ["chip", "anno"]

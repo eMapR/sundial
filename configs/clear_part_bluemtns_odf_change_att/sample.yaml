@@ -1,0 +1,34 @@
+datetime_column: yod
+file_type: ZARR
+gee_workers: 14
+gee_stratafied_config: null
+groupby_columns: ["yod"]
+ee_image_factory: lt_medoid_image_factory
+io_limit: 32
+method: centroid
+num_points: 2048
+num_workers: 32
+overwrite: false
+parser_kwargs:
+    look_range: 3
+pixel_edge_size: 256
+postprocess_actions:
+    - data: "anno"
+      action: "sum"
+      operator: ">"
+      targets: 128
+preprocess_actions:
+    - column: region
+      action: "=="
+      targets: "blue_mountains"
+    - column: yod
+      action: ">"
+      targets: 2014
+    - column: predicted
+      action: in
+      targets: ["%_Clearcut", "%_PartHarvest"]
+projection: EPSG:5070
+generate_time_combinations: false
+scale: 30
+class_columns: ["predicted"]
+split_ratios: [.2, .02]

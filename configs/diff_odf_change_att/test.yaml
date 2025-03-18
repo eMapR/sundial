@@ -1,0 +1,6 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTestReconstructCallback
+      - class_path: callbacks.LogTrainImageCallback
+    precision: 32-true
+    devices: 1

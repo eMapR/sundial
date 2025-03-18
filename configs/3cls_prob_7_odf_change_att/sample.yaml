@@ -1,0 +1,28 @@
+datetime_column: yod
+file_type: ZARR
+gee_workers: 42
+gee_stratafied_config: null
+groupby_columns: ["yod"]
+ee_image_factory: lt_medoid_image_factory_forward
+io_limit: 32
+method: centroid
+num_points: null
+num_workers: 32
+overwrite: false
+pixel_edge_size: 256
+parser_kwargs:
+    look_range: 3
+postprocess_actions:
+    - data: "anno"
+      action: "sum"
+      operator: ">"
+      targets: 256
+preprocess_actions:
+    - column: max_prob
+      action: ">"
+      targets: .7
+projection: EPSG:5070
+generate_time_combinations: false
+scale: 30
+class_columns: ["predicted"]
+split_ratios: [.2, .02]

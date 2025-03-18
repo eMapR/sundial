@@ -1,0 +1,10 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTestCallback
+    #   - class_path: callbacks.SaveTestCallback
+    precision: bf16-mixed
+    devices: 1
+criterion:
+    class_path: GeneralizedDiceLoss
+activation:
+    class_path: Sigmoid

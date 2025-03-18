@@ -165,9 +165,6 @@ logs/
 samples/
 checkpoints/
 predictions/
-utils/
-models/sundial.py
-src/models/backbones/
 .vscode
 
 *.tar.gz

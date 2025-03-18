@@ -1,0 +1,41 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTrainCallback
+      - class_path: callbacks.LogTrainBinaryExtCallback
+      - class_path: StochasticWeightAveraging
+        init_args:
+            swa_lrs: 0.0001
+            device: null
+      - class_path: lightning.pytorch.callbacks.early_stopping.EarlyStopping
+        init_args:
+            monitor: val_loss
+            min_delta: .01
+            patience: 32
+    max_epochs: 128
+    strategy: auto
+    devices: 1
+    num_nodes: 1
+    accumulate_grad_batches: 1
+    precision: 32-true
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: 0.0001
+lr_scheduler:
+    # class_path: torch.optim.lr_scheduler.CosineAnnealingLR
+    class_path: torch.optim.lr_scheduler.StepLR
+    init_args:
+        step_size: 16
+        gamma: 0.7
+criterion:
+    class_path: GeneralizedDiceLoss
+    # class_path: CrossEntropyLoss
+    # init_args:
+    #     weight:
+    #     - 26.237322927950302
+    #     - 2.572891308889708
+    #     - 7.995457036532467
+    #     - 209.12387903071934
+    #     - 2.255474540803268
+activation:
+    class_path: Softmax

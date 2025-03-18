@@ -1,0 +1,43 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTrainCallback
+      - class_path: callbacks.LogTrainBinaryExtCallback
+      - class_path: callbacks.LogAvgMagGradientCallback
+        init_args:
+            layers: ["inc", "down", "prithvi.model.blocks", "prithvi.model.decoder_blocks", "up", "out"]
+            # layers: ["inc", "down", "prithvi", "up", "out"]
+            freq: 16
+      - class_path: StochasticWeightAveraging
+        init_args:
+            swa_lrs: 0.00001
+            device: null
+    max_epochs: 128
+    strategy: auto
+    devices: 1
+    num_nodes: 1
+    accumulate_grad_batches: 1
+    precision: bf16-mixed
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: 0.00001
+lr_scheduler:
+    class_path: torch.optim.lr_scheduler.CosineAnnealingLR
+    init_args:
+        T_max : 16
+# test A (Dice Loss)
+# criterion:
+#     class_path: DiceLoss
+#     init_args:
+#         multiclass: False
+# test (CE)
+# criterion:
+#     class_path: CrossEntropyLoss
+# activation:
+#     class_path: Softmax
+#     init_args:
+#         dim: 1
+criterion:
+    class_path: BCEWithLogitsLoss
+activation:
+    class_path: Sigmoid

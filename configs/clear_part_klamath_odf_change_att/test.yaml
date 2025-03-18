@@ -1,0 +1,11 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTestCallback
+    #   - class_path: callbacks.SaveTestCallback
+    precision: 32-true
+    devices: 1
+    
+criterion:
+    class_path: CrossEntropyLoss
+activation:
+    class_path: Sigmoid

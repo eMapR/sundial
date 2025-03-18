@@ -1,0 +1,17 @@
+data:
+  class_path: GenericChipsDataModule
+  init_args:
+    batch_size: 32
+    chip_size: 256
+    dynamic_transform_config:
+      transforms: []
+    extension_config:
+      extensions: []
+    file_type: zarr
+    num_workers: 4
+    split_tif: null
+    start_idx: null
+    static_transform_config:
+      transforms: []
+    time_step: null
+model: null
