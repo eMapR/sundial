@@ -29,6 +29,7 @@ from pipeline.settings import IDX_NAME_ZFILL
 from settings import DATALOADER_CONFIG
 from utils import dynamic_import
 
+
 class GenericChipsDataset(Dataset):
     def __init__(self,
                  chip_size: int,
@@ -90,8 +91,7 @@ class GenericChipsDataset(Dataset):
 
         # parsing img name for index
         data["indx"] = img_indx
-        if time_indx:
-            data["time_indx"] = time_indx
+        data["time_indx"] = time_indx
         img_name = str(img_indx).zfill(IDX_NAME_ZFILL)
 
         # loading chip and slicing time if necessary
@@ -126,9 +126,9 @@ class GenericChipsDataset(Dataset):
         
         for ext in self.extensions:
             if ext.meta_data:
-                ext_val = ext.get_item(img_indx, self.meta_data)
+                ext_val = ext.get_item(img_indx, time_indx, self.meta_data)
             else:
-                ext_val = ext.get_item(img_indx)
+                ext_val = ext.get_item(img_indx, time_indx)
             data[ext.name] = torch.tensor(ext_val, dtype=torch.float)
         return data
 

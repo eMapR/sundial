@@ -6,6 +6,12 @@ from torch import nn
 from torch.autograd.function import Function
 from typing import Optional
 
+from pipeline.settings import LOG_PATH, METHOD
+from pipeline.logging import get_logger
+
+
+LOGGER = get_logger(LOG_PATH, METHOD)
+
 
 def constant_init(module, val, bias=0):
     nn.init.constant_(module.weight, val)
@@ -141,8 +147,8 @@ class MultiScaleDeformableAttention(nn.Module):
             return (n & (n - 1) == 0) and n != 0
 
         if not _is_power_of_2(dim_per_head):
-            warnings.warn(
-                "You'd better set embed_dims in "
+            LOGGER.warning(
+                f"You'd better set embed_dims ({embed_dims}) in "
                 'MultiScaleDeformAttention to make '
                 'the dimension of each attention head a power of 2 '
                 'which is more efficient in our CUDA implementation.')
