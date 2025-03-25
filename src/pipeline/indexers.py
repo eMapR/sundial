@@ -4,11 +4,11 @@ import xarray as xr
 
 from typing import Tuple
 
-from pipeline.settings import IDX_NAME_ZFILL
+from constants import APPEND_DIM, DATETIME_LABEL, IDX_NAME_ZFILL
 
 
-def train_validate_test_split(chip_data: xr.Dataset,
-                              anno_data: xr.Dataset,
+def train_validate_test_split(chip_data: xr.DataArray,
+                              anno_data: xr.DataArray,
                               ratios: list[int],
                               random_seed: float | int) -> np.array:
     assert len(ratios) == 2 or len(ratios) == 3, "Ratios must be a list or array of 2 ors 3 elements (val, test) or (train, val, test)"
@@ -32,8 +32,8 @@ def train_validate_test_split(chip_data: xr.Dataset,
     return train, val, test
 
 
-def time_window_split(chip_data: xr.Dataset,
-                      anno_data: xr.Dataset,
+def time_window_split(chip_data: xr.DataArray,
+                      anno_data: xr.DataArray,
                       ratios: list[int],
                       random_seed: float | int,
                       time_range: Tuple[int],
@@ -47,6 +47,18 @@ def time_window_split(chip_data: xr.Dataset,
     
     return train, val, test
 
+
+def time_window(chip_data: xr.DataArray,
+                anno_data: xr.DataArray,
+                ratios: list[int],
+                random_seed: float | int,
+                time_range: Tuple[int],
+                time_step: int):
+    times = np.arange(*time_range, time_step)
+    total = np.arange(len(chip_data))
+    sample = np.transpose([np.tile(total, len(times)), np.repeat(times, len(total))])
+
+    return sample
 
 def check_class_sums_helper(class_sums: np.array,
                             class_filters: dict,
@@ -69,13 +81,16 @@ def check_class_sums_helper(class_sums: np.array,
     return True
 
 
-def check_class_sums(anno_data: xr.Dataset,
+def check_class_sums(anno_data: xr.DataArray,
                      sample: Tuple[int],
                      time_step: int,
                      class_filters: dict):
-    sample_anno = anno_data[str(sample[0]).zfill(IDX_NAME_ZFILL)]
+    sample_anno = anno_data.sel(sample=sample[0])
     num_pixels = sample_anno.shape[-2]*sample_anno.shape[-1]
-    class_sums = np.array(sample_anno.attrs["class_sums"])
+    dims = [APPEND_DIM, "y", "x"]
+    if DATETIME_LABEL in sample_add.dims:
+        dims.append(DATETIME_LABEL)
+    class_sums = np.array(sample_anno.sum(dims))
     class_sums = class_sums[sample[1] - time_step]
     
     if check_class_sums_helper(class_sums, class_filters, num_pixels):
@@ -84,8 +99,8 @@ def check_class_sums(anno_data: xr.Dataset,
         return np.array([np.nan, np.nan])
 
 
-def time_window_split_class_filter(chip_data: xr.Dataset,
-                                   anno_data: xr.Dataset,
+def time_window_split_class_filter(chip_data: xr.DataArray,
+                                   anno_data: xr.DataArray,
                                    ratios: list[int],
                                    random_seed: float | int,
                                    time_range: Tuple[int],

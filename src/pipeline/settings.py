@@ -1,69 +1,8 @@
 import os
 
-from pipeline.config_utils import  load_yaml, recursive_merge
+from config_utils import  load_yaml, recursive_merge
+from constants import ANNO_DATA_PATH, CHIP_DATA_PATH, FILE_EXT_MAP, GEE_REQUEST_LIMIT, SAMPLE_CONFIG_PATH
 
-
-# experiment information
-SAMPLE_NAME = os.getenv("SUNDIAL_SAMPLE_NAME")
-EXPERIMENT_PREFIX = os.getenv("SUNDIAL_EXPERIMENT_PREFIX")
-EXPERIMENT_SUFFIX = os.getenv("SUNDIAL_EXPERIMENT_SUFFIX")
-EXPERIMENT_BASE_NAME = os.getenv("SUNDIAL_EXPERIMENT_BASE_NAME")
-EXPERIMENT_FULL_NAME = os.getenv("SUNDIAL_EXPERIMENT_FULL_NAME")
-METHOD = os.getenv("SUNDIAL_METHOD")
-JOB_NAME = f"{METHOD}_{EXPERIMENT_FULL_NAME}"
-
-# base paths
-BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
-CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
-SHAPES_PATH = os.path.join(BASE_PATH, "shapes")
-SAMPLES_PATH = os.path.join(BASE_PATH, "samples")
-CHECKPOINTS_PATH = os.path.join(BASE_PATH, "checkpoints")
-PREDICTIONS_PATH = os.path.join(BASE_PATH, "predictions")
-LOGS_PATH = os.path.join(BASE_PATH, "logs")
-
-# experiment paths
-CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_BASE_NAME)
-SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_BASE_NAME)
-CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_BASE_NAME)
-PREDICTION_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_BASE_NAME)
-LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_BASE_NAME)
-
-# config paths
-SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
-METHOD_CONFIG_PATH = os.path.join(CONFIG_PATH, f"{METHOD}.yaml")
-BASE_CONFIG_PATH = os.path.join(CONFIG_PATH, "base.yaml")
-
-# sample and data paths
-META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data")
-STAT_DATA_PATH = os.path.join(SAMPLE_PATH, "stat_data.yaml")
-CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data")
-ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data")
-ALL_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "all_sample.npy")
-TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.npy")
-VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.npy")
-PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
-TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
-
-# shapefile and source data paths
-GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
-GEO_POP_PATH = os.path.join(SAMPLE_PATH, "gpop_data")
-
-# non configurable GEE, image, and meta data settings
-RANDOM_SEED = 42
-CLASS_LABEL = "class"
-DATETIME_LABEL = "datetime"
-NO_DATA_VALUE = 0
-IDX_NAME_ZFILL = 8
-GEE_REQUEST_LIMIT = 40
-EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
-
-# GEE file type mapping to file extension
-FILE_EXT_MAP = {
-    "GEO_TIFF": "tif",
-    "NPY": "npy",
-    "NUMPY_NDARRAY": "npy",
-    "ZARR": "zarr"
-}
 
 # configs relating to sampler methods
 SAMPLER_CONFIG = {
@@ -117,9 +56,13 @@ SAMPLER_CONFIG = {
     # See downloader.Downloader.image_generator.
     "scale": 30,
     
-    # (int) Edge size of square in meters.
+    # (int) Edge size of square in pixels.
     # See downloader.Downloader.image_generator.
-    "pixel_edge_size": 256,
+    "pixel_edge_size": 224,
+    
+    # (int) Edge size buffer of square in pixels.
+    # See downloader.Downloader.image_generator.
+    "buffer": 16,
     
     # (str) Projection to save polygons and images. Will reproject coordinates if necessary.
     # See downloader.Downloader.image_generator.
@@ -139,7 +82,7 @@ SAMPLER_CONFIG = {
         "end_month": 9,
         "end_day": 1,
         # (int) Number of time steps to look back from observation date (i.e. 2 = 3 years total including observation year). Currently only years is supported.
-        "look_range": 3
+        "look_range": 3,
     },
     
     # (str) Name of function in pipeline.ee_image_factory to generate expression in google earth engine consumed by Downloader. An example is provided but more can be defined there.
@@ -187,8 +130,8 @@ SAMPLER_CONFIG = {
     "annotator_kwargs": {},
     
     # (str) Name of indexing function
-    # Function must consume (chip_data: xr.Dataset,
-    #                        anno_data: xr.Dataset,
+    # Function must consume (chip_data: xr.DataArray,
+    #                        anno_data: xr.DataArray,
     #                        ratios: list[int],
     #                        random_seed: float | int,
     #                        time_range: Tuple[int],
@@ -212,14 +155,9 @@ SAMPLER_CONFIG = {
     
     # (int) Number of chips to download before locking IO and writing.
     # See downloader.Downloader._image_consumer.
-    "io_limit": 32,
+    "io_limit": 8,
 }
 
 # loading sampler config if it exists
 if os.path.exists(SAMPLE_CONFIG_PATH):
     SAMPLER_CONFIG = recursive_merge(SAMPLER_CONFIG, load_yaml(SAMPLE_CONFIG_PATH))
-
-if SAMPLER_CONFIG["file_type"] == "ZARR":
-    ext = FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]]
-    CHIP_DATA_PATH = CHIP_DATA_PATH + f".{ext}"
-    ANNO_DATA_PATH = ANNO_DATA_PATH + f".{ext}"

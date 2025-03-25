@@ -5,26 +5,28 @@ from torch import nn
 
 class SundialPLBase(L.LightningModule):
     def training_step(self, batch):
-        logits = self(batch)
-        loss = self.criterion(logits, batch["anno"])
+        loss = self.criterion(self(batch), batch["anno"])
 
         return {"loss": loss}
 
     def validation_step(self, batch):
-        logits = self(batch)
-        output = {"output": self.activation(logits).detach()} 
+        output = {"output": self(batch)}
         if self.criterion is not None:
-            output["loss"] = self.criterion(logits, batch["anno"])
+            output["loss"] = self.criterion(output["output"], batch["anno"])
+        if self.activation is not None:
+            output["output"] = self.activation(output["output"])
         return output 
 
     def test_step(self, batch):
-        logits = self(batch)
-        output = {"output": self.activation(logits).detach()} 
+        output = {"output": self(batch)}
         if self.criterion is not None:
-            output["loss"] = self.criterion(logits, batch["anno"])
-        return output
+            output["loss"] = self.criterion(output["output"], batch["anno"])
+        if self.activation is not None:
+            output["output"] = self.activation(output["output"])
+        return output 
 
     def predict_step(self, batch):
-        logits = self(batch)
-        output = {"output": self.activation(logits).detach()} 
-        return output
+        output = {"output": self(batch)}
+        if self.activation is not None:
+            output["output"] = self.activation(output["output"])
+        return output 

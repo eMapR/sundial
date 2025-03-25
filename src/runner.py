@@ -1,5 +1,6 @@
 import comet_ml
 import os
+import shutil
 import torch
 import tarfile
 
@@ -10,26 +11,31 @@ from callbacks import DefineActivationCallback, DefineCriterionCallback, LogSetu
 from settings import CHECKPOINT_CONFIG, LOGGER_CONFIG, PACKAGE_CONFIG
 from utils import get_best_ckpt, get_latest_ckpt, tensors_to_tifs
 
+from config_utils import load_yaml
+from constants import (
+    DATA_PATH,
+    BASE_CONFIG_PATH,
+    CHECKPOINT_PATH,
+    EXPERIMENT_FULL_NAME,
+    EXPERIMENT_SUFFIX,
+    LOG_PATH,
+    META_DATA_PATH,
+    METHOD,
+    METHOD_CONFIG_PATH,
+    PREDICTION_PATH,
+    RANDOM_SEED,
+)
 from pipeline.pipeline import (
     sample,
     annotate,
     download,
     index,
 )
-from pipeline.settings import (
-    BASE_CONFIG_PATH,
-    CHECKPOINT_PATH,
-    EXPERIMENT_FULL_NAME,
-    EXPERIMENT_SUFFIX,
-    META_DATA_PATH,
-    METHOD,
-    METHOD_CONFIG_PATH,
-    PREDICTION_PATH,
-    RANDOM_SEED,
-    SAMPLER_CONFIG,
-)
-from pipeline.logging import function_timer
-from pipeline.config_utils import load_yaml
+from pipeline.settings import SAMPLER_CONFIG
+from pipeline.logging import function_timer, get_logger
+
+
+LOGGER = get_logger(LOG_PATH, METHOD)
 
 
 class SundialCLI(LightningCLI):
@@ -117,16 +123,18 @@ def run():
 
 @function_timer
 def package():
+    LOGGER.info(DATA_PATH)
     tensors_dir_path = tensors_to_tifs(
-        PREDICTION_PATH,
+        os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX),
         EXPERIMENT_FULL_NAME,
+        DATA_PATH,
         META_DATA_PATH,
-        SAMPLER_CONFIG["num_workers"]
+        SAMPLER_CONFIG["num_workers"],
+        LOGGER,
     )
     match PACKAGE_CONFIG["format"]:
         case "tar":
-            tar_path = os.path.join(
-                os.path.expanduser("~"), EXPERIMENT_FULL_NAME)
+            tar_path = os.path.join(DATA_PATH, EXPERIMENT_FULL_NAME)
             with tarfile.open(f"{tar_path}.tar.gz", "w:gz") as tar:
                 tar.add(tensors_dir_path, arcname=EXPERIMENT_FULL_NAME)
 

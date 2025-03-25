@@ -12,10 +12,9 @@ import xarray as xr
 
 from typing import Any, Optional, Literal
 
-from pipeline.config_utils import update_yaml
-from pipeline.downloader import Downloader
-from pipeline.logging import function_timer, get_logger
-from pipeline.settings import (
+from config_utils import update_yaml
+from constants import (
+    APPEND_DIM,
     DATETIME_LABEL,
     IDX_NAME_ZFILL,
     METHOD,
@@ -23,7 +22,7 @@ from pipeline.settings import (
     RANDOM_SEED,
     CLASS_LABEL,
 )
-from pipeline.settings import (
+from constants import (
     ALL_SAMPLE_PATH,
     ANNO_DATA_PATH,
     CHIP_DATA_PATH,
@@ -32,18 +31,19 @@ from pipeline.settings import (
     LOG_PATH,
     META_DATA_PATH,
     PREDICT_SAMPLE_PATH,
-    SAMPLER_CONFIG,
     STAT_DATA_PATH,
     TEST_SAMPLE_PATH,
     TRAIN_SAMPLE_PATH,
     VALIDATE_SAMPLE_PATH,
 )
+from pipeline.logging import function_timer, get_logger
+from pipeline.downloader import Downloader
+from pipeline.settings import SAMPLER_CONFIG
 from pipeline.utils import (
     covering_grid,
     generate_centroid_squares,
     get_class_weights,
     get_band_stats,
-    get_xarr_stats,
     stratified_sample,
 )
 
@@ -101,8 +101,8 @@ def preprocess_data(
 
 @function_timer
 def postprocess_data(
-    chip_data: xr.Dataset,
-    anno_data: xr.Dataset | None,
+    chip_data: xr.DataArray,
+    anno_data: xr.DataArray | None,
     postprocess_actions: list[str]):
     stat_data = {}
 
@@ -112,10 +112,9 @@ def postprocess_data(
                 match SAMPLER_CONFIG["file_type"]:
                     case "ZARR":
                         LOGGER.info(f"Verifying chip data...")
-                        chip_data = xr.open_zarr(CHIP_DATA_PATH)
                         # TODO: fix redudant summing
-                        stat_data["chip_stats"] = {"count": len(chip_data.variables)}
-                        stat_data["chip_stats"] |= get_band_stats(chip_data, DATETIME_LABEL)
+                        stat_data["chip_stats"] = {"count": len(chip_data)}
+                        stat_data["chip_stats"] |= get_band_stats(chip_data)
                     case _:
                         raise ValueError(
                             f"Invalid file type: {SAMPLER_CONFIG['file_type']}")
@@ -128,10 +127,8 @@ def postprocess_data(
                 stat_data["class_geo_area"] = groupby.sum()["area"].to_dict()
                 if os.path.isdir(ANNO_DATA_PATH):
                     LOGGER.info(f"Verifying annotation data...")
-                    anno_data = xr.open_zarr(ANNO_DATA_PATH)
                     # TODO: choice in weighting scheme
-                    stat_data["anno_stats"] = get_xarr_stats(anno_data)
-                    stat_data["anno_stats"] |= get_class_weights(anno_data)
+                    stat_data["anno_stats"] = get_class_weights(anno_data)
             case _:
                 raise ValueError(f"Invalid action: {action}")
     update_yaml(stat_data, STAT_DATA_PATH)
@@ -146,7 +143,10 @@ def generate_squares(
     LOGGER.info(f"Generating squares from sample points via {method}...")
     match method:
         case "covering_grid":
-            gdf = covering_grid(geo_dataframe, meter_edge_size // squares_config.get("overlap", 1))
+            gdf = covering_grid(geo_dataframe,
+                                meter_edge_size,
+                                overlap=squares_config.get("overlap", 0),
+                                year_offset=squares_config.get("year_offset", 0))
         case "random":
             raise NotImplementedError
         case "centroid":
@@ -293,6 +293,7 @@ def download():
             "overwrite": SAMPLER_CONFIG["overwrite"],
             "scale": SAMPLER_CONFIG["scale"],
             "pixel_edge_size": SAMPLER_CONFIG["pixel_edge_size"],
+            "buffer": SAMPLER_CONFIG["buffer"],
             "projection": SAMPLER_CONFIG["projection"],
             "chip_data_path": CHIP_DATA_PATH,
             "meta_data": gdf,
@@ -314,8 +315,8 @@ def download():
 
 @function_timer
 def index():
-    chip_data = xr.open_zarr(CHIP_DATA_PATH)
-    anno_data = xr.open_zarr(ANNO_DATA_PATH) if os.path.exists(ANNO_DATA_PATH) else None
+    chip_data = xr.open_dataarray(CHIP_DATA_PATH, engine='zarr')
+    anno_data = xr.open_dataarray(ANNO_DATA_PATH, engine='zarr') if os.path.exists(ANNO_DATA_PATH) else None
 
     if SAMPLER_CONFIG["postprocess_actions"]:
         LOGGER.info("Postprocessing data in geo file...")
@@ -331,10 +332,10 @@ def index():
     num_samples = len(gpd.read_file(META_DATA_PATH))
     samples = np.arange(num_samples)
     np.save(ALL_SAMPLE_PATH, samples)
+    indexer = getattr(importlib.import_module("pipeline.indexers"), SAMPLER_CONFIG["indexer"])
     
     if SAMPLER_CONFIG["split_ratios"]:
         LOGGER.info("Splitting sample data into training, validation, test, and predict sets...")
-        indexer = getattr(importlib.import_module("pipeline.indexers"), SAMPLER_CONFIG["indexer"])
         train, validate, test = indexer(chip_data,
                                         anno_data,
                                         SAMPLER_CONFIG["split_ratios"],
@@ -357,8 +358,11 @@ def index():
             },
             STAT_DATA_PATH)
     else:
-        num_samples = len(chip_data)
-        samples = np.arange(len(chip_data))
+        samples = indexer(chip_data,
+                            anno_data,
+                            SAMPLER_CONFIG["split_ratios"],
+                            RANDOM_SEED,
+                            **SAMPLER_CONFIG["indexer_kwargs"])
 
         LOGGER.info("Saving sample data indices to paths...")
         np.save(PREDICT_SAMPLE_PATH, samples)

@@ -35,8 +35,7 @@ def distance_transform(targets: torch.tensor):
         if cp.any(cx[k] > 0):
             distance = distance_transform_edt(1 - cx[k]) * (1 - cx[k]) \
                 - (distance_transform_edt(cx[k]) - 1) * cx[k]
-            distances[k] = torch.tensor(
-                distance, dtype=targets.dtype, device=targets.device)
+            distances[k] = torch.tensor(distance, dtype=targets.dtype, device=targets.device)
     return distances
 
 
@@ -165,7 +164,7 @@ def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, 
     for t in range(chip.shape[1]):
         image = rgb[t, :, :, :]
         logger.log_image(
-            image_data=image,
+            image_data=image.cpu(),
             name=f"{index_name}_rgb_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(min_sr, max_sr)
@@ -173,12 +172,12 @@ def log_rgb_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, 
         
 
 def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logger: Any, min_sr: float, max_sr: float):
-    false_color = chip.index_select(0, torch.tensor([3,2,1])).permute(1, 2, 3, 0)
+    false_color = chip.index_select(0, torch.tensor([3,2,1], device=chip.device)).permute(1, 2, 3, 0)
     times = list(range(chip.shape[1]-1, -1, -1))
     for t in range(chip.shape[1]):
         image = false_color[t, :, :, :]
         logger.log_image(
-            image_data=image,
+            image_data=image.cpu(),
             name=f"{index_name}_false_color_t-{times[t]}_{label}.png",
             image_scale=2.0,
             image_minmax=(min_sr, max_sr)
@@ -186,7 +185,7 @@ def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logge
         
     image =  false_color[1, :, :, :] - false_color[0, :, :, :]
     logger.log_image(
-        image_data=image,
+        image_data=image.cpu(),
         name=f"{index_name}_false_color_diff_{label}.png",
         image_scale=2.0,
         image_minmax=(0, max_sr)
@@ -197,18 +196,19 @@ def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logge
 def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
                            regex: re.Pattern,
                            output_path: str,
-                           file_queue: mp.Queue):
+                           file_queue: mp.Queue,
+                           logger: Any):
     crs = f"EPSG:{meta_data.crs.to_epsg()}"
     while (file := file_queue.get()) is not None:
-        meta_idx = int(regex.search(file).groups()[0])
+        base_name = os.path.basename(file)
+        meta_idx = int(regex.search(base_name).groups()[0])
         meta = meta_data.iloc[meta_idx]
         polygon = meta.geometry
-
-        tensor = torch.load(file, map_location=torch.device('cpu'))
-        base_name = os.path.splitext(os.path.basename(file))[0]
+        
+        tensor = torch.load(file, map_location=torch.device('cpu'), weights_only=False)
         bands = tensor.shape[0]
         minx, miny, maxx, maxy = polygon.bounds
-
+        
         profile = {
             'driver': 'GTiff',
             'height': tensor.shape[1],
@@ -219,15 +219,18 @@ def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
             'transform': from_bounds(minx, miny, maxx, maxy, tensor.shape[2], tensor.shape[1])
         }
 
-        with rasterio.open(os.path.join(output_path, f"{base_name}.tif"), 'w', **profile) as dst:
+        with rasterio.open(os.path.join(output_path, f"{os.path.splitext(base_name)[0]}.tif"), 'w', **profile) as dst:
             dst.write(tensor.numpy())
+        logger.info(f"Processed {base_name} at meta {meta_idx}...")
 
 
 def tensors_to_tifs(prediction_path: str,
                     output_name: str,
+                    data_path: str,
                     meta_data_path: str,
-                    num_workers: int = 1) -> str:
-    output_path = os.path.join("/tmp", output_name)
+                    num_workers: int,
+                    logger: Any) -> str:
+    output_path = os.path.join(data_path, f"{output_name}_temp")
     if os.path.exists(output_path) and os.path.isdir(output_path):
         shutil.rmtree(output_path)
     os.makedirs(output_path)
@@ -242,6 +245,7 @@ def tensors_to_tifs(prediction_path: str,
 
     for file in files:
         file_queue.put(file)
+        logger.info
         file_idxes.append(int(regex.search(file).groups()[0]))
 
     [file_queue.put(None) for _ in range(num_workers)]
@@ -252,12 +256,11 @@ def tensors_to_tifs(prediction_path: str,
             args=(meta_data,
                   regex,
                   output_path,
-                  file_queue),
+                  file_queue,
+                  logger),
             daemon=True)
         p.start()
         processes.add(p)
     [r.join() for r in processes]
 
-    meta = meta_data.iloc[file_idxes].reset_index()
-    meta.to_file(os.path.join(output_path, "meta_data"))
     return output_path

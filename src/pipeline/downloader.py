@@ -7,10 +7,11 @@ import os
 import xarray as xr
 
 from pathlib import Path
+from shapely.geometry import box
 from typing import Any, Literal, Optional
 
+from constants import APPEND_DIM, FILE_EXT_MAP, EE_END_POINT
 from pipeline.utils import get_utm_zone
-from pipeline.settings import FILE_EXT_MAP, EE_END_POINT, IDX_NAME_ZFILL
 
 
 class Downloader:
@@ -22,7 +23,7 @@ class Downloader:
         overwrite (bool): A flag to overwrite existing image data.
         scale (int): The scale to use for projecting image.
         pixel_edge_size (int): The edge size to use to calculate padding.
-        reprojection (str): A str flag to reproject the image data if set.
+        projection (str): A str flag to reproject the image data if set.
 
         chip_data_path (str): The path to save the image data to.
         meta_data_path (str): The path to the meta data file with coordinates.
@@ -44,6 +45,7 @@ class Downloader:
             overwrite: bool,
             scale: int,
             pixel_edge_size: int,
+            buffer: int,
             projection: bool,
 
             chip_data_path: str,
@@ -66,6 +68,7 @@ class Downloader:
         self._overwrite = overwrite
         self._scale = scale
         self._pixel_edge_size = pixel_edge_size
+        self._buffer = buffer
         self._projection = projection
 
         self._chip_data_path = chip_data_path
@@ -187,30 +190,31 @@ class Downloader:
         ee.Initialize(opt_url=EE_END_POINT)
         file_ext = FILE_EXT_MAP[self._file_type]
         while (index := payload_queue.get()) is not None:
-            index_name = str(index).zfill(IDX_NAME_ZFILL)
             try:
                 # reading meta data from xarray
-                square_coords, point_coords, start_date, end_date, attributes \
-                    = self._meta_data_parser(self._meta_data,
-                                             index,
-                                             **self._parser_kwargs)
+                square, start_date, end_date = self._meta_data_parser(self._meta_data,
+                                                                      index,
+                                                                      **self._parser_kwargs)
+                
+                if self._buffer > 0:
+                    expand_distance = self._buffer * self._scale
+
+                    minx, miny, maxx, maxy = square.bounds
+                    square = box(minx - expand_distance, miny - expand_distance,
+                                maxx + expand_distance, maxy + expand_distance)
+
+                square_coords = list(square.boundary.coords)
+                point_coords = list(square.centroid.coords)
 
                 # checking for existing files and skipping if file found
                 if self._file_type != "ZARR":
-                    chip_file_name = f"{index_name}.{file_ext}"
-                    chip_data_path = os.path.join(
-                        self._chip_data_path, chip_file_name)
-                    if not self._overwrite and os.path.exists(chip_data_path):
-                        report_queue.put(("INFO",
-                                          f"Files for chip {index_name} already exists. Skipping... {square_coords}"))
-                        continue
+                    chip_data_path = chip_var_path = os.path.join(chip_data_path, f"{index}")
                 else:
                     chip_data_path = self._chip_data_path
-                    chip_var_path = os.path.join(chip_data_path, f"{index_name}")
-                    if not self._overwrite and os.path.exists(chip_var_path):
-                        report_queue.put(("INFO",
-                                          f"Files for chip {index_name} already exists. Skipping... {square_coords}"))
-                        continue
+                    chip_var_path = os.path.join(self._chip_data_path, f"{APPEND_DIM}", f"{index}")
+                if not self._overwrite and os.path.exists(chip_var_path):
+                    report_queue.put(("INFO", f"Files for chip {index:08d} already exists. Skipping... {square_coords}"))
+                    continue
 
                 # getting utm zone and epsg code for reprojection
                 match self._projection:
@@ -220,8 +224,7 @@ class Downloader:
                         epsg_str = self._projection
 
                 # creating payload for each square to send to GEE
-                report_queue.put(
-                    ("INFO", f"Creating image payload for square {index_name}... {square_coords}"))
+                report_queue.put(("INFO", f"Creating image payload for square {index:08d}... {square_coords}"))
                 image = self._ee_image_factory(
                     square_coords,
                     start_date,
@@ -231,8 +234,7 @@ class Downloader:
 
                 # reprojecting the image if necessary
                 if self._reproject and epsg_str is not None:
-                    report_queue.put(
-                        ("INFO", f"Reprojecting image payload square {index_name} to {epsg_str}... {square_coords}"))
+                    report_queue.put(("INFO", f"Reprojecting image payload square {index:08d} to {epsg_str}... {square_coords}"))
                     image = image.reproject(crs=epsg_str, scale=self._scale)
 
                 # encoding the image for the image consumer
@@ -245,8 +247,8 @@ class Downloader:
                     translateX, translateY = max(square_coords, key=lambda coords: (coords[1], -coords[0]))
                     payload["grid"] = {
                         'dimensions': {
-                            'width': self._pixel_edge_size,
-                            'height': self._pixel_edge_size
+                            'width': self._pixel_edge_size + self._buffer*2,
+                            'height': self._pixel_edge_size + self._buffer*2
                         },
                         'affineTransform': {
                             'scaleX': self._scale,
@@ -260,11 +262,9 @@ class Downloader:
                     }
 
                 # sending expression payload to the image consumer
-                image_queue.put(
-                    (payload, index_name, square_coords, point_coords, chip_data_path, attributes))
+                image_queue.put((payload, index, square_coords, point_coords, chip_data_path))
             except Exception as e:
-                report_queue.put(
-                    ("CRITICAL", f"Failed to create image payload for square {index_name} skipping: {type(e)} {e} {square_coords}"))
+                report_queue.put(("CRITICAL", f"Failed to create image payload for square {index:08d} skipping: {type(e)} {e} {square_coords}"))
 
     def _image_consumer(self,
                         image_queue: mp.Queue,
@@ -281,35 +281,30 @@ class Downloader:
             batch_size = 0
 
         while (image_task := image_queue.get()) is not None:
-            payload, index_name, square_coords, point_coords, chip_data_path, attributes = image_task
+            payload, index, square_coords, point_coords, chip_data_path = image_task
             try:
                 # google will internally retry the request if it fails
-                report_queue.put(("INFO",
-                                  f"Requesting image pixels for square... {index_name} {square_coords}"))
+                report_queue.put(("INFO", f"Requesting image pixels for square... {index:08d} {square_coords}"))
 
-                payload["expression"] = ee.deserializer.decode(
-                    payload["expression"])
+                payload["expression"] = ee.deserializer.decode(payload["expression"])
                 chip = ee.data.computePixels(payload)
             except Exception as e:
-                report_queue.put(
-                    ("ERROR", f"Failed to download square {index_name}: {type(e)} {e} {square_coords}"))
+                report_queue.put(("ERROR", f"Failed to download square {index:08d}: {type(e)} {e} {square_coords}"))
                 continue
 
             report_queue.put(
-                ("INFO", f"Processing square array for chip format {self._file_type} ... {index_name} {square_coords}"))
+                ("INFO", f"Processing square array for chip format {self._file_type} ... {index:08d} {square_coords}"))
             try:
                 match self._file_type:
                     case "NPY" | "GEO_TIFF":
                         # TODO: perform reshaping along times for non zarr file types
-                        report_queue.put((
-                            "INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index_name} {square_coords}"))
+                        report_queue.put(("INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index:08d} {square_coords}"))
                         out_file = Path(chip_data_path)
                         out_file.write_bytes(chip)
 
                     case "NUMPY_NDARRAY":
                         # TODO: perform reshaping along times for non zarr file types
-                        report_queue.put((
-                            "INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index_name} {square_coords}"))
+                        report_queue.put(("INFO", f"Writing chip {chip.shape} to {self._file_type} file... {index:08d} {square_coords}"))
                         np.save(chip_data_path, chip)
 
                     case "ZARR":
@@ -317,22 +312,18 @@ class Downloader:
                         batch_size += 1
 
                         # reshaping from (D*C, H, W) to (C, D, H, W)
-                        report_queue.put((
-                            "INFO", f"Reshaping square {chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size}... {index_name} {square_coords}"))
+                        report_queue.put(("INFO", f"Reshaping square {chip.shape} for {self._file_type} to pixel size {self._pixel_edge_size+self._buffer*2}... {index:08d} {square_coords}"))
                         xarr_chip = self._image_reshaper(chip,
-                                                         index_name,
-                                                         self._pixel_edge_size,
+                                                         index,
+                                                         self._pixel_edge_size+self._buffer*2,
                                                          square_coords,
                                                          point_coords,
-                                                         attributes,
                                                          **self._reshaper_kwargs)
 
                         # collecting xr data arrays into list for batch writing into xr dataset
-                        report_queue.put(
-                            ("INFO", f"Appending xarr chip {xarr_chip.shape} to consumer {consumer_index} chip batch {batch_index}... {index_name} {square_coords}"))
+                        report_queue.put(("INFO", f"Appending xarr chip {xarr_chip.shape} to consumer {consumer_index} chip batch {batch_index}... {index:08d} {square_coords}"))
                         xarr_chip_batch.append(xarr_chip)
-                        report_queue.put(
-                            ("INFO", f"Consumer {consumer_index} batch {batch_index} contains {batch_size} chips..."))
+                        report_queue.put(("INFO", f"Consumer {consumer_index} batch {batch_index} contains {batch_size} chips..."))
 
                         # attempt to merge batch of dataarrays and write to disk
                         if batch_size == self._io_limit:
@@ -354,8 +345,7 @@ class Downloader:
                             batch_size = 0
 
             except Exception as e:
-                report_queue.put(
-                    ("ERROR", f"Failed to process chips(s) for path {chip_data_path}: {type(e)} {e} {index_name} {square_coords}"))
+                report_queue.put(("ERROR", f"Failed to process chips(s) for path {chip_data_path}: {type(e)} {e} {index:08d} {square_coords}"))
 
                 # reporting failure to watcher and skipping entire batch
                 for name in square_name_batch:
@@ -366,8 +356,7 @@ class Downloader:
                     try:
                         out_file.unlink(missing_ok=True)
                     except Exception as e:
-                        report_queue.put(
-                            ("ERROR", f"Failed to clean chip file in {chip_data_path}: {type(e)} {e} {index_name} {square_coords}"))
+                        report_queue.put(("ERROR", f"Failed to clean chip file in {chip_data_path}: {type(e)} {e} {index:08d} {square_coords}"))
                 # TODO: clear potential writes to zarr
                 if self._file_type == "ZARR":
                     square_name_batch.clear()
@@ -387,8 +376,7 @@ class Downloader:
                 chip_lock,
                 consumer_index)
 
-        report_queue.put(
-            ("INFO", f"Consumer {consumer_index} completed. exiting..."))
+        report_queue.put(("INFO", f"Consumer {consumer_index} completed. exiting..."))
         result_queue.put(None)
 
     def _write_array_batch(self,
@@ -402,11 +390,17 @@ class Downloader:
                            chip_lock: mp.Queue,
                            consumer_index: int) -> None:
         # merging and writing or appending chip batch as dataset to zarr
-        report_queue.put(
-            ("INFO", f"Merging and writing consumer {consumer_index} chip batch {batch_index} of size {batch_size} to {chip_data_path}..."))
-        xarr_chip_batch = xr.merge(xarr_chip_batch)
+        report_queue.put(("INFO", f"Merging and writing consumer {consumer_index} chip batch {batch_index} of size {batch_size} to {chip_data_path}..."))
+        
+        # TODO: Replace with 'combine_by_coords' method. It's a pain to manage coordinates when the crs can vary. This should probably be done partially in the reshaper.
+        #       A potential draw back to this laziness is not being able to select a box from ALL variables since x and y dims only represent coordinates in the single image.
+        #       There's also no guarantee that there will not be boundary artifacts from the compute pixels call per bounding box if we do implement stiching.
+        xarr_chip_batch = xr.concat(xarr_chip_batch, dim=APPEND_DIM, coords='all')
         with chip_lock:
-            xarr_chip_batch.to_zarr(store=chip_data_path, mode="a")
+            if os.path.exists(chip_data_path):
+                xarr_chip_batch.to_zarr(store=chip_data_path, append_dim=APPEND_DIM, mode="a")
+            else:
+                xarr_chip_batch.to_zarr(store=chip_data_path)
 
         # reporting batch completion to watcher
         for name in square_name_batch:

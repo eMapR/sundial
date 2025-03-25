@@ -414,7 +414,7 @@ class PrithviViT(nn.Module):
         x = x + pos_embed[:, 1:, :]
 
         if self.temporal_encoding:
-            num_tokens_per_frame = x.shape[1] // self.patch_embed.num_frames
+            num_tokens_per_frame = x.shape[1] // self.num_frames
             temporal_encoding = self.temporal_embed_enc(temporal_coords, num_tokens_per_frame)
             x = x + temporal_encoding
         if self.location_encoding:

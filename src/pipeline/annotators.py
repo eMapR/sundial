@@ -1,13 +1,14 @@
 import geopandas as gpd
 import multiprocessing as mp
 import numpy as np
+import os
 import xarray as xr
 
 from shapely.geometry import Polygon
 from typing import Any, Optional, Tuple
 
+from constants import APPEND_DIM, CLASS_LABEL, DATETIME_LABEL, IDX_NAME_ZFILL, LOG_PATH, METHOD, NO_DATA_VALUE
 from pipeline.logging import get_logger
-from pipeline.settings import CLASS_LABEL, DATETIME_LABEL, IDX_NAME_ZFILL, LOG_PATH, METHOD, NO_DATA_VALUE
 from pipeline.utils import rasterizer
 
 
@@ -52,14 +53,14 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
                           io_limit: int,
                           io_lock: Any,
                           index_queue: Optional[mp.Queue],
-                          include_class_sums: bool = True,
                           **kwargs):
     batch = []
+    batch_names = []
     while (index := index_queue.get()) is not None:
-        index_name = str(index).zfill(IDX_NAME_ZFILL)
-        
+        batch_names.append(index)
         # getting annotation information from sample
-        LOGGER.info(f"Rasterizing sample {index_name}...")
+        
+        LOGGER.info(f"Rasterizing sample {index:08d}...")
         target = squares_gdf.iloc[index]
         if DATETIME_LABEL in squares_gdf.columns:
             datetime = target[DATETIME_LABEL]
@@ -68,27 +69,28 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
         square = target.geometry
 
         # class list should already be in order of index value
-        LOGGER.info(f"Creating annotations for sample {index_name} from class list...")
+        LOGGER.info(f"Creating annotations for sample {index:08d} from class list...")
         xarr_anno = xarr_annotator(population_gdf,
                                    square,
                                    class_names,
                                    pixel_edge_size,
                                    datetime)
-
-        xarr_anno.name = index_name
-        if include_class_sums:
-            xarr_anno.attrs["class_sums"] = xarr_anno.sum(dim=["y", "x"]).values
+        xarr_anno = xarr_anno.assign_coords({APPEND_DIM: index})
 
         # writing in batches to avoid io bottleneck
-        LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_anno.shape} to batch...")
+        LOGGER.info(f"Appending rasterized sample {index:08d} of shape {xarr_anno.shape} to batch...")
         batch.append(xarr_anno)
         if len(batch) == io_limit:
-            xarr_anno = xr.merge(batch)
+            xarr_anno = xr.concat(batch, dim=APPEND_DIM)
             with io_lock:
-                xarr_anno.to_zarr(store=anno_data_path, mode="a")
+                if os.path.exists(anno_data_path):
+                    xarr_anno.to_zarr(store=anno_data_path, append_dim=APPEND_DIM, mode="a")
+                else:
+                    xarr_anno.to_zarr(store=anno_data_path)
+            LOGGER.info(f"Rasterized sample batch submitted... {batch_names}")
+            
             batch.clear()
-            indices = list(xarr_anno.data_vars)
-            LOGGER.info(f"Rasterized sample batch submitted... {indices}")
+            batch_names.clear()
 
     # writing remaining batch
     if len(batch) > 0:
@@ -106,48 +108,50 @@ def multi_year_xarr_annotator(population_gdf: gpd.GeoDataFrame,
                               io_lock: Any,
                               index_queue: Optional[mp.Queue],
                               year_range: Tuple,
-                              include_class_sums: bool = True,
                               **kwargs):
     years = range(year_range[0], year_range[1])
     
     batch = []
+    batch_names = []
+
     while (index := index_queue.get()) is not None:
+        LOGGER.info(f"Rasterizing sample {index:08d}...")
+        batch_names.append(index)
         year_batch = []
         for year in years:
-            index_name = str(index).zfill(IDX_NAME_ZFILL)
-            
             # getting annotation information from sample
-            LOGGER.info(f"Rasterizing sample {index_name}...")
             target = squares_gdf.iloc[index]
             square = target.geometry
 
             # rasterizing multipolygon and clipping to square
-            LOGGER.info(f"Creating annotations for sample {index_name} from class list...")
             xarr_anno = xarr_annotator(population_gdf,
                                        square,
                                        class_names,
                                        pixel_edge_size,
                                        year)
             year_batch.append(xarr_anno)
-        xarr_years = xr.concat(year_batch, dim=DATETIME_LABEL)
-
-        xarr_years.name = index_name
-        if include_class_sums:
-            xarr_years.attrs["class_sums"] = xarr_years.sum(dim=["y", "x"]).values
+        xarr_years = xr.concat(year_batch, dim=DATETIME_LABEL).assign_coords({APPEND_DIM: index})
 
         # writing in batches to avoid io bottleneck
-        LOGGER.info(f"Appending rasterized sample {index_name} of shape {xarr_years.shape} to batch...")
+        LOGGER.info(f"Appending rasterized sample {index:08d} of shape {xarr_years.shape} to batch...")
         batch.append(xarr_years)
+
         if len(batch) == io_limit:
-            xarr_years = xr.merge(batch)
+            xarr_years = xr.concat(batch, dim=APPEND_DIM, coords='all')
             with io_lock:
-                xarr_years.to_zarr(store=anno_data_path, mode="a")
+                if os.path.exists(anno_data_path):
+                    xarr_years.to_zarr(store=anno_data_path, append_dim=APPEND_DIM, mode="a")
+                else:
+                    xarr_years.to_zarr(store=anno_data_path)
+            LOGGER.info(f"Rasterized sample batch submitted... {batch_names}")
             batch.clear()
-            indices = list(xarr_years.data_vars)
-            LOGGER.info(f"Rasterized sample batch submitted... {indices}")
+            batch_names.clear()
 
     # writing remaining batch
     if len(batch) > 0:
         with io_lock:
-            xarr_years = xr.merge(batch)
-            xarr_years.to_zarr(store=anno_data_path, mode="a")
+            xarr_years = xr.concat(batch, dim=APPEND_DIM, )
+            if os.path.exists(anno_data_path):
+                xarr_years.to_zarr(store=anno_data_path, append_dim=APPEND_DIM, mode="a")
+            else:
+                xarr_years.to_zarr(store=anno_data_path)

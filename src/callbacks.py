@@ -21,15 +21,15 @@ from torchmetrics.functional.image import structural_similarity_index_measure
 from torchvision.transforms.functional import to_pil_image
 from typing import Optional, Tuple
 
-from pipeline.settings import (EXPERIMENT_FULL_NAME,
-                               EXPERIMENT_SUFFIX,
-                               IDX_NAME_ZFILL,
-                               LOG_PATH,
-                               META_DATA_PATH,
-                               PREDICTION_PATH,
-                               SAMPLER_CONFIG,
-                               STAT_DATA_PATH)
-from pipeline.config_utils import load_yaml
+from config_utils import load_yaml
+from constants import (EXPERIMENT_FULL_NAME,
+                       EXPERIMENT_SUFFIX,
+                       IDX_NAME_ZFILL,
+                       LOG_PATH,
+                       META_DATA_PATH,
+                       PREDICTION_PATH,
+                       STAT_DATA_PATH)
+from pipeline.settings import SAMPLER_CONFIG
 from utils import log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
@@ -118,7 +118,7 @@ class DefineActivationCallback(L.Callback):
             activation = activation_class(**self.init_args)
             pl_module.activation = activation
         else:
-            pl_module.activation = torch.nn.Identity()
+            pl_module.activation = None
 
 
 class GenerateTrainGifCallback(L.Callback):
@@ -179,6 +179,9 @@ class GenerateValidateGifCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
+        outputs = outputs
+        batch = batch
+        
         if self.index in batch["indx"]:
             batch_index = (batch["indx"] == self.index).nonzero(as_tuple=True)[0].item()
             frame_tensor = outputs["output"][batch_index]
@@ -268,6 +271,7 @@ class LogTrainImageCallback(L.Callback):
                                 dataloader_idx: int = 0):
         diff = outputs["diff"]
         output = outputs["output"]
+
         ssim = sum([structural_similarity_index_measure(output[:,:,i,...], diff[:,:,i,...])  for i in output.shape[2]]) / output.shape[2]
         
         metrics = {
@@ -282,7 +286,7 @@ class LogTrainImageCallback(L.Callback):
         )
 
 
-class LogTrainBinaryExtCallback(L.Callback):
+class LogBinaryExtCallback(L.Callback):
     def on_validation_batch_end(self,
                                 trainer: L.Trainer,
                                 pl_module: L.LightningModule,
@@ -290,23 +294,7 @@ class LogTrainBinaryExtCallback(L.Callback):
                                 batch: Tuple[torch.Tensor],
                                 batch_idx: int,
                                 dataloader_idx: int = 0):
-        annotations = batch["anno"]
-        output = outputs["output"]
-
-        metrics = {
-            "accuracy": binary_accuracy(output, annotations),
-            "jaccard_index": binary_jaccard_index(output, annotations),
-            "precision": binary_precision(output, annotations),
-            "recall": binary_recall(output, annotations),
-            "ssim": structural_similarity_index_measure(output, annotations),
-        }
-
-        pl_module.log_dict(
-            dictionary=metrics,
-            logger=True,
-            prog_bar=False,
-            sync_dist=True
-        )
+        self.calc_and_log(pl_module, outputs, batch)
     
     def on_test_batch_end(self,
                         trainer: L.Trainer,
@@ -315,6 +303,13 @@ class LogTrainBinaryExtCallback(L.Callback):
                         batch: Tuple[torch.Tensor],
                         batch_idx: int,
                         dataloader_idx: int = 0):
+        self.calc_and_log(pl_module, outputs, batch)
+        
+        
+    def calc_and_log(self,
+                     pl_module: L.LightningModule,
+                     outputs: torch.Tensor,
+                     batch: Tuple[torch.Tensor]):
         annotations = batch["anno"]
         output = outputs["output"]
 
@@ -344,6 +339,7 @@ class LogTrainMulticlassExtCallback(L.Callback):
                                 dataloader_idx: int = 0):
         annotations = batch["anno"]
         output = outputs["output"]
+
         preds = torch.argmax(output, dim=1, keepdim=True).to(torch.float32)
         target = torch.argmax(annotations, dim=1, keepdim=True).to(torch.float32)
 
@@ -373,6 +369,7 @@ class LogTrainRegressionExtCallback(L.Callback):
                                 dataloader_idx: int = 0):
         annotations = batch["anno"]
         output = outputs["output"]
+
         preds = torch.argmax(output, dim=1)
         target = torch.argmax(annotations, dim=1)
 
@@ -406,7 +403,7 @@ class LogAvgMagGradientCallback(L.Callback):
 
             for name, param in pl_module.named_parameters():
                 if param.requires_grad and param.grad is not None:
-                    mag = torch.abs(param.grad.clone().detach().norm()).item() 
+                    mag = torch.abs(param.grad.clone().norm()).item() 
                     for layer in self.layers:
                         if layer in name:
                             mags[f"{layer}_avgmag"].append(mag)
@@ -424,6 +421,7 @@ class LogAvgMagGradientCallback(L.Callback):
                 sync_dist=True
             )
 
+
 class LogTestCallback(L.Callback):
     def on_test_batch_end(self,
                           trainer: L.Trainer,
@@ -437,12 +435,13 @@ class LogTestCallback(L.Callback):
         indices = batch["indx"]
         loss = outputs["loss"]
         output = outputs["output"]
+        
         if 'time_indx' in batch:
             time_indices = batch["time_indx"]
 
         pl_module.log(
             name="test_loss",
-            value=loss.detach(),
+            value=loss,
             logger=True,
             prog_bar=False,
         )
@@ -465,11 +464,11 @@ class LogTestCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i].cpu()
-            anno = annotations[i].cpu()
-            pred = output[i].cpu()
+            chip = chips[i]
+            anno = annotations[i]
+            pred = output[i]
             if 'time_indx' in batch:
-                time_indx = time_indices[i].cpu()
+                time_indx = time_indices[i]
                 index_name += f"-{time_indx}"
                 
 
@@ -481,7 +480,7 @@ class LogTestCallback(L.Callback):
             for c in range(anno.shape[0]):
                 image = anno[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
-                    image_data=image,
+                    image_data=image.cpu(),
                     name=f"{index_name}_c{c}_anno.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
@@ -491,7 +490,7 @@ class LogTestCallback(L.Callback):
             for c in range(pred.shape[0]):
                 image = pred[c].unsqueeze(-1)
                 pl_module.logger.experiment.log_image(
-                    image_data=image.to(torch.float32),
+                    image_data=image.to(torch.float32).cpu(),
                     name=f"{index_name}_c{c}_pred.png",
                     image_scale=2.0,
                     image_minmax=(0, 1)
@@ -514,7 +513,7 @@ class LogTestReconstructCallback(L.Callback):
 
         pl_module.log(
             name="test_loss",
-            value=loss.detach(),
+            value=loss,
             logger=True,
             prog_bar=False,
         )
@@ -533,9 +532,9 @@ class LogTestReconstructCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i].cpu()
-            pred = output[i].cpu()
-            diff = diffs[i].cpu()
+            chip = chips[i]
+            pred = output[i]
+            diff = diffs[i]
 
             # save rgb and ir band separately
             log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
@@ -570,9 +569,9 @@ class SaveTestCallback(L.Callback):
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i].cpu()
-            anno = annotations[i].cpu()
-            pred = output[i].cpu()
+            chip = chips[i]
+            anno = annotations[i]
+            pred = output[i]
 
             # save rgb and ir bands separately
             save_rgb_ir_tensor(chip, index_name, PREDICTION_PATH)
@@ -598,6 +597,11 @@ class SaveTestCallback(L.Callback):
 
 
 class SaveEmbedCallback(L.Callback):
+    def __init__(self, suffix, **kwargs):
+        super().__init__(**kwargs)
+        self.suffix = "_" + suffix if suffix else ""
+
+    
     def on_predict_batch_end(self,
                              trainer: L.Trainer,
                              pl_module: L.LightningModule,
@@ -609,19 +613,22 @@ class SaveEmbedCallback(L.Callback):
         times = batch["time_indx"]
         output = outputs["output"]
         annos = batch["anno"]
+
         save_path = os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX)
         if not os.path.exists(save_path):
-            os.mkdir(save_path)
+            os.makedirs(save_path)
 
         for i in range(output.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             time = times[i]
             pred = output[i]
             anno = annos[i]
-            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_embed_wcls.pt")
-            anno_path = os.path.join(save_path, f"{index_name}_t{time:02d}_sumpool_anno.pt")
+            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_embed{self.suffix}.pt")
             torch.save(pred, embed_path)
-            torch.save(anno, anno_path)
+            
+            if anno.numel() > 0:
+                anno_path = os.path.join(save_path, f"{index_name}_t{time:02d}_anno{self.suffix}.pt")
+                torch.save(anno, anno_path)
             
     def on_test_batch_end(self, *args, **kwargs):
         self.on_predict_batch_end(*args, **kwargs)
@@ -631,7 +638,7 @@ class PackageCallback(L.Callback):
     def tensor_tif_upload(self,
                           pl_module: L.LightningModule):
         tensors_dir_path = tensors_to_tifs(
-            PREDICTION_PATH,
+            os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX),
             EXPERIMENT_FULL_NAME,
             META_DATA_PATH,
             SAMPLER_CONFIG["num_workers"]

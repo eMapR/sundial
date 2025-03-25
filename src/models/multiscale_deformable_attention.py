@@ -6,7 +6,7 @@ from torch import nn
 from torch.autograd.function import Function
 from typing import Optional
 
-from pipeline.settings import LOG_PATH, METHOD
+from constants import LOG_PATH, METHOD
 from pipeline.logging import get_logger
 
 

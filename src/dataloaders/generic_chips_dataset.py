@@ -13,8 +13,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
 from typing import Literal, Optional
 
-from pipeline.config_utils import load_yaml
-from pipeline.settings import (
+from config_utils import load_yaml
+from constants import (
     CHIP_DATA_PATH,
     ANNO_DATA_PATH,
     STAT_DATA_PATH,
@@ -24,8 +24,8 @@ from pipeline.settings import (
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
 )
+from constants import IDX_NAME_ZFILL
 from pipeline.utils import clip_xy_xarray
-from pipeline.settings import IDX_NAME_ZFILL
 from settings import DATALOADER_CONFIG
 from utils import dynamic_import
 
@@ -81,33 +81,34 @@ class GenericChipsDataset(Dataset):
             img_indx, time_indx = self.samples[sample_indx]
             img_indx = int(img_indx)
             time_indx = int(time_indx)
-            slicer = slice(time_indx-self.time_step, time_indx+1)
+            time_slicer = slice(time_indx-self.time_step, time_indx+1)
         else:
             img_indx = self.samples[sample_indx]
             time_indx = None
-            slicer = slice(-(self.time_step+1), None)  if self.time_step else slice(None)
+            time_slicer = slice(-(self.time_step+1), None) if self.time_step else slice(None)
         if isinstance(img_indx, str):
             img_indx = int(re.search(r'.*(\d+).*', img_indx).group(1))
 
         # parsing img name for index
         data["indx"] = img_indx
         data["time_indx"] = time_indx
-        img_name = str(img_indx).zfill(IDX_NAME_ZFILL)
 
-        # loading chip and slicing time if necessary
-        chip = self.chip_loader(img_name, slicer)
+        # loading chip and slicing/unsqueezing time if necessary
+        chip = self.chip_loader(img_indx, time_slicer)
+        if len(chip.shape) == 3:
+            chip = chip.unsqueeze(1)
         if self.chip_static_transforms is not None:
             chip = self.chip_static_transforms(chip)
         
         # including annotations if anno_data_path is set
         if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
             anno_indx = None if time_indx is None else time_indx-self.time_step
-            anno = self.anno_loader(img_name, anno_indx)
+            anno = self.anno_loader(img_indx, anno_indx)
             if self.anno_static_transforms is not None:
                 anno = self.anno_static_transforms(anno)
         else:
             anno = torch.empty(0)
-            
+
         if self.dynamic_transforms.empty:
             data["chip"] = chip
             data["anno"] = anno
@@ -138,23 +139,21 @@ class GenericChipsDataset(Dataset):
     def _init_loaders(self):
         match self.file_type:
             case "zarr":
-                self.chips = xr.open_zarr(self.chip_data_path)
-                self.chip_loader = lambda name, slicer: self._zarr_loader(self.chips, name, slicer)
-                if self.anno_data_path is not None:
-                    self.annos = xr.open_zarr(self.anno_data_path)
-                    self.anno_loader = lambda name, slicer: self._zarr_loader(self.annos, name, slicer)
+                self.chips = xr.open_dataarray(self.chip_data_path, engine='zarr', cache=False)
+                self.chip_loader = lambda name, time_slicer: self._zarr_loader(self.chips, name, time_slicer)
+                if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
+                    self.annos = xr.open_dataarray(self.anno_data_path, engine='zarr', cache=False)
+                    self.anno_loader = lambda name, time_slicer: self._zarr_loader(self.annos, name, time_slicer)
             case "tif":
                 self.chip_loader = lambda name: self._tif_loader(self.chip_data_path, name, self.split_tif)
-                if self.anno_data_path is not None:
+                if self.anno_data_path is not None and os.path.exists(self.anno_data_path):
                     self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
-    def _zarr_loader(self, xarr: xr.Dataset, name: int, slicer: slice | int):
-        chip = xarr[name]
+    def _zarr_loader(self, xarr: xr.DataArray, name: int, time_slicer: slice | int):
+        chip = xarr.sel(sample=name, datetime=time_slicer)
         if self.chip_size < max(chip["y"].size, chip["x"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
-        if slicer is not None:
-            chip = chip.isel(datetime=slicer)
-        chip = torch.tensor(chip.values.copy(), dtype=torch.float)
+        chip = torch.tensor(chip.compute().values, dtype=torch.float)
         return chip
 
     def _tif_loader(self, data_path: str, name: int, split_tif: int | None):
@@ -163,7 +162,7 @@ class GenericChipsDataset(Dataset):
             if self.chip_size < max(chip["y"].size, chip["x"].size):
                 chip = clip_xy_xarray(chip, self.chip_size)
                 
-            chip = torch.tensor(chip.values.copy(), dtype=torch.float)
+            chip = torch.tensor(chip.values, dtype=torch.float)
             if split_tif:
                 chip = chip.reshape(-1, self.split_tif, chip.shape[-2], chip.shape[-1])
 
@@ -279,6 +278,7 @@ class GenericChipsDataModule(L.LightningDataModule):
         self.dataloader_config = {
             "batch_size": self.batch_size,
             "num_workers": self.num_workers,
+            "persistent_workers": True,
             "pin_memory": True,
             "drop_last": False,
         }
@@ -326,20 +326,16 @@ class GenericChipsDataModule(L.LightningDataModule):
                         "static_transform_config": predict_static_transform_config})
 
     def train_dataloader(self):
-        return DataLoader(
-            **self.dataloader_config | {"dataset": self.training_ds, "shuffle": True, "drop_last": True})
+        return DataLoader(**self.dataloader_config | {"dataset": self.training_ds, "shuffle": True, "drop_last": True})
 
     def val_dataloader(self):
-        return DataLoader(
-            **self.dataloader_config | {"dataset": self.validate_ds})
+        return DataLoader(**self.dataloader_config | {"dataset": self.validate_ds})
 
     def test_dataloader(self):
-        return DataLoader(
-            **self.dataloader_config | {"dataset": self.test_ds})
+        return DataLoader(**self.dataloader_config | {"dataset": self.test_ds})
 
     def predict_dataloader(self):
-        return DataLoader(
-            **self.dataloader_config | {"dataset": self.predict_ds})
+        return DataLoader(**self.dataloader_config | {"dataset": self.predict_ds})
         
     def _filter_configs(self, configs, label, filters):
         return [c for c in configs if (set(filters) & set(c.get(label, ["all"])))]

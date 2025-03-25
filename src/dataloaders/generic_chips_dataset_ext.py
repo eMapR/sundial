@@ -74,7 +74,7 @@ class YearDayFromTimeIndx():
         self.month_day = month_day
     
     def get_item(self, img_idx: int, time_indx: int):
-        return [(self.year, get_day_of_year(date, self.year)) for date in self.month_day]
+        return [(self.year + time_indx, get_day_of_year(self.month_day, self.year))]
     
 
 class MultiYearDayFromTimeIndx():
@@ -94,7 +94,6 @@ class MultiYearDayFromTimeIndx():
     def get_item(self, img_idx: int, time_indx: int):
         start = time_indx - self.time_step
         years = [self.start_year + start + y for y in range(self.time_step+1)]
-        
         if self.flip:
             years.reverse()
         

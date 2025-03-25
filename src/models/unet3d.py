@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from models.base import SundialPLBase
 from models.utils import DoubleConv3d
 
+
 class Conv3dBlock(nn.Module):
     def __init__(self,
                 in_channels,
@@ -81,8 +82,6 @@ class UNet3D(SundialPLBase):
         factor = 2 if bilinear else 1
         self.down4 = Down3d(512, 1024 // factor)
         
-        self.midc = DoubleConv3d(1024, 1024, kernel_size=(2,3,3), stride=(2,1,1), padding=(1,1,1))
-        
         self.up1 = Up3d(1024, 512 // factor, bilinear=bilinear)
         self.up2 = Up3d(512, 256 // factor, bilinear=bilinear)
         self.up3 = Up3d(256, 128 // factor, bilinear=bilinear)
@@ -97,10 +96,11 @@ class UNet3D(SundialPLBase):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-        x5 = self.midc(x5)
+
         if self.embed:
             embed = x5.flatten(2).transpose(1,2)
             return embed
+
         x = self.up1(x5, x4)
         x = self.up2(x, x3)
         x = self.up3(x, x2)

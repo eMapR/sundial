@@ -15,6 +15,9 @@ from shapely.geometry import Polygon
 from typing import Literal, Optional, Tuple
 
 
+from constants import APPEND_DIM, CLASS_LABEL, DATETIME_LABEL
+
+
 def clip_xy_xarray(xarr: xr.DataArray, 
                    pixel_edge_size: int) -> xr.DataArray:
     x_diff = xarr["x"].size - pixel_edge_size
@@ -70,25 +73,13 @@ def get_utm_zone(point_coords: list[tuple[float]]) -> int:
     return epsg_code
 
 
-def get_xarr_stats(data: xr.Dataset) -> dict:
-    sums = data.sum(dim=data.dims).to_array()
-    min_idx = sums.argmin().values
-    max_idx = sums.argmax().values
-
-    stats = {
-        "mean": float(sums.mean().values),
-        "std": float(sums.std().values),
-        "min": float(sums[min_idx].values),
-        "max": float(sums[max_idx].values),
-        "count": len(data.variables)
-    }
-
-    return stats
-
-
-def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
+def get_class_weights(data: xr.DataArray) -> tuple[list[float], list[float]]:
     # TODO: fix dataset attribute error in annotator
-    class_totals = np.array([data[v].attrs["class_sums"] for v in data.data_vars]).sum(axis=(0,1))
+    dims=[APPEND_DIM, "y", "x"]
+    if DATETIME_LABEL in data.dims:
+        dims.append(DATETIME_LABEL)
+    sums = data.sum(dim=dims)
+    class_totals = np.array(sums.values)
     class_probs = class_totals / class_totals.sum()
     if class_probs.sum() > 0:
         weights = 1 / class_probs
@@ -97,12 +88,9 @@ def get_class_weights(data: xr.Dataset) -> tuple[list[float], list[float]]:
     return {"totals": class_totals.tolist(), "weights": weights.tolist()}
 
 
-
-def get_band_stats(data: xr.Dataset,
-                   datetime_label: str) -> tuple[list[float], list[float]]:
-    data = data.to_dataarray()
-    means = data.mean(dim=["variable", datetime_label, "y", "x"])
-    stds = data.std(dim=["variable", datetime_label, "y", "x"])
+def get_band_stats(data: xr.DataArray) -> tuple[list[float], list[float]]:
+    means = data.mean(dim=[APPEND_DIM, DATETIME_LABEL, "y", "x"])
+    stds = data.std(dim=[APPEND_DIM, DATETIME_LABEL, "y", "x"])
     return {"band_means": means.values.tolist(), "band_stds": stds.values.tolist()}
 
 
@@ -150,11 +138,12 @@ def rasterizer(polygons: gpd.GeoSeries,
 
 def covering_grid(geo_dataframe: gpd.GeoDataFrame,
                     meter_edge_size: int,
-                    datetime_label: str = "datetime"):
+                    overlap: int = 0,
+                    year_offset: int = 0):
     xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
     grid_cells = []
-    for x0 in np.arange(xmin, xmax+meter_edge_size, meter_edge_size):
-        for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size):
+    for x0 in np.arange(xmin, xmax+meter_edge_size,  meter_edge_size * 1-overlap):
+        for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size * 1-overlap):
             x1 = x0 - meter_edge_size
             y1 = y0 + meter_edge_size
             new_cell = shapely.geometry.box(x0, y0, x1, y1)
@@ -163,5 +152,5 @@ def covering_grid(geo_dataframe: gpd.GeoDataFrame,
             else:
                 pass
     gdf = gpd.GeoDataFrame(geometry=grid_cells, crs=geo_dataframe.crs)
-    gdf.loc[:, datetime_label] = max(geo_dataframe[datetime_label].unique())
+    gdf.loc[:, DATETIME_LABEL] = max(geo_dataframe[DATETIME_LABEL].unique()) + year_offset
     return gdf
