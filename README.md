@@ -153,9 +153,9 @@ While the framework for deep learning is build on [Pytorch Lightning](https://li
 
 ## Example Samples Directory Structure
 project-root/\
-├── chip_data.zarr/\
+├── chip_data/\
 │   └── ...\
-├── anno_data.zarr/\
+├── anno_data/\
 │   └── ...\
 ├── gpop_data/ # Shapefile containing original annotation polygons and other information post filter (eg date & classes)\
 │   └── ...\

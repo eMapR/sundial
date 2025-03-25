@@ -17,8 +17,8 @@ ifndef SUNDIAL_PROCESSING
 SUNDIAL_PROCESSING := hpc
 endif
 
-ifndef SUNDIAL_NODES
-SUNDIAL_NODES :=
+ifndef SUNDIAL_NODELIST
+SUNDIAL_NODELIST :=
 endif
 
 ifndef SUNDIAL_PACKAGE_FORMAT
@@ -91,7 +91,7 @@ default:
 	echo "        SUNDIAL_EXPERIMENT_SUFFIX:   Experiment suffix used only for logging."
 	echo "        SUNDIAL_ENV_NAME:            Sundial environment name. Default: 'sundial'"
 	echo "        SUNDIAL_PROCESSING:          Sundial processing method. Default: 'hpc'"
-	echo "        SUNDIAL_NODES:               Node within hpc to run job. Default: any node"
+	echo "        SUNDIAL_NODELIST:               Node within hpc to run job. Default: any node"
 	echo "        SUNDIAL_GPU_PARTITION:       Partition within hpc to run gpu based jobs."
 	echo "        SUNDIAL_CPU_PARTITION:       Partition within hpc to run cpu based jobs."
 	echo "        SUNDIAL_PACKAGE_FORMAT:      Format to package predictions. Default: 'tar'"
@@ -99,6 +99,7 @@ default:
 
 setup_env:
 	echo "Setting up directories for $(SUNDIAL_BASE_PATH) and conda environment "$(SUNDIAL_ENV_NAME)".";
+	mkdir -p $(SUNDIAL_BASE_PATH)/data;
 	mkdir -p $(SUNDIAL_BASE_PATH)/logs;
 	mkdir -p $(SUNDIAL_BASE_PATH)/samples;
 	mkdir -p $(SUNDIAL_BASE_PATH)/checkpoints;
@@ -147,7 +148,9 @@ vars: _experiment_name_check
 	echo "SUNDIAL_EXPERIMENT_FULL_NAME: $(SUNDIAL_EXPERIMENT_FULL_NAME)";
 	echo "SUNDIAL_ENV_NAME: $(SUNDIAL_ENV_NAME)";
 	echo "SUNDIAL_PROCESSING: $(SUNDIAL_PROCESSING)";
-	echo "SUNDIAL_NODES: $(SUNDIAL_NODES)";
+	echo "SUNDIAL_NODELIST: $(SUNDIAL_NODELIST)";
+	echo "SUNDIAL_NUM_NODES: $(SUNDIAL_NUM_NODES)";
+	echo "SUNDIAL_MEM: $(SUNDIAL_MEM)";
 	echo "SUNDIAL_GPU_PARTITION: $(SUNDIAL_GPU_PARTITION)";
 	echo "SUNDIAL_CPU_PARTITION: $(SUNDIAL_CPU_PARTITION)";
 	echo "SUNDIAL_PACKAGE_FORMAT: $(SUNDIAL_PACKAGE_FORMAT)";
@@ -338,10 +341,29 @@ _package:
 _run: _experiment_name_check
 	if [[ "$(SUNDIAL_PROCESSING)" == hpc ]]; then \
 		job_name=$(SUNDIAL_METHOD)_$(SUNDIAL_EXPERIMENT_FULL_NAME); \
-		if [[ -z "$(SUNDIAL_NODES)" ]]; then \
-			nodes=$(shell sinfo -h -p $(SUNDIAL_PARTITION) -o "%N"); \
+		if [[ -z "$(SUNDIAL_NODELIST)" ]]; then \
+			nodelist=$(shell sinfo -h -p $(SUNDIAL_PARTITION) -o "%N"); \
 		else \
-			nodes=$(SUNDIAL_NODES); \
+			nodelist=$(SUNDIAL_NODELIST); \
+		fi; \
+		if [[ -z "$(SUNDIAL_NUM_NODES)" ]]; then \
+			num_nodes=1; \
+		else \
+			num_nodes=$(SUNDIAL_NUM_NODES); \
+		fi; \
+		if [[ "$(SUNDIAL_NUM_NODES)" > 1 ]]; then \
+			NCCL_P2P_DISABLE=1; \
+			NCCL_DEBUG=INFO; \
+		fi; \
+		if [[ -z "$(SUNDIAL_MEM)" ]]; then \
+			mem=128G; \
+		else \
+			mem=$(SUNDIAL_MEM); \
+		fi; \
+		if [[ "$(SUNDIAL_METHOD)" != download ]]; then \
+			cpus=42; \
+		else \
+			cpus=16; \
 		fi; \
 		echo "Running on HPC..."; \
 		sbatch \
@@ -350,9 +372,12 @@ _run: _experiment_name_check
 			--error=$(SUNDIAL_BASE_PATH)/logs/$(SUNDIAL_EXPERIMENT_BASE_NAME)/$(SUNDIAL_METHOD).e \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--partition=$(SUNDIAL_PARTITION) \
-			--nodelist=$$nodes \
+			--nodelist=$$nodelist \
+			--nodes=$$num_nodes \
+			--mem=$$mem \
+			--cpus-per-task=$$cpus \
 			--export=ALL \
-			$(SUNDIAL_BASE_PATH)/slurm/$(SUNDIAL_METHOD).slurm; \
+			$(SUNDIAL_BASE_PATH)/sundial.slurm; \
 	else \
 		echo "Running on local machine..."; \
 		python $(SUNDIAL_BASE_PATH)/src/runner.py; \
