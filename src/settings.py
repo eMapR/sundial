@@ -73,7 +73,7 @@ if __name__ == "__main__":
     run_config = {
         "model": None,
         "data": {
-            "class_path": "GenericChipsDataModule",
+            "class_path": "dataloaders.generic_chips_dataset.GenericChipsDataModule",
             "init_args": DATALOADER_CONFIG
         }
     }

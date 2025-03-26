@@ -360,7 +360,7 @@ _run: _experiment_name_check
 		else \
 			mem=$(SUNDIAL_MEM); \
 		fi; \
-		if [[ "$(SUNDIAL_METHOD)" != download ]]; then \
+		if [[ "$(SUNDIAL_METHOD)" == download ]]; then \
 			cpus=42; \
 		else \
 			cpus=16; \

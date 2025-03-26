@@ -1,20 +1,14 @@
 trainer:
     callbacks:
       - class_path: callbacks.LogTrainCallback
-      - class_path: callbacks.LogTrainBinaryExtCallback
-    #   - class_path: callbacks.LogAvgMagGradientCallback
-    #     init_args:
-    #         # layers: ["patch_embed", "prithvi.model.blocks", "prithvi.norm", "probe_1", "probe_2"]
-    #         # layers: ["patch_embed", "prithvi.model.blocks", "prithvi.norm", "upsample", "fcn"]
-    #         layers: ["patch_embed", "prithvi.model.blocks", "prithvi.norm", "upscale_blocks", "fcn"]
-    #         freq: 16
+      - class_path: callbacks.LogBinaryExtCallback
       - class_path: StochasticWeightAveraging
         init_args:
             swa_lrs: 0.0001
             device: null
     max_epochs: 128
     strategy: auto
-    devices: 1
+    devices: [1]
     num_nodes: 1
     accumulate_grad_batches: 1
     precision: bf16-mixed

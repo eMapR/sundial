@@ -5,7 +5,7 @@ datetime_column: year
 file_type: ZARR
 gee_workers: 42
 ee_image_factory: lt_medoid_image_factory
-io_limit: 32
+io_limit: 8
 indexer: time_window_split_class_filter
 indexer_kwargs:
     time_range: [1, 25]
@@ -24,7 +24,7 @@ indexer_kwargs:
     ]
 method: covering_grid
 num_points: null
-num_workers: 32
+num_workers: 4
 overwrite: false
 parser_kwargs:
     look_range: 24

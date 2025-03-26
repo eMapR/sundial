@@ -66,12 +66,13 @@ class OutConv3d(nn.Module):
 
 
 class UNet3D(SundialPLBase):
-    def __init__(self, n_channels, n_classes, bilinear=False, kernel_size=(1,3,3), stride=1, padding=(0,1,1), embed=False):
+    def __init__(self, n_channels, n_classes, num_frames=3, bilinear=False, kernel_size=(1,3,3), stride=1, padding=(0,1,1), embed=False):
         super().__init__()
 
         self.num_classes = n_classes
         self.n_channels = n_channels
         self.n_classes = n_classes
+        self.num_frames = num_frames
         self.bilinear = bilinear
         self.embed = embed
 
@@ -86,7 +87,7 @@ class UNet3D(SundialPLBase):
         self.up2 = Up3d(512, 256 // factor, bilinear=bilinear)
         self.up3 = Up3d(256, 128 // factor, bilinear=bilinear)
         self.up4 = Up3d(128, 64, bilinear=bilinear)
-        self.outc = OutConv3d(64, n_classes)
+        self.outc = OutConv3d(64, n_classes, kernel_size=(num_frames, 1, 1))
 
     def forward(self, x):
         x = x["chip"]

@@ -1,0 +1,43 @@
+model:
+    class_path: models.prithvi.PrithviMosaicEmbedding
+    init_args:
+        prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+        # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+        # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M.pt'
+        # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M_TL.pt'
+        # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0107_val_loss=0.333_adapter_dice_unfrozen.ckpt'
+        # prithvi_ckpt_path: '/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt'
+        # prithvi_ckpt_path: null
+        prithvi_params:
+            img_size: 224
+            patch_size: [1, 16, 16]
+            # patch_size: [1, 14, 14]
+            in_chans: 6
+            num_frames: 1
+            embed_dim: 1024
+            # embed_dim: 1280
+            depth: 24
+            # depth: 32
+            encoder_only: true
+            coords_encoding: []
+            # coords_encoding:
+            #     - time
+            #     - location
+        stride: 224
+        freeze_encoder: true
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 1 # this needs to stay 1 unfortunately or else you'll blow up the GPU
+        num_workers: 1
+        # chip_size: 256
+        chip_size: 224
+        time_step: 0
+        extension_config:
+            load_meta_data: true
+            # extensions:
+            #     - class_path: dataloaders.generic_chips_dataset_ext.YearDayFromTimeIndx
+            #       init_args:
+            #         year: 2015
+            #         month_day: 08-15
+            #     - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta

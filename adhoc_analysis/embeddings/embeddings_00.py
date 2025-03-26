@@ -13,12 +13,10 @@ TIME_STEP = 1
 EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
 EXPERIMENT_SUFFIX = os.getenv("EXPERIMENT_SUFFIX")
 BASE_PATH = os.getenv("BASE_PATH")
-if not os.path.exists(BASE_PATH):
-    os.mkdir(BASE_PATH)
+EXPERIMENT_PATH = os.path.join(BASE_PATH, EXPERIMENT_SUFFIX)
 
-
-def check_class_sums(chip_data: xr.Dataset,
-                     anno_data: xr.Dataset,
+def check_class_sums(chip_data: xr.DataArray,
+                     anno_data: xr.DataArray,
                      samples,
                      unfold,
                      sumpool,):
@@ -30,58 +28,50 @@ def check_class_sums(chip_data: xr.Dataset,
     class_sums_pool = []
     
     for sample in samples:
-        sample_name = str(int(sample[0])).zfill(8)
         samp_idx = int(sample[1])
         anno_idx = samp_idx - TIME_STEP
-        
-        class_sums = np.array(anno_data[sample_name].attrs["class_sums"])
-        class_sums = class_sums[anno_idx]
-        
-        
-        if class_sums[CLASS_IDX].sum() > 0:
-            anno = anno_data[sample_name].isel({'datetime': anno_idx, 'class': CLASS_IDX}).values
-            harv = sumpool(torch.tensor(anno).unsqueeze(0)).flatten()
-            condition = (harv > 0)
-            ann_indices = torch.where(condition)[0]
-            class_sums_pool.append(harv[ann_indices])
 
-            chip = chip_data[sample_name].isel({'datetime': slice(samp_idx-TIME_STEP, samp_idx+1)}).values
-            
-            nir = chip[3, :, :, :]
-            red = chip[2, :, :, :]
-            ndvi = torch.tensor((nir - red) / (nir + red)).unsqueeze(1)
-            ndvi = unfold(ndvi)
-            
-            chip = torch.tensor(chip).permute(1, 0, 2, 3)
-            band = unfold(chip)
+        anno = anno_data.sel(sample=sample[0]).isel({'datetime': anno_idx, 'class': CLASS_IDX}).values
+        harv = sumpool(torch.tensor(anno).unsqueeze(0)).flatten()
+        condition = (harv > 0)
+        ann_indices = torch.where(condition)[0]
+        class_sums_pool.append(harv[ann_indices])
+        chip = chip_data.sel(sample=sample[0]).isel({'datetime': slice(samp_idx-TIME_STEP, samp_idx+1)}).values
+        
+        nir = chip[3, :, :, :]
+        red = chip[2, :, :, :]
+        
+        # adding episilon value to avoid dividing by zero at locations with masked pixels
+        e = 1e-6
+        ndvi = torch.tensor(((nir - red) + e) / ((nir + red) + e)).unsqueeze(1)
+        ndvi = unfold(ndvi)
+        
+        chip = torch.tensor(chip).permute(1, 0, 2, 3)
+        band = unfold(chip)
 
-            selected_ndvi_t0.append(ndvi[0, :, ann_indices])
-            selected_ndvi_t1.append(ndvi[1, :, ann_indices])
-            selected_band_t0.append(band[0, :, ann_indices])
-            selected_band_t1.append(band[1, :, ann_indices])
-
+        selected_ndvi_t0.append(ndvi[0, :, ann_indices])
+        selected_ndvi_t1.append(ndvi[1, :, ann_indices])
+        selected_band_t0.append(band[0, :, ann_indices])
+        selected_band_t1.append(band[1, :, ann_indices])
+        
     class_sums_pool = torch.concat(class_sums_pool, dim=0)
     selected_ndvi_t0 = torch.concat(selected_ndvi_t0, dim=1).transpose(0,1)
     selected_ndvi_t1 = torch.concat(selected_ndvi_t1, dim=1).transpose(0,1)
     selected_band_t0 = torch.concat(selected_band_t0, dim=1).transpose(0,1)
     selected_band_t1 = torch.concat(selected_band_t1, dim=1).transpose(0,1)
     
-    path = os.path.join(BASE_PATH, EXPERIMENT_SUFFIX)
-    if not os.path.exists(path):
-        os.mkdir(path)
-    torch.save(class_sums_pool, os.path.join(path, "glkn_ndvi_class_sums_pool.pt"))
-    
-    torch.save(selected_ndvi_t0, os.path.join(path, "glkn_ndvi_t0.pt"))
-    torch.save(selected_ndvi_t1, os.path.join(path, "glkn_ndvi_t1.pt"))
-    torch.save(selected_band_t0, os.path.join(path, "glkn_band_t0.pt"))
-    torch.save(selected_band_t1, os.path.join(path, "glkn_band_t1.pt"))
+    torch.save(class_sums_pool, os.path.join(EXPERIMENT_PATH, "class_sums_pool.pt"))
+    torch.save(selected_ndvi_t0, os.path.join(EXPERIMENT_PATH, "ndvi_t0.pt"))
+    torch.save(selected_ndvi_t1, os.path.join(EXPERIMENT_PATH, "ndvi_t1.pt"))
+    torch.save(selected_band_t0, os.path.join(EXPERIMENT_PATH, "band_t0.pt"))
+    torch.save(selected_band_t1, os.path.join(EXPERIMENT_PATH, "band_t1.pt"))
 
     return selected_ndvi_t0, selected_ndvi_t1, class_sums_pool
 
 if __name__ == "__main__":
 
-    chip_data = xr.open_zarr(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/chip_data.zarr")
-    anno_data = xr.open_zarr(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/anno_data.zarr")
+    chip_data = xr.open_dataarray(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/chip_data", engine="zarr")
+    anno_data = xr.open_dataarray(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/anno_data", engine="zarr")
     filtered = np.load(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/train_sample.npy")
     unfold = torch.nn.Unfold(kernel_size=(16,16), stride=(16,16))
     sumpool = torch.nn.AvgPool2d(16, divisor_override=1)
@@ -115,6 +105,6 @@ if __name__ == "__main__":
     plot_with_regression(axes[2], class_sums_pool[~combined_mask], ndvi_t1[~combined_mask]-ndvi_t0[~combined_mask], 'NDVI Difference')
     
     plt.tight_layout()
-    plt.savefig(f"/home/ceoas/truongmy/emapr/sundial/utils/glkn/{EXPERIMENT_SUFFIX}/ndvi.png", dpi=300)
+    plt.savefig(os.path.join(EXPERIMENT_PATH, "ndvi.png"), dpi=300)
 
     

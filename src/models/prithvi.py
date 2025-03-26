@@ -383,18 +383,21 @@ class PrithviMosaicEmbedding(SundialPLBase):
         
     def forward(self, data):
         B, C, T, H, W = data["chip"].shape
-        Hp, Wp = self.kernel_size
-        G = H - Hp + 1
 
         if not self.ablate:
-            data["chip"] = torch.functional.F.unfold(data["chip"].view(B, C*T, H, W), kernel_size=self.kernel_size, padding=0, stride=1)
-            data["chip"] = data["chip"].view(B, C*T, Hp, Wp, G*G).permute(0, 4, 1, 2, 3).flatten(0, 1).view(B*G*G, C, T, Hp, Wp)       
-            if "temporal_coords" in data:
-                data["temporal_coords"] = torch.tile(data["temporal_coords"], (G*G, 1, 1))
-            if "location_coords" in data:
-                data["location_coords"] = torch.tile(data["location_coords"], (G*G, 1))
+            if self.stride != H:
+                Hp, Wp = self.kernel_size
+                G = ((H - Hp) // self.stride) + 1
+                data["chip"] = torch.functional.F.unfold(data["chip"].view(B, C*T, H, W), kernel_size=self.kernel_size, padding=0, stride=self.stride)
+                data["chip"] = data["chip"].view(B, C*T, Hp, Wp, G*G).permute(0, 4, 1, 2, 3).flatten(0, 1).view(B*G*G, C, T, Hp, Wp)       
+                if "temporal_coords" in data:
+                    data["temporal_coords"] = torch.tile(data["temporal_coords"], (G*G, 1, 1))
+                if "location_coords" in data:
+                    data["location_coords"] = torch.tile(data["location_coords"], (G*G, 1))
 
-            data = self.prithvi(data)
-            data = data.view(B, G, G, self.D, T, self.E, self.E)
+                data = self.prithvi(data)
+                data = data.view(B, G, G, self.D, T, self.E, self.E)
+            else:
+                data = self.prithvi(data)
             
             return data

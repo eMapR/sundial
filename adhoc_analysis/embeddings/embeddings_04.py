@@ -16,37 +16,32 @@ TIME_STEP = 1
 EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
 BASE_PATH = os.getenv("BASE_PATH")
 if not os.path.exists(BASE_PATH):
-    os.mkdir(BASE_PATH)
+    os.makedirs(BASE_PATH)
 SAVE_PATH = os.path.join(BASE_PATH, "decision_trees")
 if not os.path.exists(SAVE_PATH):
-    os.mkdir(SAVE_PATH)
+    os.makedirs(SAVE_PATH)
 
 
-def load_sample(chip_data: xr.Dataset,
-                     anno_data: xr.Dataset,
-                     samples,
-                     reverse=False):
+def load_sample(chip_data: xr.DataArray,
+                anno_data: xr.DataArray,
+                samples,
+                reverse=False):
     x = []
     y = []
     count = 0
     
     for sample in samples:
-        sample_name = str(int(sample[0])).zfill(8)
         samp_idx = int(sample[1])
         anno_idx = samp_idx - TIME_STEP
         
-        class_sums = np.array(anno_data[sample_name].attrs["class_sums"])
-        class_sums = class_sums[anno_idx]
-        
-        if class_sums[CLASS_IDX].sum() > 0:
-            count += 1
-            chip = chip_data[sample_name].isel({'datetime': slice(samp_idx-TIME_STEP, samp_idx+1)}).values
-            anno = anno_data[sample_name].isel({'datetime': anno_idx, 'class': CLASS_IDX}).values
-            if reverse:
-                chip = np.flip(chip, axis=1)
-            C, T, H, W = chip.shape
-            x.append(chip.transpose(2, 3, 0, 1).reshape(-1, C * T))
-            y.append(anno.reshape(-1))
+        count += 1
+        chip = chip_data.sel(sample=sample[0]).isel({'datetime': slice(samp_idx-TIME_STEP, samp_idx+1)}).values
+        anno = anno_data.sel(sample=sample[0]).isel({'datetime': anno_idx, 'class': CLASS_IDX}).values
+        if reverse:
+            chip = np.flip(chip, axis=1)
+        C, T, H, W = chip.shape
+        x.append(chip.transpose(2, 3, 0, 1).reshape(-1, C * T))
+        y.append(anno.reshape(-1))
     
     x = np.concatenate(x, axis=0)
     y = np.concatenate(y, axis=0)
@@ -69,7 +64,7 @@ def run_random_forest(x, y):
 
 def pred_to_imgs(pred, samples, path):
     if not os.path.exists(path):
-        os.mkdir(path)
+        os.makedirs(path)
     for p, sample in zip(pred, samples):
         name = str(int(sample[0])).zfill(8)
         samp_idx = int(sample[1])
@@ -102,8 +97,8 @@ def predict_n_score(clf, data, labels, count, samples, clf_name, save=False):
 
 
 if __name__ == "__main__":
-    chip_data = xr.open_zarr(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/chip_data.zarr")
-    anno_data = xr.open_zarr(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/anno_data.zarr")
+    chip_data = xr.open_dataarray(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/chip_data", engine="zarr")
+    anno_data = xr.open_dataarray(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/anno_data", , engine="zarr")
     train = np.load(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/train_sample.npy")
     
     print("loading data")
@@ -112,8 +107,6 @@ if __name__ == "__main__":
                                 train)
     print("training rf")
     rf = run_random_forest(data, labels)
-    # with open(os.path.join(SAVE_PATH, 'random_forest_clf.pkl'), 'rb') as f:
-    #     rf = pickle.load(f)
     
     validate = np.load(f"/home/ceoas/truongmy/emapr/sundial/samples/{EXPERIMENT_NAME}/validate_sample.npy")
     data, labels, count = load_sample(chip_data,

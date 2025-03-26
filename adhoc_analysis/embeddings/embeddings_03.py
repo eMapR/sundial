@@ -7,7 +7,7 @@ from itertools import combinations
 
 BASE_PATH = os.getenv("BASE_PATH")
 if not os.path.exists(BASE_PATH):
-    os.mkdir(BASE_PATH)
+    os.makedirs(BASE_PATH)
 CKPT_COMPARE_PATH = os.path.join(BASE_PATH, "ckpt_compare")
 
 
@@ -20,7 +20,8 @@ def filter_layers(state_dict, layer_pattern="encoder.blocks"):
             else:
                 out[k] = v
     return out
-    
+
+  
 def compute_pairwise_distances(state_dicts):
     num_models = len(state_dicts)
     l2_distances = np.zeros((num_models, num_models))
@@ -53,6 +54,7 @@ def compute_pairwise_distances(state_dicts):
     
     return l2_distances, l1_distances, cosine_sims
 
+
 def plot_distance_matrix(distances, path, title, labels=None, rev=False):
     fig, ax = plt.subplots(figsize=(10, 8))
     cax = ax.matshow(distances, cmap="coolwarm_r" if rev else "coolwarm")
@@ -72,13 +74,20 @@ def plot_distance_matrix(distances, path, title, labels=None, rev=False):
     plt.title(title)
     plt.tight_layout(pad=2.0)  
     plt.savefig(path, dpi=300)
+    
 
 if __name__ == "__main__":
-    random = torch.load("/ceoas/emapr/sundial/checkpoints/all224_glkn/random.pt", map_location=torch.device('cpu'), weights_only=True)
-    frozen = torch.load("/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0124_val_loss=0.354_fcn_dice_frozen.ckpt", map_location=torch.device('cpu'), weights_only=False)["state_dict"]
-    unfrozen = torch.load("/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt", map_location=torch.device('cpu'), weights_only=False)["state_dict"]
-    nockpt = torch.load("/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0127_val_loss=0.414_fcn_dice_nockpt.ckpt", map_location=torch.device('cpu'), weights_only=False)["state_dict"]
-    state_dicts = {"No training": random, "Fine Tuned w/ Frozen Encoder": frozen, "Fine Tuned w/ Unfrozen Encoder": unfrozen, "Trained w/o 2.0 Checkpoint": nockpt}
+    # TODO: don't be lazy
+    checkpoints = [
+        {"state_dict": True, "name": "No training", "path": "/ceoas/emapr/sundial/checkpoints/all224_glkn/random.pt"},
+        {"state_dict": False, "name": "Fine Tuned w/ Frozen Encoder", "path": "/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0124_val_loss=0.354_fcn_dice_frozen.ckpt"},
+        {"state_dict": False, "name": "Fine Tuned w/ Unfrozen Encoder", "path": "/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt"},
+        {"state_dict": False, "name": "Trained w/o 2.0 Checkpoint", "path": "/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0127_val_loss=0.414_fcn_dice_nockpt.ckpt"},
+    ]
+
+    state_dicts = {p["name"]: torch.load(p["path"], map_location=torch.device('cpu'), weights_only=p["state_dict"]) \
+                    for p in checkpoints if p["state_dict"] \
+                    else p["name"]: torch.load(p["path"], map_location=torch.device('cpu'), weights_only=p["state_dict"])["state_dict"]}
 
     blocks = {}
     upscalers = {}

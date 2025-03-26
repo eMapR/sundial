@@ -1,0 +1,27 @@
+annotator: null
+annotator_kwargs: []
+buffer: 112
+datetime_column: year
+file_type: ZARR
+gee_workers: 42
+ee_image_factory: lt_medoid_image_factory
+io_limit: 8
+indexer: time_window
+indexer_kwargs:
+    time_range: [0, 7]
+    time_step: 1
+method: covering_grid
+num_points: null
+num_workers: 4
+overwrite: false
+parser_kwargs:
+    look_range: 6
+pixel_edge_size: 224
+postprocess_actions: ["band_mean_stdv"]
+preprocess_actions: []
+projection: EPSG:5070
+scale: 30
+squares_config:
+    year_offset: 1
+class_columns: []
+split_ratios: null

@@ -230,7 +230,7 @@ def tensors_to_tifs(prediction_path: str,
                     meta_data_path: str,
                     num_workers: int,
                     logger: Any) -> str:
-    output_path = os.path.join(data_path, f"{output_name}_temp")
+    output_path = os.path.join(data_path, output_name)
     if os.path.exists(output_path) and os.path.isdir(output_path):
         shutil.rmtree(output_path)
     os.makedirs(output_path)

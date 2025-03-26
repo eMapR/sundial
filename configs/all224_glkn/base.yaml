@@ -1,46 +1,323 @@
+# ##### Both encodings ####### time only 300m_tl_all_nrs_embed 300m_tl_all_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding:
+#                 - time
+#                 - location
+#         reshape: true
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         extension_config:
+#             load_meta_data: true
+#             extensions:
+#                 - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromTimeIndx
+#                   init_args:
+#                     start_year: 1994
+#                     time_step: 1
+#                     month_day: 08-15
+#                     flip: False
+#                 - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+# ##### location only ####### time only 300m_tl_notime_nrs_embed 300m_tl_notime_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding:
+#                 - location
+#         reshape: true
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         extension_config:
+#             load_meta_data: true
+#             extensions:
+#                 - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+
+# ####### time only 300m_tl_noloca_nrs_embed 300m_tl_noloca_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding:
+#                 - time
+#         reshape: true
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         extension_config:
+#             load_meta_data: true
+#             extensions:
+#                 - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromTimeIndx
+#                   init_args:
+#                     start_year: 1994
+#                     time_step: 1
+#                     month_day: 08-15
+#                     flip: False
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+
+# ##### No encodings 300m_tl_noboth_nrs_embed 300m_tl_noboth_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding: []
+#         reshape: true
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+
+# ##### No encodings no pretrain 300m_all_nrs_embed 300m_all_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding: []
+#         reshape: true
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+# ##### Finetuned no checkpoint 300m_fcn_dice_nockpt_nrs_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: /home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0127_val_loss=0.414_fcn_dice_nockpt.ckpt
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding: []
+#         reshape: false
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+##### Finetuned fcn_dice_unfrozen 300m_fcn_dice_unfrozen_nrs_embed
 model:
-    # class_path: models.prithvi.PrithviFCN
-    # init_args:
-    #     num_classes: 1
-    #     # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-    #     prithvi_ckpt_path: null
-    #     prithvi_params:
-    #         img_size: 224
-    #         patch_size: [1, 16, 16]
-    #         in_chans: 6
-    #         num_frames: 2
-    #         embed_dim: 1024
-    #         coords_encoding: []
-    #         encoder_only: true
-    #         # coords_encoding:
-    #         #     - time
-    #         #     - location
-    #     # freeze_encoder: true
-    #     freeze_encoder: false
-    #     embed: false
-    # class_path: models.unet3d.UNet3D
-    # init_args:
-    #     n_channels: 6
-    #     n_classes: 1
-    #     embed: true
-    class_path: models.prithvi.PrithviAdapter
+    class_path: models.prithvi.PrithviBackboneOnly
     init_args:
-        num_classes: 1
-        # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-        prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M_TL.pt'
-        # prithvi_ckpt_path: null
+        prithvi_ckpt_path: '/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt'
         prithvi_params:
             img_size: 224
             patch_size: [1, 16, 16]
             in_chans: 6
             num_frames: 2
-            embed_dim: 1280
-            depth: 32
+            embed_dim: 1024
             encoder_only: true
-            coords_encoding:
-                - time
-                - location
-        # freeze_encoder: true
+            coords_encoding: []
+        reshape: false
         freeze_encoder: true
 data:
     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
@@ -49,41 +326,148 @@ data:
         num_workers: 4
         chip_size: 224
         time_step: 1
-        # test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
-        # test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/validate_sample.npy
-        extension_config:
-            load_meta_data: true
-            extensions:
-                - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromTimeIndx
-                  init_args:
-                    start_year: 1994
-                    time_step: 1
-                    month_day: 08-15
-                    flip: False
-                - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
-        dynamic_transform_config:
-            transforms:
-                - class_path: transforms.RandomAffineAugmentation
-                  image_only: false
+        test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
         static_transform_config:
             transforms:
                 - class_path: transforms.SingleClass
                   init_args:
                         class_index: 6
                   targets: ["anno"]
-                # - class_path: torch.nn.AvgPool2d
-                #   init_args:
-                #       kernel_size: 16
-                #       divisor_override: 1
-                #   methods: ["test"]
-                #   targets: ["anno"]
-                # - class_path: transforms.Flatten
-                #   init_args:
-                #       start_dim: 1
-                #   methods: ["test"]
-                #   targets: ["anno"]
-                # - class_path: transforms.ReverseTime
-                #   init_args:
-                #       dim: 1
-                #   methods: ["test"]
-                #   targets: ["chip"]
+                - class_path: torch.nn.AvgPool2d
+                  init_args:
+                      kernel_size: 16
+                      divisor_override: 1
+                  methods: ["test"]
+                  targets: ["anno"]
+                - class_path: transforms.Flatten
+                  init_args:
+                      start_dim: 1
+                  methods: ["test"]
+                  targets: ["anno"]
+                - class_path: transforms.ReverseTime
+                  init_args:
+                      dim: 1
+                  methods: ["test"]
+                  targets: ["chip"]
+
+
+# ##### Training on the datasets
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#         prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M_TL.pt'
+#         # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M.pt'
+#         # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M_TL.pt'
+#         # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0107_val_loss=0.333_adapter_dice_unfrozen.ckpt'
+#         # prithvi_ckpt_path: '/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt'
+#         # prithvi_ckpt_path: null
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             # patch_size: [1, 14, 14]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             # embed_dim: 1280
+#             depth: 24
+#             # depth: 32
+#             encoder_only: true
+#             # coords_encoding: []
+#             coords_encoding:
+#                 # - time
+#                 - location
+#         reshape: false
+#         freeze_encoder: true
+#     # class_path: models.prithvi.PrithviFCN
+#     # init_args:
+#     #     num_classes: 1
+#     #     # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_ckpt_path: null
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 2
+#     #         embed_dim: 1024
+#     #         coords_encoding: []
+#     #         encoder_only: true
+#     #         # coords_encoding:
+#     #         #     - time
+#     #         #     - location
+#     #     # freeze_encoder: true
+#     #     freeze_encoder: false
+#     #     embed: false
+#     # class_path: models.unet3d.UNet3D
+#     # init_args:
+#     #     n_channels: 6
+#     #     n_classes: 1
+#         # embed: true
+#     # class_path: models.prithvi.PrithviAdapter
+#     # init_args:
+#     #     num_classes: 1
+#     #     # prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_600M_TL.pt'
+#     #     # prithvi_ckpt_path: null
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         # patch_size: [1, 16, 16]
+#     #         patch_size: [1, 14, 14]
+#     #         in_chans: 6
+#     #         num_frames: 2
+#     #         # embed_dim: 1024
+#     #         embed_dim: 1280
+#     #         # depth: 24
+#     #         depth: 32
+#     #         encoder_only: true
+#     #         # coords_encoding: []
+#     #         coords_encoding:
+#     #             - time
+#     #             - location
+#     #     # freeze_encoder: true
+#     #     freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         # test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/validate_sample.npy
+#         extension_config:
+#             load_meta_data: true
+#             extensions:
+#                 # - class_path: dataloaders.generic_chips_dataset_ext.MultiYearDayFromTimeIndx
+#                 #   init_args:
+#                 #     start_year: 1994
+#                 #     time_step: 1
+#                 #     month_day: 08-15
+#                 #     flip: False
+#                 - class_path: dataloaders.generic_chips_dataset_ext.LatLonFromMeta
+#         # dynamic_transform_config:
+#         #     transforms:
+#         #         - class_path: transforms.RandomAffineAugmentation
+#         #           image_only: false
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
