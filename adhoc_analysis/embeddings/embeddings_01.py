@@ -59,8 +59,10 @@ def load_embeddings_and_annotations(og_path, rev_path, embed_fstr, anno_fstr, in
             
         selected_t0.append(embed[:, 0, ann_indices_rev].permute(1,0))
         selected_t1.append(embed[:, 1, ann_indices_rev].permute(1,0))
-        selected_t0_rev.append(embed_rev[:, 0, ann_indices_rev].permute(1,0))
-        selected_t1_rev.append(embed_rev[:, 1, ann_indices_rev].permute(1,0))
+        
+        # index the time different since they are reversed
+        selected_t0_rev.append(embed_rev[:, 1, ann_indices_rev].permute(1,0))
+        selected_t1_rev.append(embed_rev[:, 0, ann_indices_rev].permute(1,0))
     
     return selected_t0, selected_t1, selected_t0_rev, selected_t1_rev, og_classes, rev_classes
 

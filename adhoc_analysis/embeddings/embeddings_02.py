@@ -58,7 +58,13 @@ def plot_elementwise_distances(A,
             slope, intercept = np.polyfit(x, y, 1)
             x_fit = np.linspace(min(x), max(x), 100)
             y_fit = slope * x_fit + intercept
-            ax.plot(x_fit, y_fit, color='red', linewidth=2, label=f'Regression (y={slope:.2f}x + {intercept:.2f})')
+            
+            y_pred = slope * x + intercept
+            ss_total = np.sum((y - np.mean(y))**2)
+            ss_residual = np.sum((y - y_pred)**2)
+            r_squared = 1 - (ss_residual / ss_total)
+            
+            ax.plot(x_fit, y_fit, color='red', linewidth=2, label=f'Regression: y={slope:.2f}x + {intercept:.2f}\n$R^2$ = {r_squared:.3f}')
             
         ax.set_title(title)
         ax.set_xlabel(x_label)
@@ -85,8 +91,6 @@ def tsne_separation(data,
                     labels,
                     labels_suffixes,
                     file_path,
-                    ymin=None,
-                    ymax=None,
                     s0=1,
                     s1=1,
                     label0='Timestep 0',
@@ -110,14 +114,13 @@ def tsne_separation(data,
         color_0 = LinearSegmentedColormap.from_list("0", ["lightgrey","blue"])
         color_1 = LinearSegmentedColormap.from_list("1", ["lightgrey", "red"])
         num_patches = int(data.shape[0] // 2)
-        
-        
+
         sc0 = plt.scatter(fit[:num_patches, 0], fit[:num_patches, 1],
                         c=label, cmap=color_0,
-                        alpha=0.8, s=1.7, label=label0)
+                        alpha=0.8, s=s0, label=label0)
         sc1 = plt.scatter(fit[num_patches:num_patches*2, 0], fit[num_patches:num_patches*2, 1],
                         c=label, cmap=color_1,
-                        alpha=0.8, s=1, label=label1)
+                        alpha=0.8, s=s1, label=label1)
         
         cb0 = plt.colorbar(sc0,  fraction=0.06)
         cb0.set_label(f'{label0} {label_suf}')
@@ -158,16 +161,19 @@ def max_diff_embeddings(embeddings,
 
 
 if __name__ == "__main__":
-    rev_t0_embed = torch.load(os.path.join(EXPERIMENT_PATH, "rev_result_t0.pt"), map_location=torch.device('cpu'), weights_only=True)
-    rev_t1_embed = torch.load(os.path.join(EXPERIMENT_PATH, "rev_result_t1.pt"), map_location=torch.device('cpu'), weights_only=True)
     og_t0_embed = torch.load(os.path.join(EXPERIMENT_PATH, "og_result_t0.pt"), map_location=torch.device('cpu'), weights_only=True)
     og_t1_embed = torch.load(os.path.join(EXPERIMENT_PATH, "og_result_t1.pt"), map_location=torch.device('cpu'), weights_only=True)
+
+    rev_t0_embed = torch.load(os.path.join(EXPERIMENT_PATH, "rev_result_t0.pt"), map_location=torch.device('cpu'), weights_only=True)
+    rev_t1_embed = torch.load(os.path.join(EXPERIMENT_PATH, "rev_result_t1.pt"), map_location=torch.device('cpu'), weights_only=True)
+
     band_t0 = torch.load(os.path.join(EXPERIMENT_PATH, "band_t0.pt"), map_location=torch.device('cpu'), weights_only=True)
     band_t1 = torch.load(os.path.join(EXPERIMENT_PATH, "band_t1.pt"), map_location=torch.device('cpu'), weights_only=True)
     ndvi_t0 = torch.load(os.path.join(EXPERIMENT_PATH, "ndvi_t0.pt"), map_location=torch.device('cpu'), weights_only=True)
     ndvi_t1 = torch.load(os.path.join(EXPERIMENT_PATH, "ndvi_t1.pt"), map_location=torch.device('cpu'), weights_only=True)
-    rev_sum_classes = torch.load(os.path.join(EXPERIMENT_PATH, "rev_classes.pt"), map_location=torch.device('cpu'), weights_only=True)
+    
     og_sum_classes = torch.load(os.path.join(EXPERIMENT_PATH, "og_classes.pt"), map_location=torch.device('cpu'), weights_only=True)
+    rev_sum_classes = torch.load(os.path.join(EXPERIMENT_PATH, "rev_classes.pt"), map_location=torch.device('cpu'), weights_only=True)
 
     assert len(rev_t0_embed) == len(rev_t1_embed)
     assert len(rev_t0_embed) == len(og_t0_embed)
@@ -187,8 +193,8 @@ if __name__ == "__main__":
                                os.path.join(EXPERIMENT_PATH, "dist_all_embed_all"))
 
     print("how does the order affect the embeddings as a whole")
-    max_l2, min_l2, max_l1, min_l1 = plot_elementwise_distances(rev_t0_embed,
-                                                                og_t0_embed,
+    max_l2, min_l2, max_l1, min_l1 = plot_elementwise_distances(og_t0_embed,
+                                                                rev_t0_embed,
                                                                 [og_sum_classes, ndvi_diff],
                                                                 ["# px of Δ", "NDVI Δ T1-T0"],
                                                                 "distance w/ 1 time step (t = 0)",
@@ -270,19 +276,19 @@ if __name__ == "__main__":
                     [og_sum_classes, ndvi_diff],
                     ["# px of Δ", "NDVI Δ T1-T0"],
                     os.path.join(EXPERIMENT_PATH, "tsne_all_embed_rev_ogfit"),
-                    oga)
+                    reducer=oga)
     tsne_separation(torch.concat([rev_t0_embed[:,HW_START_IDX:HW_END_IDX],
                                   rev_t1_embed[:,HW_START_IDX:HW_END_IDX]], dim=0),
                     [og_sum_classes, ndvi_diff],
                     ["# px of Δ", "NDVI Δ T1-T0"],
                     os.path.join(EXPERIMENT_PATH, "tsne_hw_embed_rev_ogfit"),
-                    oghw)
+                    reducer=oghw)
     tsne_separation(torch.concat([rev_t0_embed[:,T_START_IDX:T_END_IDX],
                                   rev_t1_embed[:,T_START_IDX:T_END_IDX]], dim=0),
                     [og_sum_classes, ndvi_diff],
                     ["# px of Δ", "NDVI Δ T1-T0"],
                     os.path.join(EXPERIMENT_PATH, "tsne_t_embed_rev_ogfit"),
-                    ogt)
+                    reducer=ogt)
 
     print("tsne separations for same year")
     tsne_separation(torch.concat([og_t0_embed,

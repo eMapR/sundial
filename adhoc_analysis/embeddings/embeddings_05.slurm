@@ -1,0 +1,15 @@
+#!/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --mem=257200
+#SBATCH --cpus-per-task=48
+#SBATCH --partition=ceoas
+#SBATCH --nodelist=yatagarasu[01-12]
+#SBATCH --output=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_05.log
+#SBATCH --error=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_05.err
+#SBATCH --job-name=embeddings_05
+
+conda activate sundial
+
+export BASE_PATH=/home/ceoas/truongmy/emapr/sundial/adhoc_analysis/embeddings/
+
+srun python /home/ceoas/truongmy/emapr/sundial/adhoc_analysis/embeddings/embeddings_05.py

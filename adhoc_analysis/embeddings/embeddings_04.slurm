@@ -2,8 +2,8 @@
 #SBATCH --nodes=1
 #SBATCH --mem=257200
 #SBATCH --cpus-per-task=48
-#SBATCH --output=/ceoas/emapr/sundial/utils/glkn/embeddings_04.log
-#SBATCH --error=/ceoas/emapr/sundial/utils/glkn/embeddings_04.err
+#SBATCH --output=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_04.log
+#SBATCH --error=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_04.err
 #SBATCH --partition=ceoas
 #SBATCH --nodelist=yatagarasu[01-11]
 
