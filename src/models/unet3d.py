@@ -66,7 +66,15 @@ class OutConv3d(nn.Module):
 
 
 class UNet3D(SundialPLBase):
-    def __init__(self, n_channels, n_classes, num_frames=3, bilinear=False, kernel_size=(1,3,3), stride=1, padding=(0,1,1), embed=False):
+    def __init__(self,
+                 n_channels,
+                 n_classes,
+                 num_frames=3,
+                 bilinear=False,
+                 kernel_size=(1,3,3),
+                 stride=1,
+                 padding=(0,1,1),
+                 embed=False):
         super().__init__()
 
         self.num_classes = n_classes
@@ -76,7 +84,7 @@ class UNet3D(SundialPLBase):
         self.bilinear = bilinear
         self.embed = embed
 
-        self.inc = DoubleConv3d(n_channels, 64, kernel_size=(1,3,3), stride=1, padding=(0,1,1))
+        self.inc = DoubleConv3d(n_channels, 64, kernel_size=kernel_size, stride=stride, padding=padding)
         self.down1 = Down3d(64, 128)
         self.down2 = Down3d(128, 256)
         self.down3 = Down3d(256, 512)

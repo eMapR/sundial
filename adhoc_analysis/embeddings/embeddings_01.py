@@ -24,8 +24,8 @@ def load_embeddings_and_annotations(og_path, rev_path, embed_fstr, anno_fstr, in
         anno = torch.load(os.path.join(og_path, anno_path), map_location=torch.device('cpu'))[class_indx]
         anno_rev = torch.load(os.path.join(rev_path, anno_path), map_location=torch.device('cpu'))[class_indx]
         
-        condition = (anno > 0)
-        condition_rev = (anno_rev > 0)
+        condition = (anno > 128)
+        condition_rev = (anno_rev > 128)
         
         ann_indices = torch.where(condition)[0]
         ann_indices_rev = torch.where(condition_rev)[0]
@@ -55,12 +55,11 @@ def load_embeddings_and_annotations(og_path, rev_path, embed_fstr, anno_fstr, in
             D = D // NUM_FRAMES
 
         embed = embed.reshape(D, NUM_FRAMES, P*P)
-        embed_rev = embed_rev.reshape(D, NUM_FRAMES, P*P)
-            
-        selected_t0.append(embed[:, 0, ann_indices_rev].permute(1,0))
-        selected_t1.append(embed[:, 1, ann_indices_rev].permute(1,0))
+        selected_t0.append(embed[:, 0, ann_indices].permute(1,0))
+        selected_t1.append(embed[:, 1, ann_indices].permute(1,0))
         
         # index the time different since they are reversed
+        embed_rev = embed_rev.reshape(D, NUM_FRAMES, P*P)
         selected_t0_rev.append(embed_rev[:, 1, ann_indices_rev].permute(1,0))
         selected_t1_rev.append(embed_rev[:, 0, ann_indices_rev].permute(1,0))
     

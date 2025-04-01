@@ -220,7 +220,7 @@ def tensors_to_tifs_helper(meta_data: gpd.GeoDataFrame,
         }
 
         with rasterio.open(os.path.join(output_path, f"{os.path.splitext(base_name)[0]}.tif"), 'w', **profile) as dst:
-            dst.write(tensor.numpy())
+            dst.write(tensor.to(torch.float).numpy())
         logger.info(f"Processed {base_name} at meta {meta_idx}...")
 
 

@@ -304,21 +304,60 @@
 #                   methods: ["test"]
 #                   targets: ["chip"]
 
-##### Finetuned fcn_dice_unfrozen 300m_fcn_dice_unfrozen_nrs_embed
+# ##### Finetuned fcn_dice_unfrozen 300m_fcn_dice_unfrozen_nrs_embed
+# model:
+#     class_path: models.prithvi.PrithviBackboneOnly
+#     init_args:
+#         prithvi_ckpt_path: '/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt'
+#         prithvi_params:
+#             img_size: 224
+#             patch_size: [1, 16, 16]
+#             in_chans: 6
+#             num_frames: 2
+#             embed_dim: 1024
+#             encoder_only: true
+#             coords_encoding: []
+#         reshape: false
+#         freeze_encoder: true
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         time_step: 1
+#         test_sample_path: /home/ceoas/truongmy/emapr/sundial/samples/all224_glkn/train_sample.npy
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.SingleClass
+#                   init_args:
+#                         class_index: 6
+#                   targets: ["anno"]
+#                 - class_path: torch.nn.AvgPool2d
+#                   init_args:
+#                       kernel_size: 16
+#                       divisor_override: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.Flatten
+#                   init_args:
+#                       start_dim: 1
+#                   methods: ["test"]
+#                   targets: ["anno"]
+#                 - class_path: transforms.ReverseTime
+#                   init_args:
+#                       dim: 1
+#                   methods: ["test"]
+#                   targets: ["chip"]
+
+##### Finetuned unet3dend
 model:
-    class_path: models.prithvi.PrithviBackboneOnly
+    class_path: models.unet3d.UNet3D
     init_args:
-        prithvi_ckpt_path: '/ceoas/emapr/sundial/checkpoints/all224_glkn/epoch=0123_val_loss=0.362_fcn_dice_unfrozen.ckpt'
-        prithvi_params:
-            img_size: 224
-            patch_size: [1, 16, 16]
-            in_chans: 6
-            num_frames: 2
-            embed_dim: 1024
-            encoder_only: true
-            coords_encoding: []
-        reshape: false
-        freeze_encoder: true
+        n_channels: 6
+        n_classes: 1
+        num_frames: 2
+        embed: true
 data:
     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
     init_args:

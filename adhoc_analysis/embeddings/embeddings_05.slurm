@@ -3,9 +3,9 @@
 #SBATCH --mem=257200
 #SBATCH --cpus-per-task=48
 #SBATCH --partition=ceoas
-#SBATCH --nodelist=yatagarasu[01-12]
-#SBATCH --output=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_05.log
-#SBATCH --error=/ceoas/emapr/sundial/adhoc_analysis/embeddings/embeddings_05.err
+##SBATCH --nodelist=yatagarasu[01-12]
+#SBATCH --output=/ceoas/emapr/sundial/adhoc_analysis/embeddings/logs/embeddings_05.log
+#SBATCH --error=/ceoas/emapr/sundial/adhoc_analysis/embeddings/logs/embeddings_05.err
 #SBATCH --job-name=embeddings_05
 
 conda activate sundial

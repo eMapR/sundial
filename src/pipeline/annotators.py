@@ -94,9 +94,12 @@ def single_xarr_annotator(population_gdf: gpd.GeoDataFrame,
 
     # writing remaining batch
     if len(batch) > 0:
+        xarr_anno = xr.concat(batch, dim=APPEND_DIM)
         with io_lock:
-            xarr_anno = xr.merge(batch)
-            xarr_anno.to_zarr(store=anno_data_path, mode="a")
+            if os.path.exists(anno_data_path):
+                xarr_anno.to_zarr(store=anno_data_path, append_dim=APPEND_DIM, mode="a")
+            else:
+                xarr_anno.to_zarr(store=anno_data_path)
 
 
 def multi_year_xarr_annotator(population_gdf: gpd.GeoDataFrame,

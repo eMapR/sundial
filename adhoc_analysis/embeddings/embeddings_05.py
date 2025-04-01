@@ -27,23 +27,27 @@ def tsne_separation(data,
     labels = np.concatenate([data[n]["labels"] for n in names], axis=0)
     
     reducer = TSNE(n_components=2,
-                    perplexity=500,
+                    perplexity=30,
                     metric="euclidean",
                     n_jobs=16,
                     random_state=42,
                     verbose=True)
     fit = reducer.fit(all_data)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     cmap = plt.get_cmap("tab10")
-    colors = cmap(np.arange(7))
     
-    
-    sc = ax.scatter(fit[:, 0], fit[:, 1], c=labels, alpha=0.8, s=1)
-    legend_handles = [
-        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[i], markersize=8, label=names[i])
-        for i in labels
-    ]
+    num_patches = len(data[names[0]][key])
+    start = 0
+    legend_handles = []
+    s = len(names) + 1
+
+    for i in range(len(names)-1):
+        _ = ax.scatter(fit[start:start+num_patches, 0], fit[start:start+num_patches, 1], c=[cmap(i)], alpha=0.8, s=s)
+        legend_handles.append(plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=cmap(i), markersize=8, label=names[i]))
+        s -= 1
+        start += num_patches
+
     ax.legend(handles=legend_handles, title="Embedding Version", loc="upper left", bbox_to_anchor=(1.02, 1))
     ax.set_ylim(fit.min(), fit.max())
     ax.set_xlim(fit.min(), fit.max())
@@ -58,13 +62,13 @@ def tsne_separation(data,
 
 if __name__ == "__main__":
     names = [
-        "300m_all_nrs_embed",
-        "300m_fcn_dice_nockpt_nrs_embed",
-        "300m_fcn_dice_unfrozen_nrs_embed",
+        # "300m_all_nrs_embed",
+        # "300m_fcn_dice_nockpt_nrs_embed",
+        # "300m_fcn_dice_unfrozen_nrs_embed",
         "300m_tl_all_nrs_embed",
         "300m_tl_noboth_nrs_embed",
         "300m_tl_noloca_nrs_embed",
-        "300m_tl_notime_nrs_embed"
+        "300m_tl_notime_nrs_embed",
     ]
     
     data = {}

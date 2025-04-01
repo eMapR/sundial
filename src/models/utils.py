@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from functools import partial
 from torch import nn
 
+from models.base import SundialPLBase
+
 
 class Conv3dBlock(nn.Module):
     def __init__(self,
@@ -44,8 +46,9 @@ class DoubleConv2d(nn.Module):
 
 
 class DoubleConv3d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, mid_channels=None):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, mid_channels=None, embed=False):
         super().__init__()
+        self.embed = embed
         if not mid_channels:
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
@@ -54,7 +57,18 @@ class DoubleConv3d(nn.Module):
         )
 
     def forward(self, x):
-        return self.double_conv(x)
+        x = self.double_conv(x)
+        if self.embed:
+            B, C, T, H, W = x.shape
+            x = x.reshape(B, C*T, H, W)
+            return x
+        else:
+            return x
+
+
+class DoubleConv3dMod(DoubleConv3d, SundialPLBase):
+    def forward(self, x):
+        return super().forward(x["chip"])
 
 
 class Upscaler(nn.Module):

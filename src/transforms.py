@@ -19,7 +19,7 @@ class GeoNormalization(nn.Module):
 
 
 class ReverseTime(nn.Module):
-    def __init__(self, dim=2):
+    def __init__(self, dim=1):
         super().__init__()
         self.dim = dim
         
@@ -72,6 +72,7 @@ class BinaryStep(nn.Module):
 class BeforeAfter(nn.Module):
     def forward(self, x):
         return torch.stack([x[:,-3,:,:], x[:,-1,:,:]], dim=1)
+
 
 class SingleClass(nn.Module):
     def __init__(self, class_index: int):

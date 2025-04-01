@@ -12,9 +12,8 @@ def collate(embed, output_size, kernel_size, stride, count=None):
     Hk, Wk = kernel_size
     Ho, Wo = output_size
     
-    embed = embed.reshape(G*G, D*T, H, W)
-    embed = torch.nn.functional.interpolate(embed, size=kernel_size).reshape(G*G, D*T, Hk*Wk)
-    embed = embed.permute(2, 1, 0).reshape(D*Hk*Wk, G*G)
+    embed = embed.reshape(G*G, D*T, Hk*Wk)
+    embed = embed.permute(2, 1, 0).reshape(D*T*Hk*Wk, G*G)
     embed = F.fold(embed, output_size=output_size, kernel_size=kernel_size, stride=stride)
     embed = embed.reshape(D, Ho, Wo)
     if count is None:
@@ -39,8 +38,8 @@ def main(base_path, out_path, pattern, output_size=232, kernel_size=224, stride=
     for i in range(start_idx, end_idx):
         file = matching_files[i]
         file_name = os.path.basename(file)
-        print(f'Stitching {file_name} on node {rank}')
         embed = torch.load(file, map_location="cuda:0")
+        print(f'Stitching {file_name} on node {rank} from {embed.shape} to {kernel_size}')
         if i == start_idx:
             count = torch.ones_like(embed)
             count = collate(embed, output_size, kernel_size, stride)

@@ -132,11 +132,6 @@ def package():
         SAMPLER_CONFIG["num_workers"],
         LOGGER,
     )
-    match PACKAGE_CONFIG["format"]:
-        case "tar":
-            tar_path = os.path.join(DATA_PATH, EXPERIMENT_FULL_NAME)
-            with tarfile.open(f"{tar_path}.tar.gz", "w:gz") as tar:
-                tar.add(tensors_dir_path, arcname=EXPERIMENT_FULL_NAME)
 
 
 if __name__ == "__main__":

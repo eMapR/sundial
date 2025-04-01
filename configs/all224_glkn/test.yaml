@@ -12,6 +12,7 @@ trainer:
 # ckpt_path: /home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0107_val_loss=0.333_adapter_dice_unfrozen.ckpt
 # ckpt_path: /home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0128_val_loss=0.335_adapter_dice_frozen.ckpt
 # ckpt_path: /home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0077_val_loss=0.338_adapter_dice_nockpt.ckpt
+# ckpt_path: /home/ceoas/truongmy/emapr/sundial/checkpoints/all224_glkn/epoch=0127_val_loss=0.341_unet3dend_dice.ckpt
 # criterion:
 #     class_path: DiceLoss
 # activation:

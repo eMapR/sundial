@@ -33,7 +33,7 @@ def check_class_sums(chip_data: xr.DataArray,
 
         anno = anno_data.sel(sample=sample[0]).isel({'datetime': anno_idx, 'class': CLASS_IDX}).values
         harv = sumpool(torch.tensor(anno).unsqueeze(0)).flatten()
-        condition = (harv > 0)
+        condition = (harv > 128)
         ann_indices = torch.where(condition)[0]
         class_sums_pool.append(harv[ann_indices])
         chip = chip_data.sel(sample=sample[0]).isel({'datetime': slice(samp_idx-TIME_STEP, samp_idx+1)}).values
@@ -41,9 +41,8 @@ def check_class_sums(chip_data: xr.DataArray,
         nir = chip[3, :, :, :]
         red = chip[2, :, :, :]
         
-        # adding episilon value to avoid dividing by zero at locations with masked pixels
-        e = 1e-6
-        ndvi = torch.tensor(((nir - red) + e) / ((nir + red) + e)).unsqueeze(1)
+        # be warned my friends nan values are a coming'
+        ndvi = torch.tensor((nir - red) / (nir + red)).unsqueeze(1)
         ndvi = unfold(ndvi)
         
         chip = torch.tensor(chip).permute(1, 0, 2, 3)

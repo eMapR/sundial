@@ -24,7 +24,7 @@ from constants import (
     TEST_SAMPLE_PATH,
     PREDICT_SAMPLE_PATH,
 )
-from constants import IDX_NAME_ZFILL
+from constants import DATETIME_LABEL, IDX_NAME_ZFILL
 from pipeline.utils import clip_xy_xarray
 from settings import DATALOADER_CONFIG
 from utils import dynamic_import
@@ -91,7 +91,8 @@ class GenericChipsDataset(Dataset):
 
         # parsing img name for index
         data["indx"] = img_indx
-        data["time_indx"] = time_indx
+        if time_indx is not None:
+            data["time_indx"] = time_indx
 
         # loading chip and slicing/unsqueezing time if necessary
         chip = self.chip_loader(img_indx, time_slicer)
@@ -150,7 +151,10 @@ class GenericChipsDataset(Dataset):
                     self.anno_loader = lambda name: self._tif_loader(self.anno_data_path, name, None)
 
     def _zarr_loader(self, xarr: xr.DataArray, name: int, time_slicer: slice | int):
-        chip = xarr.sel(sample=name, datetime=time_slicer)
+        if DATETIME_LABEL in xarr.dims and time_slicer is not None:
+            chip = xarr.sel(sample=name, datetime=time_slicer)
+        else:
+            chip = xarr.sel(sample=name)
         if self.chip_size < max(chip["y"].size, chip["x"].size):
             chip = clip_xy_xarray(chip, self.chip_size)
         chip = torch.tensor(chip.compute().values, dtype=torch.float)
