@@ -386,24 +386,24 @@ if __name__ == "__main__":
                             [og_sum_classes, ndvi_diff],
                             ["# px of Δ", "NDVI Δ T1-T0"],
                             os.path.join(EXPERIMENT_PATH, "max_diff_second_order"),
-                            10)
+                            og_max)
     plot_max_diff_embeddings(og_embed_diff,
                             [og_sum_classes, ndvi_diff],
                             ["# px of Δ", "NDVI Δ T1-T0"],
                             os.path.join(EXPERIMENT_PATH, "max_diff_og"),
-                            20)
+                            og_max)
     plot_max_diff_embeddings(rev_embed_diff,
                             [og_sum_classes, ndvi_diff],
                             ["# px of Δ", "NDVI Δ T1-T0"],
                             os.path.join(EXPERIMENT_PATH, "max_diff_rev"),
-                            20)
+                            og_max)
     plot_max_diff_embeddings(t0_embed_diff,
                             [og_sum_classes, ndvi_diff],
                             ["# px of Δ", "NDVI Δ T1-T0"],
                             os.path.join(EXPERIMENT_PATH, "t0_embed_diff"),
-                            10)
+                            og_max)
     plot_max_diff_embeddings(t1_embed_diff,
                             [og_sum_classes, ndvi_diff],
                             ["# px of Δ", "NDVI Δ T1-T0"],
                             os.path.join(EXPERIMENT_PATH, "t1_embed_diff"),
-                            20)
+                            og_max)
