@@ -4,7 +4,7 @@ import xarray as xr
 
 from typing import Tuple
 
-from constants import APPEND_DIM, DATETIME_LABEL, IDX_NAME_ZFILL
+from constants import APPEND_DIM, CLASS_LABEL, DATETIME_LABEL, IDX_NAME_ZFILL
 
 
 def train_validate_test_split(chip_data: xr.DataArray,
@@ -37,13 +37,21 @@ def time_window_split(chip_data: xr.DataArray,
                       ratios: list[int],
                       random_seed: float | int,
                       time_range: Tuple[int],
-                      time_step: int) -> np.array:
+                      time_step: int,
+                      anno_offset: int | None) -> np.array:
     train, val, test = train_validate_test_split(chip_data, anno_data, ratios, random_seed)
-    times = np.arange(*time_range, time_step)
-    
-    train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train))])
-    val = np.transpose([np.tile(val, len(times)), np.repeat(times, len(val))])
-    test = np.transpose([np.tile(test, len(times)), np.repeat(times, len(test))])
+    if anno_offset is not None:
+        times = np.arange(*time_range, time_step)
+        anno_times = times - anno_offset
+        train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train)), np.repeat(anno_times, len(train))])
+        val = np.transpose([np.tile(val, len(times)), np.repeat(times, len(val)), np.repeat(anno_times, len(val))])
+        test = np.transpose([np.tile(test, len(times)), np.repeat(times, len(test)), np.repeat(anno_times, len(test))])
+        
+    else:
+        times = np.arange(*time_range, time_step)
+        train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train))])
+        val = np.transpose([np.tile(val, len(times)), np.repeat(times, len(val))])
+        test = np.transpose([np.tile(test, len(times)), np.repeat(times, len(test))])
     
     return train, val, test
 
@@ -60,6 +68,7 @@ def time_window(chip_data: xr.DataArray,
 
     return sample
 
+
 def check_class_sums_helper(class_sums: np.array,
                             class_filters: dict,
                             num_pixels: int):
@@ -68,35 +77,31 @@ def check_class_sums_helper(class_sums: np.array,
         return False
     
     ratios = class_sums / num_pixels
+    checks = []
+    
     for class_index in range(len(class_filters)):
         class_filter = class_filters[class_index]
-        ratio = ratios[class_index]
-        
-        floor = class_filter[0] if class_filter[0] else -1
-        ceiling = class_filter[1] if class_filter[1] else sys.maxsize
-        if floor <= ratio < ceiling:
-            pass
-        else:
-            return False
-    return True
+        if class_filter[0] is not None or class_filter[1] is not None:
+            ratio = ratios[class_index]
+            floor = class_filter[0] if class_filter[0] else -1
+            ceiling = class_filter[1] if class_filter[1] else sys.maxsize
+            checks.append(ratio >= floor and ratio < ceiling)
+    return any(checks)
 
 
 def check_class_sums(anno_data: xr.DataArray,
                      sample: Tuple[int],
-                     time_step: int,
                      class_filters: dict):
-    sample_anno = anno_data.sel(sample=sample[0])
-    num_pixels = sample_anno.shape[-2]*sample_anno.shape[-1]
-    dims = [APPEND_DIM, "y", "x"]
-    if DATETIME_LABEL in sample_add.dims:
-        dims.append(DATETIME_LABEL)
-    class_sums = np.array(sample_anno.sum(dims))
-    class_sums = class_sums[sample[1] - time_step]
-    
+    sample_anno = anno_data.sel({APPEND_DIM: sample[0]})
+    num_pixels = sample_anno["y"].shape[0]*sample_anno["x"].shape[0]
+    dims = ["y", "x"]
+    class_sums = sample_anno.sum(dims).values
+    if DATETIME_LABEL in sample_anno.dims and len(sample) == 3:
+        class_sums = class_sums[sample[2]]
     if check_class_sums_helper(class_sums, class_filters, num_pixels):
         return sample
     else:
-        return np.array([np.nan, np.nan])
+        return np.full(sample.shape, np.nan)
 
 
 def time_window_split_class_filter(chip_data: xr.DataArray,
@@ -105,14 +110,17 @@ def time_window_split_class_filter(chip_data: xr.DataArray,
                                    random_seed: float | int,
                                    time_range: Tuple[int],
                                    time_step: int,
+                                   anno_offset: int | None,
                                    class_filters: dict,
                                    num_workers: int = 48) -> np.array:
-    splits = time_window_split(chip_data, anno_data, ratios, random_seed, time_range, time_step)
+    assert len(class_filters) == anno_data[CLASS_LABEL].shape[0]
+    
+    splits = time_window_split(chip_data, anno_data, ratios, random_seed, time_range, time_step, anno_offset)
     proc_splits = []
     
-    vec_func = lambda t: check_class_sums(anno_data, t, time_step, class_filters)
+    vec_func = lambda t: check_class_sums(anno_data, t, class_filters)
     for split in splits:
-        vec = np.apply_along_axis(vec_func, axis=1, arr=split)
+        vec = np.array([vec_func(s) for s in split])
         vec = np.where(vec < 0, np.nan, vec) # TODO: negative max value bug
         vec = vec[~np.isnan(vec).any(axis=1)]
         proc_splits.append(vec)

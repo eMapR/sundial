@@ -62,7 +62,7 @@ SAMPLER_CONFIG = {
     
     # (int) Edge size buffer of square in pixels.
     # See downloader.Downloader.image_generator.
-    "buffer": 16,
+    "buffer": 0,
     
     # (str) Projection to save polygons and images. Will reproject coordinates if necessary.
     # See downloader.Downloader.image_generator.

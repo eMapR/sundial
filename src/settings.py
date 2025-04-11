@@ -23,19 +23,20 @@ PACKAGE_CONFIG = {
 DATALOADER_CONFIG = {
     "batch_size": 32,
     "num_workers": 4,                                       # number of workers to use for loading onto GPU
-    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],         # chip size of the images. If smaller than what is stored, the loader will center crop
-    "time_step": None,                                      # number of time steps to slice into ndarray. (eg if time_step = 1, time dimension will include a single step back and the date of interest)
+    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],         # chip size of the images. If smaller than what is stored, the loader will center crop                                   
+    "window": None,
     "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]], # file type to load. will default to same file type used in Downloader but if a custom dataset is added you may adjust here.
     "split_tif": None,                                      # tifs can only hold 3 dimensions. If a dimensions need to be split perform so here.
+    "class_indices": None,
     "extension_config": {"extensions": []},                 # additional extensions to read into memory from meta_data shapefile
     "static_transform_config": {"transforms": []},          # transforms defined as nn.Modules to perform sequentially. follows Pytorch Lightning format w/ class_path & init_args
-                                                                # set "image_only" to true if the transforms should only be performed on image and not annotation
-                                                                # transforms will be composed into sequential transformation
-                                                                # set "methods" to list [METHOD NAMES] to specify which methods to perform transformations on
+                                                            # set "image_only" to true if the transforms should only be performed on image and not annotation
+                                                            # transforms will be composed into sequential transformation
+                                                            # set "methods" to list [METHOD NAMES] to specify which methods to perform transformations on
     "dynamic_transform_config": {"transforms": []},         # transforms defined as nn.Modules to augment dataset during training. follows Pytorch Lightning format w/ class_path & init_args
-                                                                # set "targets" to list ["chip" | "anno" | "chip", "anno"] if the transforms should only be performed on image, annotation or both
-                                                                # len(dataset) will be multiplied by number of transforms and each will be performed as its own sample
-                                                                # set "include_original" to true to include an original sample in training without transformation
+                                                            # set "targets" to list ["chip" | "anno" | "chip", "anno"] if the transforms should only be performed on image, annotation or both
+                                                            # len(dataset) will be multiplied by number of transforms and each will be performed as its own sample
+                                                            # set "include_original" to true to include an original sample in training without transformation
 }
 
 # default lightning model checkpoint save settings (See https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html)

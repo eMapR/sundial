@@ -137,9 +137,9 @@ def rasterizer(polygons: gpd.GeoSeries,
 
 
 def covering_grid(geo_dataframe: gpd.GeoDataFrame,
-                    meter_edge_size: int,
-                    overlap: int = 0,
-                    year_offset: int = 0):
+                  meter_edge_size: int,
+                  overlap: int = 0,
+                  year_offset: int = 0):
     xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
     grid_cells = []
     for x0 in np.arange(xmin, xmax+meter_edge_size,  meter_edge_size * 1-overlap):

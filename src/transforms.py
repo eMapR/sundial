@@ -72,15 +72,6 @@ class BinaryStep(nn.Module):
 class BeforeAfter(nn.Module):
     def forward(self, x):
         return torch.stack([x[:,-3,:,:], x[:,-1,:,:]], dim=1)
-
-
-class SingleClass(nn.Module):
-    def __init__(self, class_index: int):
-        super().__init__()
-        self.class_index = class_index
-    
-    def forward(self, x):
-        return x[self.class_index,...].unsqueeze(0)
     
 
 class RandomAffineAugmentation(nn.Module):

@@ -359,10 +359,10 @@ def index():
             STAT_DATA_PATH)
     else:
         samples = indexer(chip_data,
-                            anno_data,
-                            SAMPLER_CONFIG["split_ratios"],
-                            RANDOM_SEED,
-                            **SAMPLER_CONFIG["indexer_kwargs"])
+                          anno_data,
+                          SAMPLER_CONFIG["split_ratios"],
+                          RANDOM_SEED,
+                          **SAMPLER_CONFIG["indexer_kwargs"])
 
         LOGGER.info("Saving sample data indices to paths...")
         np.save(PREDICT_SAMPLE_PATH, samples)
