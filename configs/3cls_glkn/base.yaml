@@ -1,0 +1,176 @@
+# model:
+#     # # fcn_frozen_encoder
+#     # class_path: models.prithvi.PrithviFCN
+#     # init_args:
+#     #     num_classes: 3
+#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 4
+#     #         embed_dim: 1024
+#     #         coords_encoding: []
+#     #         encoder_only: true
+#     #     freeze_encoder: true
+#     #     embed: false
+
+#     # # fcn_unfrozen_encoder
+#     # class_path: models.prithvi.PrithviFCN
+#     # init_args:
+#     #     num_classes: 3
+#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 4
+#     #         embed_dim: 1024
+#     #         coords_encoding: []
+#     #         encoder_only: true
+#     #     freeze_encoder: false
+#     #     embed: false
+
+#     # # fcn_random_encoder
+#     # class_path: models.prithvi.PrithviFCN
+#     # init_args:
+#     #     num_classes: 3
+#     #     prithvi_ckpt_path: null
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 4
+#     #         embed_dim: 1024
+#     #         coords_encoding: []
+#     #         encoder_only: true
+#     #     freeze_encoder: false
+#     #     embed: false
+
+
+#     # # adapter_frozen_encoder
+#     # class_path: models.prithvi.PrithviAdapter
+#     # init_args:
+#     #     num_classes: 1
+#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 2
+#     #         embed_dim: 1024
+#     #         depth: 24
+#     #         encoder_only: true
+#     #         coords_encoding: []
+#     #     freeze_encoder: true
+
+#     # # adapter_unfrozen_encoder
+#     # class_path: models.prithvi.PrithviAdapter
+#     # init_args:
+#     #     num_classes: 1
+#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 2
+#     #         embed_dim: 1024
+#     #         depth: 24
+#     #         encoder_only: true
+#     #         coords_encoding: []
+#     #     freeze_encoder: false
+
+#     # # adapter_random_encoder
+#     # class_path: models.prithvi.PrithviAdapter
+#     # init_args:
+#     #     num_classes: 1
+#     #     prithvi_ckpt_path: null
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 2
+#     #         embed_dim: 1024
+#     #         depth: 24
+#     #         encoder_only: true
+#     #         coords_encoding: []
+#     #     freeze_encoder: false
+
+#     # # prithvi_embed
+#     # class_path: models.prithvi.PrithviBackboneOnly
+#     # init_args:
+#     #     prithvi_ckpt_path: null
+#     #     prithvi_params:
+#     #         img_size: 224
+#     #         patch_size: [1, 16, 16]
+#     #         in_chans: 6
+#     #         num_frames: 4
+#     #         embed_dim: 1024
+#     #         coords_encoding: []
+#     #         encoder_only: true
+#     #     freeze_encoder: false
+
+#     # unet3d
+#     class_path: models.unet3d.UNet3D
+#     init_args:
+#         n_channels: 6
+#         n_classes: 5
+#         num_frames: 4
+#         embed: false
+
+
+# # window size of 2 before and 2 after
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         window: [2, 2]
+#         class_indices: [0, 3, 6, 7]
+#         dynamic_transform_config:
+#             transforms:
+#                 - class_path: transforms.RandomAffineAugmentation
+#                   image_only: false
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.AppendBackground
+#                   init_args: {}
+#                   methods: ["all"]
+#                   targets: ["anno"]
+
+# # window size of 1 before and 1 after
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 32
+#         num_workers: 4
+#         chip_size: 224
+#         window: [1, 1]
+#         class_indices: [0, 3, 6]
+#         dynamic_transform_config:
+#             transforms:
+#                 - class_path: transforms.RandomAffineAugmentation
+#                   image_only: false
+#         static_transform_config:
+#             transforms:
+#                 - class_path: transforms.AppendBackground
+#                   init_args: {}
+#                   methods: ["all"]
+#                   targets: ["anno"]
+
+model:
+    class_path: models.model.Model
+
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 16
+        num_workers: 4
+        chip_size: 224
+        window: [0, 1]
+        anno_data_path: null
+        dynamic_transform_config:
+            transforms:
+                - class_path: transforms.RandomAffineAugmentation
+                  image_only: false

@@ -1,0 +1,9 @@
+trainer:
+    callbacks:
+      - class_path: callbacks.LogTestCallback
+    precision: 32-true
+    devices: 1
+criterion:
+    class_path: DiceLoss
+activation:
+    class_path: Sigmoid
