@@ -1,5 +1,0 @@
-trainer:
-    callbacks:
-      - class_path: callbacks.SaveEmbedCallback
-    precision: bf16-mixed
-    devices: 1

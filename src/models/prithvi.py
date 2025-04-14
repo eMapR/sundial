@@ -282,9 +282,6 @@ class PrithviAdapter(SundialPLBase):
         return c2, c3, c4
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """
-        https://github.com/czczup/ViT-Adapter/blob/v0.3.1/detection/mmdet_custom/models/backbones/vit_adapter.py#L91
-        """
         input = input["chip"]
         B, C, T, H, W = input.shape
 
@@ -352,7 +349,6 @@ class PrithviAdapter(SundialPLBase):
         
         up_scale = self.upscaler(f1_fused)
         out = self.out_conv(up_scale)
-        print(out.shape)
         return out
 
 

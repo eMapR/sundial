@@ -6,7 +6,6 @@ from torch import nn
 class SundialPLBase(L.LightningModule):
     def training_step(self, batch):
         loss = self.criterion(self(batch), batch["anno"])
-
         return {"loss": loss}
 
     def validation_step(self, batch):
@@ -29,4 +28,4 @@ class SundialPLBase(L.LightningModule):
         output = {"output": self(batch)}
         if self.activation is not None:
             output["output"] = self.activation(output["output"])
-        return output 
+        return output

@@ -46,7 +46,6 @@ def time_window_split(chip_data: xr.DataArray,
         train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train)), np.repeat(anno_times, len(train))])
         val = np.transpose([np.tile(val, len(times)), np.repeat(times, len(val)), np.repeat(anno_times, len(val))])
         test = np.transpose([np.tile(test, len(times)), np.repeat(times, len(test)), np.repeat(anno_times, len(test))])
-        
     else:
         times = np.arange(*time_range, time_step)
         train = np.transpose([np.tile(train, len(times)), np.repeat(times, len(train))])

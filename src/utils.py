@@ -182,14 +182,16 @@ def log_false_color_image(chip: torch.Tensor, index_name: int, label: str, logge
             image_scale=2.0,
             image_minmax=(min_sr, max_sr)
         )
-        
-    image =  false_color[1, :, :, :] - false_color[0, :, :, :]
-    logger.log_image(
-        image_data=image.cpu(),
-        name=f"{index_name}_false_color_diff_{label}.png",
-        image_scale=2.0,
-        image_minmax=(0, max_sr)
-    )
+    to = false_color.shape[0] - 1
+    false_color_diff =  false_color[-to:, :, :, :] - false_color[:to, :, :, :]
+    for t in range(false_color_diff.shape[0]):
+        image =  false_color_diff[t, :, :, :]
+        logger.log_image(
+            image_data=image.cpu(),
+            name=f"{index_name}_false_color_diff_{t}_{label}.png",
+            image_scale=2.0,
+            image_minmax=(0, max_sr-min_sr)
+        )
 
 
 

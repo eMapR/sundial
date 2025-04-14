@@ -1,8 +1,8 @@
 data:
-  class_path: GenericChipsDataModule
+  class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
   init_args:
-    batch_size: 32
-    chip_size: 256
+    batch_size: 32   # batch  
+    chip_size: 256   # h x w
     dynamic_transform_config:
       transforms: []
     extension_config:
@@ -10,8 +10,13 @@ data:
     file_type: zarr
     num_workers: 4
     split_tif: null
-    start_idx: null
     static_transform_config:
       transforms: []
-    time_step: null
-model: null
+    window: null
+model: 
+  class_path: models.unet3d.UNet3D
+  init_args: 
+    num_frames: 4
+    n_channels: 6
+    n_classes: 2    # out channels 
+    embed: false
