@@ -289,70 +289,52 @@ class DiceCrossEntropyLoss(Base):
 
 class InfoNCE(nn.Module):
     """
-    Calculates the InfoNCE loss for self-supervised learning.
-    This contrastive loss enforces the embeddings of similar (positive) samples to be close
-        and those of different (negative) samples to be distant.
-    A query embedding is compared with one positive key and with one or more negative keys.
+    https://arxiv.org/abs/1807.03748v2
+    https://arxiv.org/abs/2010.05113
 
-    References:
-        https://arxiv.org/abs/1807.03748v2
-        https://arxiv.org/abs/2010.05113
-
-    Args:
-        temperature: Logits are divided by temperature before calculating the cross entropy.
-        reduction: Reduction method applied to the output.
-            Value must be one of ['none', 'sum', 'mean'].
-            See torch.nn.functional.cross_entropy for more details about each option.
-
-    Input shape:
-        query: (N, D) Tensor with query samples (e.g. embeddings of the input).
-        positive_key: (N, D) Tensor with positive samples (e.g. embeddings of augmented input).
-
-    Returns:
-         Value of the InfoNCE Loss.
-
-     Examples:
-        >>> loss = InfoNCE()
-        >>> batch_size, num_negative, embedding_size = 32, 48, 64
-        >>> query = torch.randn(batch_size, embedding_size)
-        >>> positive_key = torch.randn(batch_size, embedding_size)
-        >>> output = loss(query, positive_key)
     """
 
-    def __init__(self, temperature=0.1, reduction='mean', negative_mode='unpaired'):
+    def __init__(self, temperature=0.1, reduction='mean', mode='intra'):
         super().__init__()
         self.temperature = temperature
         self.reduction = reduction
-        self.negative_mode = negative_mode
+        self.mode = mode
 
     def forward(self, query, positive_key):
         return self.info_nce(query, positive_key,
                         temperature=self.temperature,
-                        reduction=self.reduction)
+                        reduction=self.reduction,
+                        mode=self.mode)
 
-    def info_nce(self, query, positive_key, temperature=0.1, reduction='mean'):
-        query = query.flatten(2).transpose(1, 2)
-        positive_key = positive_key.flatten(2)
+    def info_nce(self, query, positive_key, temperature=0.1, reduction='mean', mode='intra'):
+        N, D, H, W = query.shape
+        query = query.permute(0, 2, 3, 1)
+        positive_key = positive_key.permute(0, 2, 3, 1)
         
-        # Check input dimensionality.
-        if query.dim() != 3:
-            raise ValueError(f'<query> must have 2 dimensions. <query> has {query.dim()}')
-        if positive_key.dim() != 3:
-            raise ValueError(f'<positive_key> must have 2 dimensions. <query> has {query.dim()}')
+        if query.shape != positive_key.shape:
+            raise ValueError(f"<query> and <positive_key> must be same shape. Got {query.shape} vs {positive_key.shape}")
 
-        # Check matching number of samples.
-        if len(query) != len(positive_key):
-            raise ValueError('<query> and <positive_key> must must have the same number of samples.')
+        # inter requires O((NHW)²) and is extremely memory intensive. intra is a more memory efficent albeit slower method
+        if mode == 'intra':
+            loss = 0
+            for i in range(N):
+                q = query[i].reshape(-1, D) # (H*W, D)
+                k = positive_key[i].reshape(-1, D) # (H*W, D)
 
-        # Embedding vectors should have same number of components.
-        if query.shape[-1] != positive_key.shape[-2]:
-            raise ValueError(f'Vectors of <query> and <positive_key> should have the same number of components. <query> {query.shape} <positive_key> {positive_key.shape}')
+                q, k = self.normalize(q, k)
+                logits = q @ k.T  / temperature  # (H*W, H*W)
+                labels = torch.arange(logits.shape[0], device=query.device)
+                loss += F.cross_entropy(logits, labels)
+            return loss / N
+        elif mode == 'inter':
+            query = query.reshape(-1, D) # (N*H*W, D)
+            positive_key = positive_key.reshape(-1, D) # (N*H*W, D)
 
-        # Normalize to unit vectors
-        query, positive_key = self.normalize(query, positive_key)
-        logits = query @ positive_key
-        labels = torch.tile(torch.arange(positive_key.shape[-1], device=query.device), (query.shape[0], 1))
-        return F.cross_entropy(logits / temperature, labels, reduction=reduction)
+            query, positive_key = self.normalize(query, positive_key)
+            logits = query @ positive_key.T / temperature
+            labels = torch.arange(query.shape[0], device=query.device)
+            
+            return F.cross_entropy(logits, labels, reduction=reduction)
 
     def normalize(self, *xs):
         return [None if x is None else F.normalize(x, dim=-1) for x in xs]

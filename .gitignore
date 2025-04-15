@@ -163,6 +163,7 @@ cython_debug/
 data/
 shapes/
 logs/
+*/logs/
 samples/
 checkpoints/
 predictions/

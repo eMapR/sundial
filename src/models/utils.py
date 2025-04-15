@@ -138,6 +138,7 @@ def get_reference_points(spatial_shapes, device):
         ref_y, ref_x = torch.meshgrid(
             torch.linspace(0.5, H_ - 0.5, H_, dtype=torch.float32, device=device),
             torch.linspace(0.5, W_ - 0.5, W_, dtype=torch.float32, device=device),
+            indexing="ij"
         )
         ref_y = ref_y.reshape(-1)[None] / H_
         ref_x = ref_x.reshape(-1)[None] / W_
@@ -377,7 +378,6 @@ class InteractionBlock(nn.Module):
             )
         else:
             self.extra_extractors = None
-        self.D = dim*num_frames
         self.T = num_frames
 
     def forward(self, x, c, blocks, deform_inputs1, deform_inputs2, H, W):
@@ -499,9 +499,9 @@ class SpatialPriorModule(nn.Module):
         c4 = self.fc4(c4)
 
         bs, dim, _, _, _ = c1.shape
-        c1 = c1.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)  # 4s
-        c2 = c2.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)  # 8s
-        c3 = c3.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)  # 16s
-        c4 = c4.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)  # 32s
+        c1 = c1.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)
+        c2 = c2.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)
+        c3 = c3.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)
+        c4 = c4.reshape(bs, dim, self.T, -1).permute(0, 2, 1, 3).reshape(bs, dim*self.T, -1).transpose(1, 2)
 
         return c1, c2, c3, c4

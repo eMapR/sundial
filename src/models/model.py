@@ -19,7 +19,7 @@ class PatchEmbed(nn.Module):
             input_size: Tuple[int, int, int] = (1, 224, 224),
             patch_size: Tuple[int, int, int] = (1, 16, 16),
             in_chans: int = 6,
-            embed_dim: int = 64,
+            embed_dim: int = 128,
             norm_layer: nn.Module | None = None,
             flatten: bool = True,
             bias: bool = True,
@@ -50,6 +50,7 @@ def get_reference_points(spatial_shapes, device):
         ref_y, ref_x = torch.meshgrid(
             torch.linspace(0.5, H_ - 0.5, H_, dtype=torch.float32, device=device),
             torch.linspace(0.5, W_ - 0.5, W_, dtype=torch.float32, device=device),
+            indexing="ij"
         )
         ref_y = ref_y.reshape(-1)[None] / H_
         ref_x = ref_x.reshape(-1)[None] / W_
@@ -149,7 +150,7 @@ class Extractor(nn.Module):
         n_levels=1,
         deform_ratio=1.0,
         with_cffn=True,
-        cffn_ratio=0.25,
+        cffn_ratio=1.0,
         drop=0.0,
         drop_path=0.0,
         norm_layer=None,
@@ -240,7 +241,7 @@ class InteractionBlock(nn.Module):
         drop=0.0,
         drop_path=0.0,
         with_cffn=True,
-        cffn_ratio=0.25,
+        cffn_ratio=1.0,
         init_values=0.0,
         deform_ratio=1.0,
         extra_extractor=False,
@@ -290,7 +291,6 @@ class InteractionBlock(nn.Module):
             )
         else:
             self.extra_extractors = None
-        self.D = dim*num_frames
         self.T = num_frames
 
     def forward(self, x, c, blocks, deform_inputs1, deform_inputs2, H, W):
@@ -336,7 +336,7 @@ class InteractionBlock(nn.Module):
 
 
 class SpatialPriorModule(nn.Module):
-    def __init__(self, in_channels: int = 6, inplanes=64, embed_dim=64, num_frames=1):
+    def __init__(self, in_channels: int = 6, inplanes=128, embed_dim=128, num_frames=1):
         super().__init__()
 
         self.stem = nn.Sequential(
@@ -673,7 +673,7 @@ class VisionTransformer(nn.Module):
                  patch_size=(1, 16, 16),
                  in_chans=6,
                  residual_indices=[],
-                 embed_dim=64,
+                 embed_dim=128,
                  depth=12,
                  num_heads=16,
                  mlp_ratio=4.,
@@ -736,7 +736,7 @@ class VisionTransformer(nn.Module):
 
 class FuseLayer(nn.Module):
     def __init__(self,
-                 embed_dim=64):
+                 embed_dim=128):
         super().__init__()
         self.fuse_layer = DoubleConv2d(embed_dim*2, embed_dim)
         self.norm = nn.SyncBatchNorm(embed_dim)
@@ -753,16 +753,16 @@ class ViTAdapter(VisionTransformer):
                  input_size=(1, 224, 224),
                  patch_size=(1, 16, 16),
                  in_chans=6,
-                 embed_dim=64,
+                 embed_dim=128,
                  num_heads=16,
                  depth=12,
-                 conv_inplane=64,
+                 conv_inplane=128,
                  n_points=4,
                  deform_num_heads=8,
                  init_values=0.,
                  interaction_indexes=[[0, 1], [1, 2], [2, 3], [3, 4]],
                  with_cffn=True,
-                 cffn_ratio=0.25,
+                 cffn_ratio=1.0,
                  deform_ratio=1.0,
                  use_extra_extractor=True,
                  fuse=False,
@@ -835,7 +835,6 @@ class ViTAdapter(VisionTransformer):
 
         # Patch Embedding forward
         x = self.patch_embed(x)
-        bs, n, dim = x.shape
 
         # Interaction
         for i, layer in enumerate(self.interactions):
@@ -844,6 +843,7 @@ class ViTAdapter(VisionTransformer):
                          deform_inputs1, deform_inputs2, H, W)
 
         # Split & Reshape
+        bs, _, dim = x.shape
         c1 = c[:, 0:c1s, :].transpose(1, 2).view(bs, dim, H, W).contiguous()
         c2 = c[:, c1s:c1s+c2s, :].transpose(1, 2).view(bs, dim, H//2, W//2).contiguous()
         c3 = c[:, c1s+c2s:c1s+c2s+c3s, :].transpose(1, 2).view(bs, dim, H//4, W//4).contiguous()
@@ -866,7 +866,7 @@ class ViTAdapter(VisionTransformer):
     
 
 class Model(L.LightningModule):
-    def __init__(self, ema_start=128, ema_decay=.999, *t_args, **t_kwargs):
+    def __init__(self, ema_start=128, ema_decay=.97, *t_args, **t_kwargs):
         super().__init__()
         self.model = ViTAdapter(*t_args, **t_kwargs)
         self.ema_model = copy.deepcopy(self.model)

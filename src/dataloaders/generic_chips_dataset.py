@@ -83,6 +83,7 @@ class GenericChipsDataset(Dataset):
             img_indx, time_indx = self.samples[sample_indx]
             img_indx, time_indx = int(img_indx), int(time_indx)
             time_slicer = slice(time_indx-self.window[0], time_indx+self.window[1])
+            anno_time_indx = None
         elif not isinstance(self.samples, list) and self.samples.shape[1] == 3:
             img_indx, time_indx, anno_time_indx = self.samples[sample_indx]
             img_indx, time_indx, anno_time_indx = int(img_indx), int(time_indx), int(anno_time_indx)
@@ -233,6 +234,7 @@ class GenericChipsDataModule(L.LightningDataModule):
             split_tif: int | None = DATALOADER_CONFIG["split_tif"],
             class_indices: list[int] | None = DATALOADER_CONFIG["class_indices"],
             extension_config: dict = DATALOADER_CONFIG["extension_config"],
+            dataloader_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
             static_transform_config: dict = DATALOADER_CONFIG["static_transform_config"],
             dynamic_transform_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
             train_sample_path: str = TRAIN_SAMPLE_PATH,
@@ -241,8 +243,7 @@ class GenericChipsDataModule(L.LightningDataModule):
             predict_sample_path: str = PREDICT_SAMPLE_PATH,
             chip_data_path: str = CHIP_DATA_PATH,
             anno_data_path: str = ANNO_DATA_PATH,
-            stat_data_path: str | None = STAT_DATA_PATH,
-            **kwargs):
+            stat_data_path: str | None = STAT_DATA_PATH):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -252,6 +253,7 @@ class GenericChipsDataModule(L.LightningDataModule):
         self.split_tif = split_tif
         self.class_indices = class_indices
         self.extension_config = extension_config
+        self.dataloader_config = dataloader_config
         self.static_transform_config = static_transform_config
         self.dynamic_transform_config = dynamic_transform_config
         self.train_sample_path = train_sample_path
@@ -296,15 +298,15 @@ class GenericChipsDataModule(L.LightningDataModule):
             "class_indices": self.class_indices,
             "means": means,
             "stds": stds,
-        } | kwargs
+        }
 
         self.dataloader_config = {
             "batch_size": self.batch_size,
             "num_workers": self.num_workers,
             "persistent_workers": True,
             "pin_memory": True,
-            "drop_last": False,
-        }
+            "drop_last": True,
+        } | dataloader_config
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
         transforms = self.static_transform_config.get("transforms", [])

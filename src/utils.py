@@ -243,12 +243,9 @@ def tensors_to_tifs(prediction_path: str,
 
     manager = mp.Manager()
     file_queue = manager.Queue()
-    file_idxes = []
-
+    
     for file in files:
         file_queue.put(file)
-        logger.info
-        file_idxes.append(int(regex.search(file).groups()[0]))
 
     [file_queue.put(None) for _ in range(num_workers)]
     processes = set()

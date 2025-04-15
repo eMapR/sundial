@@ -29,6 +29,7 @@ DATALOADER_CONFIG = {
     "split_tif": None,                                      # tifs can only hold 3 dimensions. If a dimensions need to be split perform so here.
     "class_indices": None,
     "extension_config": {"extensions": []},                 # additional extensions to read into memory from meta_data shapefile
+    "dataloader_config": {},
     "static_transform_config": {"transforms": []},          # transforms defined as nn.Modules to perform sequentially. follows Pytorch Lightning format w/ class_path & init_args
                                                             # set "image_only" to true if the transforms should only be performed on image and not annotation
                                                             # transforms will be composed into sequential transformation
