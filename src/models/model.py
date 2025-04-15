@@ -11,7 +11,7 @@ from torch.nn.init import normal_
 from typing import Tuple
 
 from models.multiscale_deformable_attention import MultiScaleDeformableAttention
-
+from models.utils import DoubleConv2d
 
 class PatchEmbed(nn.Module):
     def __init__(
@@ -734,6 +734,20 @@ class VisionTransformer(nn.Module):
         return x
 
 
+class FuseLayer(nn.Module):
+    def __init__(self,
+                 embed_dim=64):
+        super().__init__()
+        self.fuse_layer = DoubleConv2d(embed_dim*2, embed_dim)
+        self.norm = nn.SyncBatchNorm(embed_dim)
+    
+    def forward(self, x, c, scale):
+        x = F.interpolate(x, scale_factor=scale, mode='bilinear', align_corners=False)
+        cat = torch.concat([x, c], dim=1)
+        fused = self.fuse_layer(cat)
+        return self.norm(fused)
+
+
 class ViTAdapter(VisionTransformer):
     def __init__(self,
                  input_size=(1, 224, 224),
@@ -750,8 +764,8 @@ class ViTAdapter(VisionTransformer):
                  with_cffn=True,
                  cffn_ratio=0.25,
                  deform_ratio=1.0,
-                 add_vit_feature=True,
                  use_extra_extractor=True,
+                 fuse=False,
                  *args, **kwargs):
         super().__init__(input_size=input_size,
                          patch_size=patch_size,
@@ -761,7 +775,6 @@ class ViTAdapter(VisionTransformer):
                          depth=depth,
                          *args, **kwargs)
         self.interaction_indexes = interaction_indexes
-        self.add_vit_feature = add_vit_feature
         self.embed_dim = embed_dim
 
         self.level_embed = nn.Parameter(torch.zeros(4, embed_dim))
@@ -777,11 +790,13 @@ class ViTAdapter(VisionTransformer):
                              extra_extractor=((True if i == len(interaction_indexes) - 1 else False) and use_extra_extractor))
             for i in range(len(interaction_indexes))
         ])
-        self.norm1 = nn.SyncBatchNorm(embed_dim)
-        self.norm2 = nn.SyncBatchNorm(embed_dim)
-        self.norm3 = nn.SyncBatchNorm(embed_dim)
-        self.norm4 = nn.SyncBatchNorm(embed_dim)
 
+        self.fuse_layer1 = FuseLayer(embed_dim)
+        self.fuse_layer2 = FuseLayer(embed_dim)
+        self.fuse_layer3 = FuseLayer(embed_dim)
+        self.fuse_layer4 = FuseLayer(embed_dim)
+        
+        self.fuse_layer_final = DoubleConv2d(embed_dim*4, embed_dim)        
         self.spm.apply(self._init_weights)
         self.interactions.apply(self._init_weights)
         normal_(self.level_embed)
@@ -829,41 +844,25 @@ class ViTAdapter(VisionTransformer):
                          deform_inputs1, deform_inputs2, H, W)
 
         # Split & Reshape
-        c1 = c[:, 0:c1s, :]
-        c2 = c[:, c1s:c1s+c2s, :]
-        c3 = c[:, c1s+c2s:c1s+c2s+c3s, :]
-        c4 = c[:, c1s+c2s+c3s:, :]
+        c1 = c[:, 0:c1s, :].transpose(1, 2).view(bs, dim, H, W).contiguous()
+        c2 = c[:, c1s:c1s+c2s, :].transpose(1, 2).view(bs, dim, H//2, W//2).contiguous()
+        c3 = c[:, c1s+c2s:c1s+c2s+c3s, :].transpose(1, 2).view(bs, dim, H//4, W//4).contiguous()
+        c4 = c[:, c1s+c2s+c3s:, :].transpose(1, 2).view(bs, dim, H//8, W//8).contiguous()
+
+        Hp, Wp = H // self.patch_embed.patch_size[-2], W // self.patch_embed.patch_size[-1]
+        x = x.transpose(1, 2).reshape(B, -1, Hp, Wp)
+        f1 = self.fuse_layer1(x, c1, 16)
+        f2 = self.fuse_layer2(x, c2, 8)
+        f3 = self.fuse_layer3(x, c3, 4)
+        f4 = self.fuse_layer4(x, c4, 2)
+
+        f4 = F.interpolate(f4, scale_factor=8, mode="bilinear", align_corners=False)
+        f3 = F.interpolate(f3, scale_factor=4, mode="bilinear", align_corners=False)
+        f2 = F.interpolate(f2, scale_factor=2, mode="bilinear", align_corners=False)
         
-        c1 = c1.transpose(1, 2).view(bs, dim, H, W).contiguous()
-        c2 = c2.transpose(1, 2).view(bs, dim, H//2, W//2).contiguous()
-        c3 = c3.transpose(1, 2).view(bs, dim, H//4, W//4).contiguous()
-        c4 = c4.transpose(1, 2).view(bs, dim, H//8, W//8).contiguous()
-
-        if self.add_vit_feature:
-            Hp, Wp = H // self.patch_embed.patch_size[-2], W // self.patch_embed.patch_size[-1]
-            x = x.transpose(1, 2).reshape(B, -1, Hp, Wp)
-            x1 = F.interpolate(x, scale_factor=16, mode='bilinear', align_corners=False)
-            x2 = F.interpolate(x, scale_factor=8, mode='bilinear', align_corners=False)
-            x3 = F.interpolate(x, scale_factor=4, mode='bilinear', align_corners=False)
-            x4 = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
-            c1, c2, c3, c4 = c1 + x1, c2 + x2, c3 + x3, c4 + x4
-
-        # Final Norm
-        f1 = self.norm1(c1)
-        f2 = self.norm2(c2)
-        f3 = self.norm3(c3)
-        f4 = self.norm4(c4)
-        
-        f4_up = F.interpolate(f4, scale_factor=2, mode="bilinear", align_corners=False)
-        f3_fused = f3 + f4_up
-
-        f3_up = F.interpolate(f3_fused, scale_factor=2, mode="bilinear", align_corners=False)
-        f2_fused = f2 + f3_up
-
-        f2_up = F.interpolate(f2_fused, scale_factor=2, mode="bilinear", align_corners=False)
-        f1_fused = f1 + f2_up
-        
-        return f1_fused
+        fused = self.fuse_layer_final(torch.concat([f4, f3, f2, f1], dim=1))
+    
+        return fused
     
 
 class Model(L.LightningModule):

@@ -351,7 +351,7 @@ class InfoNCE(nn.Module):
         # Normalize to unit vectors
         query, positive_key = self.normalize(query, positive_key)
         logits = query @ positive_key
-        labels = torch.arange(len(query), device=query.device)
+        labels = torch.tile(torch.arange(positive_key.shape[-1], device=query.device), (query.shape[0], 1))
         return F.cross_entropy(logits / temperature, labels, reduction=reduction)
 
     def normalize(self, *xs):

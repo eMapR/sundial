@@ -165,7 +165,7 @@ model:
 data:
     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
     init_args:
-        batch_size: 16
+        batch_size: 1
         num_workers: 4
         chip_size: 224
         window: [0, 1]
