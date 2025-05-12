@@ -79,12 +79,12 @@ class GenericChipsDataset(Dataset):
         sample_indx = indx // len(self.dynamic_transforms)
         transform_indx = indx % len(self.dynamic_transforms)
         
-        if not isinstance(self.samples, list) and self.samples.shape[1] == 2:
+        if not isinstance(self.samples, list) and len(self.samples.shape) == 2 and self.samples.shape[1] == 2:
             img_indx, time_indx = self.samples[sample_indx]
             img_indx, time_indx = int(img_indx), int(time_indx)
             time_slicer = slice(time_indx-self.window[0], time_indx+self.window[1])
             anno_time_indx = None
-        elif not isinstance(self.samples, list) and self.samples.shape[1] == 3:
+        elif not isinstance(self.samples, list) and len(self.samples.shape) == 2 and self.samples.shape[1] == 3:
             img_indx, time_indx, anno_time_indx = self.samples[sample_indx]
             img_indx, time_indx, anno_time_indx = int(img_indx), int(time_indx), int(anno_time_indx)
             time_slicer = slice(time_indx-self.window[0], time_indx+self.window[1])
@@ -120,7 +120,7 @@ class GenericChipsDataset(Dataset):
             if DATETIME_LABEL in self._annos.dims and anno_time_indx is not None:
                 sel[DATETIME_LABEL] = anno_time_indx
             if self.class_indices is None:
-                sel[CLASS_LABEL] = np.arange(self._annos[CLASS_LABEL].shape)
+                sel[CLASS_LABEL] = np.arange(*self._annos[CLASS_LABEL].shape)
             else:
                 sel[CLASS_LABEL] = self.class_indices
             
@@ -234,7 +234,7 @@ class GenericChipsDataModule(L.LightningDataModule):
             split_tif: int | None = DATALOADER_CONFIG["split_tif"],
             class_indices: list[int] | None = DATALOADER_CONFIG["class_indices"],
             extension_config: dict = DATALOADER_CONFIG["extension_config"],
-            dataloader_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
+            dataloader_config: dict = DATALOADER_CONFIG["dataloader_config"],
             static_transform_config: dict = DATALOADER_CONFIG["static_transform_config"],
             dynamic_transform_config: dict = DATALOADER_CONFIG["dynamic_transform_config"],
             train_sample_path: str = TRAIN_SAMPLE_PATH,

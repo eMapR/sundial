@@ -92,20 +92,16 @@ def run():
             ckpt_path = run_configs.get("ckpt_path", False)
             match ckpt_path:
                 case "best":
-                    ckpt_path = get_best_ckpt(
-                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                    ckpt_path = get_best_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
                 case "latest":
-                    ckpt_path = get_latest_ckpt(
-                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                    ckpt_path = get_latest_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
                 case False:
-                    ckpt_path = get_best_ckpt(
-                        CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
+                    ckpt_path = get_best_ckpt(CHECKPOINT_PATH, EXPERIMENT_SUFFIX)
                 case None:
-                    pass
+                    ckpt_path = "null"
                 case _:
-                    ckpt_path = os.path.join(CHECKPOINT_PATH, ckpt_path)
-            if ckpt_path is None:
-                ckpt_path = "null"
+                    if CHECKPOINT_PATH not in ckpt_path:
+                        ckpt_path = os.path.join(CHECKPOINT_PATH, ckpt_path)
             args.append(f"--ckpt_path={ckpt_path}")
 
     # using cli api instead of Trainer to avoid some code

@@ -142,9 +142,9 @@ def covering_grid(geo_dataframe: gpd.GeoDataFrame,
                   year_offset: int = 0):
     xmin, ymin, xmax, ymax = geo_dataframe.total_bounds
     grid_cells = []
-    for x0 in np.arange(xmin, xmax+meter_edge_size,  meter_edge_size - overlap):
+    for x1 in np.arange(xmin, xmax+meter_edge_size,  meter_edge_size - overlap):
         for y0 in np.arange(ymin, ymax+meter_edge_size, meter_edge_size - overlap):
-            x1 = x0 - meter_edge_size
+            x0 = x1 - meter_edge_size
             y1 = y0 + meter_edge_size
             new_cell = shapely.geometry.box(x0, y0, x1, y1)
             if new_cell.intersects(geo_dataframe.geometry).any():

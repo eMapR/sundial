@@ -457,10 +457,13 @@ class LogTestCallback(L.Callback):
                 dtype=torch.float,
                 device=pl_module.device).view(-1, 1, 1, 1)
             chips = chips * stds + means
-            max_bands = means + (stds * 2)
-            min_bands = means - (stds * 2)
-            max_sr = torch.max(max_bands).item()
-            min_sr = torch.min(min_bands).item()
+            max_bands = means + (stds * 3)
+            min_bands = means - (stds * 3)
+            rgb_max_sr = torch.mean(max_bands[:3]).item()
+            rgb_min_sr = torch.mean(min_bands[:3]).item()
+            fls_max_sr = torch.mean(max_bands[3:]).item()
+            fls_min_sr = torch.mean(min_bands[3:]).item()
+            
 
         for i in range(chips.shape[0]):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
@@ -470,11 +473,10 @@ class LogTestCallback(L.Callback):
             if 'time_indx' in batch:
                 time_indx = time_indices[i]
                 index_name += f"-{time_indx}"
-                
 
             # save rgb and ir band separately
-            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
-            log_false_color_image(chip, index_name, "chip", pl_module.logger.experiment, min_sr, max_sr)
+            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment, rgb_min_sr, rgb_max_sr)
+            log_false_color_image(chip, index_name, "chip", pl_module.logger.experiment, fls_min_sr, fls_max_sr)
             
             # save original annotations
             for c in range(anno.shape[0]):
@@ -542,7 +544,11 @@ class LogTestReconstructCallback(L.Callback):
             log_rgb_image(diff, index_name, "diff", pl_module.logger.experiment)
 
 
-class SaveTestCallback(L.Callback):
+class SaveImageCallback(L.Callback):
+    def __init__(self, suffix=None, **kwargs):
+        super().__init__(**kwargs)
+        self.suffix = "_" + suffix if suffix else ""
+
     def on_test_batch_end(self,
                           trainer: L.Trainer,
                           pl_module: L.LightningModule,
@@ -576,27 +582,8 @@ class SaveTestCallback(L.Callback):
             # save rgb and ir bands separately
             save_rgb_ir_tensor(chip, index_name, PREDICTION_PATH)
 
-    def on_predict_batch_end(self,
-                             trainer: L.Trainer,
-                             pl_module: L.LightningModule,
-                             outputs: torch.Tensor,
-                             batch: Tuple[torch.Tensor],
-                             batch_idx: int,
-                             dataloader_idx: int = 0):
-        indices = batch["indx"]
-        times = batch["time_indx"]
-        output = outputs["output"]
-        annos = outputs["anno"]
 
-        for i in range(output.shape[0]):
-            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            time = times[i]
-            pred = output[i]
-            path = os.path.join(PREDICTION_PATH, f"{index_name}_pred.pt")
-            torch.save(pred, path)
-
-
-class SaveEmbedCallback(L.Callback):
+class SaveTensorCallback(L.Callback):
     def __init__(self, suffix, **kwargs):
         super().__init__(**kwargs)
         self.suffix = "_" + suffix if suffix else ""
@@ -612,7 +599,6 @@ class SaveEmbedCallback(L.Callback):
         indices = batch["indx"]
         times = batch["time_indx"]
         output = outputs["output"]
-        annos = batch["anno"]
 
         save_path = os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX)
         if not os.path.exists(save_path):
@@ -622,13 +608,8 @@ class SaveEmbedCallback(L.Callback):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             time = times[i]
             pred = output[i]
-            anno = annos[i]
-            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_embed{self.suffix}.pt")
+            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_{self.suffix}.pt")
             torch.save(pred, embed_path)
-            
-            if anno.numel() > 0:
-                anno_path = os.path.join(save_path, f"{index_name}_t{time:02d}_anno{self.suffix}.pt")
-                torch.save(anno, anno_path)
             
     def on_test_batch_end(self, *args, **kwargs):
         self.on_predict_batch_end(*args, **kwargs)

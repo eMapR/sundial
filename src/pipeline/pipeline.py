@@ -332,38 +332,39 @@ def index():
     num_samples = len(gpd.read_file(META_DATA_PATH))
     samples = np.arange(num_samples)
     np.save(ALL_SAMPLE_PATH, samples)
-    indexer = getattr(importlib.import_module("pipeline.indexers"), SAMPLER_CONFIG["indexer"])
-    
-    if SAMPLER_CONFIG["split_ratios"]:
-        LOGGER.info("Splitting sample data into training, validation, test, and predict sets...")
-        train, validate, test = indexer(chip_data,
-                                        anno_data,
-                                        SAMPLER_CONFIG["split_ratios"],
-                                        RANDOM_SEED,
-                                        **SAMPLER_CONFIG["indexer_kwargs"])
-        idx_payload = {
-            TRAIN_SAMPLE_PATH: train,
-            VALIDATE_SAMPLE_PATH: validate,
-            TEST_SAMPLE_PATH: test
-        }
+    if SAMPLER_CONFIG["indexer"]:
+        indexer = getattr(importlib.import_module("pipeline.indexers"), SAMPLER_CONFIG["indexer"])
+        
+        if SAMPLER_CONFIG["split_ratios"]:
+            LOGGER.info("Splitting sample data into training, validation, test, and predict sets...")
+            train, validate, test = indexer(chip_data,
+                                            anno_data,
+                                            SAMPLER_CONFIG["split_ratios"],
+                                            RANDOM_SEED,
+                                            **SAMPLER_CONFIG["indexer_kwargs"])
+            idx_payload = {
+                TRAIN_SAMPLE_PATH: train,
+                VALIDATE_SAMPLE_PATH: validate,
+                TEST_SAMPLE_PATH: test
+            }
 
-        LOGGER.info("Saving sample data splits to paths...")
-        for path, idx_lst in idx_payload.items():
-            np.save(path, idx_lst.astype(int))
-        update_yaml(
-            {
-                "train_count": len(train),
-                "validate_count": len(validate),
-                "test_count": len(test)
-            },
-            STAT_DATA_PATH)
-    else:
-        samples = indexer(chip_data,
-                          anno_data,
-                          SAMPLER_CONFIG["split_ratios"],
-                          RANDOM_SEED,
-                          **SAMPLER_CONFIG["indexer_kwargs"])
+            LOGGER.info("Saving sample data splits to paths...")
+            for path, idx_lst in idx_payload.items():
+                np.save(path, idx_lst.astype(int))
+            update_yaml(
+                {
+                    "train_count": len(train),
+                    "validate_count": len(validate),
+                    "test_count": len(test)
+                },
+                STAT_DATA_PATH)
+        else:
+            samples = indexer(chip_data,
+                            anno_data,
+                            SAMPLER_CONFIG["split_ratios"],
+                            RANDOM_SEED,
+                            **SAMPLER_CONFIG["indexer_kwargs"])
 
-        LOGGER.info("Saving sample data indices to paths...")
-        np.save(PREDICT_SAMPLE_PATH, samples)
-        update_yaml({"predict_count": len(samples)}, STAT_DATA_PATH)
+            LOGGER.info("Saving sample data indices to paths...")
+            np.save(PREDICT_SAMPLE_PATH, samples)
+            update_yaml({"predict_count": len(samples)}, STAT_DATA_PATH)

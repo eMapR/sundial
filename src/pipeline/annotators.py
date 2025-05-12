@@ -33,8 +33,7 @@ def xarr_annotator(population_gdf: gpd.GeoDataFrame,
             if len(mp) == 0:
                 annotation = np.zeros((pixel_edge_size, pixel_edge_size))
             else:
-                annotation = rasterizer(
-                    mp, square, pixel_edge_size, NO_DATA_VALUE, 1)
+                annotation = rasterizer(mp, square, pixel_edge_size, NO_DATA_VALUE, 1)
         except Exception as e:
             raise e
         # TODO: add support for tif

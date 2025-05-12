@@ -120,14 +120,15 @@ class PrithviFCN(SundialPLBase):
                 prithvi_params=prithvi_params,
                 freeze_encoder=freeze_encoder,
                 prithvi_ckpt_path=prithvi_ckpt_path,
-                reshape=not embed)
+                reshape=True)
         
         if not self.embed:
             from torchvision.models.segmentation.fcn import FCNHead
             from models.utils import Upscaler
+            dim = prithvi_params["embed_dim"]*prithvi_params["num_frames"]
             self.head = nn.Sequential(
-                Upscaler(prithvi_params["embed_dim"]*prithvi_params["num_frames"] , 4),
-                FCNHead(128, self.num_classes)
+                Upscaler(dim, 4),
+                FCNHead(dim // 2**4, self.num_classes)
             )
             
         
@@ -143,6 +144,114 @@ class PrithviFCN(SundialPLBase):
         else:
             predictions = self.head(latent)
             return predictions
+
+
+class PrithviFCNMosaic(SundialPLBase):
+    def __init__(self,
+                 num_classes: int,
+                 upscale_depth: int,
+                 prithvi_params: dict,
+                 freeze_encoder: bool = True,
+                 prithvi_ckpt_path: str = None):
+        super().__init__()
+        self.num_classes = num_classes
+        self.upscale_depth = upscale_depth
+        self.kernel_size = prithvi_params["img_size"]
+        
+        self.prithvi = PrithviBackbone(
+            prithvi_params=prithvi_params,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
+            reshape=True)
+        
+        from torchvision.models.segmentation.fcn import FCNHead
+        from models.utils import Upscaler
+        dim = prithvi_params["embed_dim"]*prithvi_params["num_frames"]
+        self.head = nn.Sequential(
+            Upscaler(dim, self.upscale_depth),
+            FCNHead(dim // 2**self.upscale_depth, self.num_classes)
+        )
+            
+    def forward(self, data):
+        B, C, T, H, W = data["chip"].shape
+        assert H % self.kernel_size == 0
+        
+        N = (H // self.kernel_size)*(W // self.kernel_size)
+        H_ = W_ = self.kernel_size
+        B_ = B * N
+        
+        imgs = torch.functional.F.unfold(data["chip"].view(B,C*T,H,W), kernel_size=self.kernel_size, stride=self.kernel_size, padding=0)
+        imgs = imgs.permute(0, 2, 1).reshape(B_, C, T, H_, W_)
+        
+        latent = self.prithvi(imgs)
+        predictions = self.head(latent)
+        predictions = predictions.reshape(B, N, self.num_classes*H_*W_).permute(0, 2, 1)
+        predictions = torch.functional.F.fold(predictions, output_size=(H, W), kernel_size=self.kernel_size, stride=self.kernel_size, padding=0)
+        
+        return predictions
+
+
+class PrithviFCNDelta(SundialPLBase):
+    def __init__(self,
+                 num_classes: int,
+                 num_frames: int,
+                 upscale_depth: int,
+                 method: str,
+                 separate: bool,
+                 prithvi_params: dict,
+                 freeze_encoder: bool = True,
+                 prithvi_ckpt_path: str = None):
+        super().__init__()
+        self.num_classes = num_classes
+        self.upscale_depth = upscale_depth
+        self.separate = separate
+        self.method = method
+        self.kernel_size = prithvi_params["img_size"]
+        
+        self.prithvi = PrithviBackbone(
+            prithvi_params=prithvi_params,
+            freeze_encoder=freeze_encoder,
+            prithvi_ckpt_path=prithvi_ckpt_path,
+            reshape=True)
+        
+        from torchvision.models.segmentation.fcn import FCNHead
+        from models.utils import Upscaler
+
+        match self.method:
+            case 'delta':
+                dim = prithvi_params["embed_dim"]*num_frames
+            case 'cat_delta':
+                dim = prithvi_params["embed_dim"]*num_frames
+            case 'normal':
+                dim = prithvi_params["embed_dim"]*num_frames
+        
+        self.head = nn.Sequential(
+            Upscaler(dim, self.upscale_depth),
+            FCNHead(dim // 2**self.upscale_depth, self.num_classes)
+        )
+            
+    def forward(self, data):
+        B, C, T, H, W = data["chip"].shape
+        latent = []
+        if self.separate:
+            for t in range(T):
+                img = data["chip"][:,:,t].unsqueeze(2)
+                latent.append(self.prithvi(img))
+            latent = torch.concat(latent, dim=1)
+        else:
+            latent = self.prithvi(data)
+        B, D, Hp, Wp = latent.shape
+        D_ = D // T
+        match self.method:
+            case 'delta':
+                latent = latent[:,:-D_,:,:] - latent[:,D_:,:,:]
+            case 'cat_delta':
+                latent = torch.cat([latent[:,:D_,:,:], latent[:,:-D_,:,:] - latent[:,D_:,:,:]], dim=1)
+            case 'normal':
+                pass
+        predictions = self.head(latent)
+        
+        return predictions
 
 
 class PrithviDecoder3dUNet(SundialPLBase):
