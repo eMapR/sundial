@@ -119,7 +119,6 @@ def run():
 
 @function_timer
 def package():
-    LOGGER.info(DATA_PATH)
     tensors_dir_path = tensors_to_tifs(
         os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX),
         EXPERIMENT_FULL_NAME,

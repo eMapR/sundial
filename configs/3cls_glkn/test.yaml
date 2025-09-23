@@ -1,7 +1,9 @@
 trainer:
     callbacks:
       - class_path: callbacks.LogTestCallback
-      - class_path: callbacks.LogBinaryExtCallback
+      - class_path: callbacks.MulticlassPerSampleCallback
+        init_args:
+            class_names: ["agriculture", "development", "harvest", "insect_disease_defo", "background"]
     precision: 32-true
     devices: 1
 criterion:
@@ -10,3 +12,29 @@ criterion:
         multiclass: true
 activation:
     class_path: Softmax
+    init_args:
+        dim: 1
+
+# ckpt_path: epoch=0120_val_loss=0.680_unet3d_q1_w1.ckpt
+# ckpt_path: epoch=0125_val_loss=0.684_fcn_frozen_encoder_q1_w1.ckpt
+# ckpt_path: epoch=0088_val_loss=0.675_fcn_unfrozen_encoder_q1_w1.ckpt
+# ckpt_path: epoch=0120_val_loss=0.690_fcn_random_encoder_q1_w1.ckpt
+# ckpt_path: epoch=0106_val_loss=0.679_unet3d_q1_w2.ckpt
+# ckpt_path: epoch=0125_val_loss=0.680_fcn_frozen_encoder_q1_w2.ckpt
+# ckpt_path: epoch=0116_val_loss=0.670_fcn_unfrozen_encoder_q1_w2.ckpt
+# ckpt_path: epoch=0124_val_loss=0.683_fcn_random_encoder_q1_w2.ckpt
+# ckpt_path: epoch=0085_val_loss=0.678_fcn_frozen_encoder_mosaic_i224_p16_w2_e128_b4.ckpt
+# ckpt_path: epoch=0120_val_loss=0.669_fcn_unfrozen_encoder_mosaic_i224_p16_w2_e128_b4.ckpt
+# ckpt_path: epoch=0112_val_loss=0.683_fcn_random_encoder_mosaic_i224_p16_w2_e128_b4.ckpt
+# ckpt_path: epoch=0088_val_loss=0.674_fcn_frozen_encoder_mosaic_i112_p8_w2_e128_b4.ckpt
+# ckpt_path: epoch=0115_val_loss=0.672_fcn_unfrozen_encoder_mosaic_i112_p8_w2_e128_b4.ckpt
+# ckpt_path: epoch=0088_val_loss=0.674_fcn_random_encoder_mosaic_i112_p8_w2_e128_b4.ckpt
+# ckpt_path: epoch=0092_val_loss=0.669_fcn_frozen_encoder_mosaic_i56_p4_w2_e128_b4_retry96.ckpt
+# ckpt_path: epoch=0043_val_loss=0.668_fcn_unfrozen_encoder_mosaic_i56_p4_w2_e128_b4_retry80.ckpt
+# ckpt_path: epoch=0084_val_loss=0.669_fcn_random_encoder_mosaic_i56_p4_w2_e128_b4.ckpt
+# ckpt_path: epoch=0120_val_loss=0.679_fcn_frozen_encoder_p16_w2_delta.ckpt
+# ckpt_path: epoch=0104_val_loss=0.684_fcn_frozen_encoder_p16_w2_delta_sep.ckpt
+# ckpt_path: epoch=0085_val_loss=0.679_fcn_frozen_encoder_p16_w2_normal.ckpt
+# ckpt_path: epoch=0100_val_loss=0.683_fcn_frozen_encoder_p16_w2_normal_sep.ckpt
+# ckpt_path: epoch=0125_val_loss=0.679_fcn_frozen_encoder_p16_w2_cat_delta.ckpt
+ckpt_path: epoch=0104_val_loss=0.682_fcn_frozen_encoder_p16_w2_cat_delta_sep.ckpt

@@ -145,7 +145,7 @@ class GenericChipsDataset(Dataset):
             else:
                 data["chip"] = dynamic_transform(chip)
                 data["anno"] = anno
-        
+
         for ext in self.extensions:
             if ext.meta_data:
                 ext_val = ext.get_item(img_indx, time_indx, self.meta_data)

@@ -80,7 +80,7 @@ def get_best_ckpt(dir_path: str | os.PathLike,
     min_val_loss = float('inf')
     current_epoch = -1
     current_version = -1
-    best_file = None
+    best_file = "null"
 
     for file in files:
         match = regex.search(file)

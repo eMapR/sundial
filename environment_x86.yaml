@@ -322,3 +322,4 @@ dependencies:
       - typing-extensions==4.12.2
       - utm==0.7.0
       - yarl==1.17.1
+      - transformers  

@@ -1,125 +1,380 @@
+model:
+############################### question 1
+    # # fcn_frozen_encoder_q1_w2
+    # class_path: models.prithvi.PrithviFCN
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+
+    # # fcn_unfrozen_encoder_q1_w2
+    # class_path: models.prithvi.PrithviFCN
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+
+    # fcn_random_encoder_q1_w2
+    class_path: models.prithvi.PrithviFCN
+    init_args:
+        num_classes: 5
+        prithvi_ckpt_path: null
+        prithvi_params:
+            img_size: 224
+            patch_size: [1, 16, 16]
+            in_chans: 6
+            num_frames: 4
+            embed_dim: 1024
+            coords_encoding: []
+            encoder_only: true
+        freeze_encoder: false
+
+############################# question 2
+
+    # # fcn_frozen_encoder_mosaic_p4_i56_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 56
+    #         patch_size: [1, 4, 4]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 2
+
+    # # fcn_unfrozen_encoder_mosaic_i56_p4_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 56
+    #         patch_size: [1, 4, 4]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 2
+
+    # # fcn_random_encoder_mosaic_i56_p4_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: null
+    #     prithvi_params:
+    #         img_size: 56
+    #         patch_size: [1, 4, 4]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 2
+
+    # # fcn_frozen_encoder_mosaic_i112_p8_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 112
+    #         patch_size: [1, 8, 8]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 3
+
+    # # fcn_unfrozen_encoder_mosaic_i112_p8_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 112
+    #         patch_size: [1, 8, 8]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 3
+
+    # # fcn_random_encoder_mosaic_i112_p8_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: null
+    #     prithvi_params:
+    #         img_size: 112
+    #         patch_size: [1, 8, 8]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 3
+
+    # # fcn_frozen_encoder_mosaic_i224_p16_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+
+    # # fcn_unfrozen_encoder_mosaic_i224_p16_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 4
+
+    # # fcn_random_encoder_mosaic_i224_p16_w2_e128_b4
+    # class_path: models.prithvi.PrithviFCNMosaic
+    # init_args:
+    #     num_classes: 5
+    #     prithvi_ckpt_path: null
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: false
+    #     upscale_depth: 4
+
+############################### question 3
+
+    # # fcn_frozen_encoder_p16_w2_normal
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 4
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: normal
+    #     separate: false
+
+    # # fcn_frozen_encoder_p16_w2_delta
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 3
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: delta
+    #     separate: false
+
+    # # fcn_frozen_encoder_p16_w2_cat_delta
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 4
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 4
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: cat_delta
+    #     separate: false
+
+    # # fcn_frozen_encoder_p16_w2_normal_sep
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 4
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 1
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: normal
+    #     separate: true
+
+    # # fcn_frozen_encoder_p16_w2_delta_sep
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 3
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 1
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: delta
+    #     separate: true
+
+    # # fcn_frozen_encoder_p16_w2_cat_delta_sep
+    # class_path: models.prithvi.PrithviFCNDelta
+    # init_args:
+    #     num_classes: 5
+    #     num_frames: 4
+    #     prithvi_ckpt_path: '/ceoas/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
+    #     prithvi_params:
+    #         img_size: 224
+    #         patch_size: [1, 16, 16]
+    #         in_chans: 6
+    #         num_frames: 1
+    #         embed_dim: 1024
+    #         coords_encoding: []
+    #         encoder_only: true
+    #     freeze_encoder: true
+    #     upscale_depth: 4
+    #     method: cat_delta
+    #     separate: true
+
+
+############################### control
+
+    # # unet3d
+    # class_path: models.unet3d.UNet3D
+    # init_args:
+    #     n_channels: 6
+    #     n_classes: 5
+    #     num_frames: 4
+    #     embed: false
+
+############################### train prithvi and unet
+
+data:
+    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+    init_args:
+        batch_size: 32
+        # batch_size: 4
+        num_workers: 4
+        chip_size: 224
+        window: [2, 2]
+        # window: [1, 1]
+        class_indices: [0, 3, 6, 7]
+        dynamic_transform_config:
+            transforms:
+                - class_path: transforms.RandomAffineAugmentation
+                  image_only: false
+        static_transform_config:
+            transforms:
+                - class_path: transforms.AppendBackground
+                  init_args: {}
+                  methods: ["all"]
+                  targets: ["anno"]
+
+################################### train model v0
+
+# # new model
 # model:
-#     # # fcn_frozen_encoder
-#     # class_path: models.prithvi.PrithviFCN
-#     # init_args:
-#     #     num_classes: 3
-#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 4
-#     #         embed_dim: 1024
-#     #         coords_encoding: []
-#     #         encoder_only: true
-#     #     freeze_encoder: true
-#     #     embed: false
-
-#     # # fcn_unfrozen_encoder
-#     # class_path: models.prithvi.PrithviFCN
-#     # init_args:
-#     #     num_classes: 3
-#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 4
-#     #         embed_dim: 1024
-#     #         coords_encoding: []
-#     #         encoder_only: true
-#     #     freeze_encoder: false
-#     #     embed: false
-
-#     # # fcn_random_encoder
-#     # class_path: models.prithvi.PrithviFCN
-#     # init_args:
-#     #     num_classes: 3
-#     #     prithvi_ckpt_path: null
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 4
-#     #         embed_dim: 1024
-#     #         coords_encoding: []
-#     #         encoder_only: true
-#     #     freeze_encoder: false
-#     #     embed: false
-
-
-#     # # adapter_frozen_encoder
-#     # class_path: models.prithvi.PrithviAdapter
-#     # init_args:
-#     #     num_classes: 1
-#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 2
-#     #         embed_dim: 1024
-#     #         depth: 24
-#     #         encoder_only: true
-#     #         coords_encoding: []
-#     #     freeze_encoder: true
-
-#     # # adapter_unfrozen_encoder
-#     # class_path: models.prithvi.PrithviAdapter
-#     # init_args:
-#     #     num_classes: 1
-#     #     prithvi_ckpt_path: '/home/ceoas/truongmy/emapr/sundial/src/models/backbones/prithvi/Prithvi_EO_V2_300M.pt'
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 2
-#     #         embed_dim: 1024
-#     #         depth: 24
-#     #         encoder_only: true
-#     #         coords_encoding: []
-#     #     freeze_encoder: false
-
-#     # # adapter_random_encoder
-#     # class_path: models.prithvi.PrithviAdapter
-#     # init_args:
-#     #     num_classes: 1
-#     #     prithvi_ckpt_path: null
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 2
-#     #         embed_dim: 1024
-#     #         depth: 24
-#     #         encoder_only: true
-#     #         coords_encoding: []
-#     #     freeze_encoder: false
-
-#     # # prithvi_embed
-#     # class_path: models.prithvi.PrithviBackboneOnly
-#     # init_args:
-#     #     prithvi_ckpt_path: null
-#     #     prithvi_params:
-#     #         img_size: 224
-#     #         patch_size: [1, 16, 16]
-#     #         in_chans: 6
-#     #         num_frames: 4
-#     #         embed_dim: 1024
-#     #         coords_encoding: []
-#     #         encoder_only: true
-#     #     freeze_encoder: false
-
-#     # unet3d
-#     class_path: models.unet3d.UNet3D
+#     class_path: models.model.Model
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
 #     init_args:
-#         n_channels: 6
-#         n_classes: 5
-#         num_frames: 4
-#         embed: false
+#         batch_size: 4
+#         num_workers: 4
+#         chip_size: 224
+#         window: [0, 1]
+#         anno_data_path: null
+#         train_sample_path: /ceoas/emapr/sundial/samples/3cls_glkn/train_sample_all.npy
+#         validate_sample_path: /ceoas/emapr/sundial/samples/3cls_glkn/validate_sample_all.npy
+#         dynamic_transform_config:
+#             transforms:
+#                 - class_path: transforms.RandomAffineAugmentation
+#                   image_only: false
 
+############################### area wide inference
 
-# # window size of 2 before and 2 after
+# data:
+#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
+#     init_args:
+#         batch_size: 4
+#         num_workers: 4
+#         chip_size: 224
+#         window: [2, 2]
+#         class_indices: [0, 3, 6, 7]
+#         predict_sample_path: /ceoas/emapr/sundial/samples/3cls_glkn/all_sample.npy
+
+############################### calculate per chip metrics
+
 # data:
 #     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
 #     init_args:
@@ -127,50 +382,14 @@
 #         num_workers: 4
 #         chip_size: 224
 #         window: [2, 2]
+#         # window: [1, 1]
 #         class_indices: [0, 3, 6, 7]
-#         dynamic_transform_config:
-#             transforms:
-#                 - class_path: transforms.RandomAffineAugmentation
-#                   image_only: false
+#         # test_sample_path: /ceoas/emapr/sundial/samples/3cls_glkn/train_sample.npy
+#         test_sample_path: /ceoas/emapr/sundial/samples/3cls_glkn/validate_test_sample.npy
 #         static_transform_config:
 #             transforms:
 #                 - class_path: transforms.AppendBackground
 #                   init_args: {}
 #                   methods: ["all"]
 #                   targets: ["anno"]
-
-# # window size of 1 before and 1 after
-# data:
-#     class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
-#     init_args:
-#         batch_size: 32
-#         num_workers: 4
-#         chip_size: 224
-#         window: [1, 1]
-#         class_indices: [0, 3, 6]
-#         dynamic_transform_config:
-#             transforms:
-#                 - class_path: transforms.RandomAffineAugmentation
-#                   image_only: false
-#         static_transform_config:
-#             transforms:
-#                 - class_path: transforms.AppendBackground
-#                   init_args: {}
-#                   methods: ["all"]
-#                   targets: ["anno"]
-
-model:
-    class_path: models.model.Model
-
-data:
-    class_path: dataloaders.generic_chips_dataset.GenericChipsDataModule
-    init_args:
-        batch_size: 1
-        num_workers: 4
-        chip_size: 224
-        window: [0, 1]
-        anno_data_path: null
-        dynamic_transform_config:
-            transforms:
-                - class_path: transforms.RandomAffineAugmentation
-                  image_only: false
+        

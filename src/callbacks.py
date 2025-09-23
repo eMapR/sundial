@@ -2,6 +2,7 @@ import copy
 import importlib
 import inspect
 import lightning as L
+import numpy as np
 import os
 import pandas as pd
 import tarfile
@@ -22,7 +23,8 @@ from torchvision.transforms.functional import to_pil_image
 from typing import Optional, Tuple
 
 from config_utils import load_yaml
-from constants import (EXPERIMENT_FULL_NAME,
+from constants import (DATA_PATH,
+                       EXPERIMENT_FULL_NAME,
                        EXPERIMENT_SUFFIX,
                        IDX_NAME_ZFILL,
                        LOG_PATH,
@@ -339,7 +341,7 @@ class LogTrainMulticlassExtCallback(L.Callback):
                                 dataloader_idx: int = 0):
         annotations = batch["anno"]
         output = outputs["output"]
-
+        
         preds = torch.argmax(output, dim=1, keepdim=True).to(torch.float32)
         target = torch.argmax(annotations, dim=1, keepdim=True).to(torch.float32)
 
@@ -357,6 +359,85 @@ class LogTrainMulticlassExtCallback(L.Callback):
             prog_bar=False,
             sync_dist=True
         )
+        
+
+class MulticlassPerSampleCallback(L.Callback):
+    def __init__(self,
+                 class_names: list[str],
+                 out_path: str = None,
+                 base_year: int = 1992):
+        super().__init__()
+        self.class_names = class_names
+        self.out_path = out_path if out_path is not None else os.path.join(DATA_PATH, EXPERIMENT_FULL_NAME+".csv")
+        self.base_year = base_year
+        self.results = []
+    
+    def calc_and_log(self,
+                     pl_module: L.LightningModule,
+                     outputs: torch.Tensor,
+                     batch: Tuple[torch.Tensor]):
+        annotations = batch["anno"]
+        output = outputs["output"]
+        indices = batch["indx"]
+        if 'time_indx' in batch:
+            time_indices = batch["time_indx"]
+
+        preds = torch.argmax(output, dim=1, keepdim=True).to(torch.float32)
+        target = torch.argmax(annotations, dim=1, keepdim=True).to(torch.float32)
+
+        for i in range(preds.shape[0]):
+            image_index = int(indices[i].item())
+            
+            if 'time_indx' in batch:
+                time_indx = int(time_indices[i].item())
+
+            indx = indices[i]
+            counts = np.bincount(target[i].to(torch.int).cpu().numpy().flatten())
+            most_frequent = np.argmax(counts[:-1])
+            
+            metrics = {
+                "image_index": image_index,
+                "time_index": time_indx,
+                "most_frequent": self.class_names[most_frequent],
+                "bin_count": counts.tolist(),
+                "loss": pl_module.criterion(output[i].unsqueeze(0), annotations[i].unsqueeze(0)).item(),
+                "accuracy": multiclass_accuracy(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
+                "jaccard_index": multiclass_jaccard_index(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
+                "precision": multiclass_precision(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
+                "recall": multiclass_recall(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
+                "ssim": structural_similarity_index_measure(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
+            }
+            self.results.append(metrics)
+    
+    def on_validation_end(self,
+                          trainer: L.Trainer,
+                          pl_module: L.LightningModule):
+        pd.DataFrame(self.results).to_csv(self.out_path)
+        
+
+    def on_validation_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: Tuple[torch.Tensor],
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        self.calc_and_log(pl_module, outputs, batch)
+    
+    def on_test_end(self,
+                    trainer: L.Trainer,
+                    pl_module: L.LightningModule):
+        pd.DataFrame(self.results).to_csv(self.out_path)
+    
+    def on_test_batch_end(self,
+                                trainer: L.Trainer,
+                                pl_module: L.LightningModule,
+                                outputs: torch.Tensor,
+                                batch: Tuple[torch.Tensor],
+                                batch_idx: int,
+                                dataloader_idx: int = 0):
+        self.calc_and_log(pl_module, outputs, batch)
+
 
 
 class LogTrainRegressionExtCallback(L.Callback):
@@ -608,33 +689,8 @@ class SaveTensorCallback(L.Callback):
             index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
             time = times[i]
             pred = output[i]
-            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}_{self.suffix}.pt")
+            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}{self.suffix}.pt")
             torch.save(pred, embed_path)
             
     def on_test_batch_end(self, *args, **kwargs):
         self.on_predict_batch_end(*args, **kwargs)
-
-
-class PackageCallback(L.Callback):
-    def tensor_tif_upload(self,
-                          pl_module: L.LightningModule):
-        tensors_dir_path = tensors_to_tifs(
-            os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX),
-            EXPERIMENT_FULL_NAME,
-            META_DATA_PATH,
-            SAMPLER_CONFIG["num_workers"]
-        )
-        tar_path = f"{tensors_dir_path}.tar.gz"
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(tensors_dir_path, arcname=EXPERIMENT_FULL_NAME)
-        pl_module.logger.experiment.log_asset(tar_path, overwrite=True)
-
-    def on_test_end(self,
-                    trainer: L.Trainer,
-                    pl_module: L.LightningModule):
-        self.tensor_tif_upload(pl_module)
-
-    def on_predict_end(self,
-                       trainer: L.Trainer,
-                       pl_module: L.LightningModule):
-        self.tensor_tif_upload(pl_module)

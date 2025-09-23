@@ -70,9 +70,10 @@ def time_window(chip_data: xr.DataArray,
 
 def check_class_sums_helper(class_sums: np.array,
                             class_filters: dict,
-                            num_pixels: int):
+                            num_pixels: int,
+                            remove_zero: bool):
     total = class_sums.sum()
-    if total == 0:
+    if total == 0 and remove_zero:
         return False
     
     ratios = class_sums / num_pixels
@@ -82,22 +83,23 @@ def check_class_sums_helper(class_sums: np.array,
         class_filter = class_filters[class_index]
         if class_filter[0] is not None or class_filter[1] is not None:
             ratio = ratios[class_index]
-            floor = class_filter[0] if class_filter[0] else -1
-            ceiling = class_filter[1] if class_filter[1] else sys.maxsize
+            floor = class_filter[0] if class_filter[0] is not None else -1
+            ceiling = class_filter[1] if class_filter[1] is not None else sys.maxsize
             checks.append(ratio >= floor and ratio < ceiling)
     return any(checks)
 
 
 def check_class_sums(anno_data: xr.DataArray,
                      sample: Tuple[int],
-                     class_filters: dict):
+                     class_filters: dict,
+                     remove_zero: bool):
     sample_anno = anno_data.sel({APPEND_DIM: sample[0]})
     num_pixels = sample_anno["y"].shape[0]*sample_anno["x"].shape[0]
     dims = ["y", "x"]
     class_sums = sample_anno.sum(dims).values
     if DATETIME_LABEL in sample_anno.dims and len(sample) == 3:
         class_sums = class_sums[sample[2]]
-    if check_class_sums_helper(class_sums, class_filters, num_pixels):
+    if check_class_sums_helper(class_sums, class_filters, num_pixels, remove_zero):
         return sample
     else:
         return np.full(sample.shape, np.nan)
@@ -111,13 +113,14 @@ def time_window_split_class_filter(chip_data: xr.DataArray,
                                    time_step: int,
                                    anno_offset: int | None,
                                    class_filters: dict,
+                                   remove_zero: bool = False,
                                    num_workers: int = 48) -> np.array:
     assert len(class_filters) == anno_data[CLASS_LABEL].shape[0]
     
     splits = time_window_split(chip_data, anno_data, ratios, random_seed, time_range, time_step, anno_offset)
     proc_splits = []
     
-    vec_func = lambda t: check_class_sums(anno_data, t, class_filters)
+    vec_func = lambda t: check_class_sums(anno_data, t, class_filters, remove_zero)
     for split in splits:
         vec = np.array([vec_func(s) for s in split])
         vec = np.where(vec < 0, np.nan, vec) # TODO: negative max value bug
