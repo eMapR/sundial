@@ -1,5 +1,8 @@
+import importlib
 import os
 import yaml
+
+from typing import Optional
 
 
 def save_yaml(config: dict, path: str | os.PathLike):
@@ -32,3 +35,16 @@ def recursive_merge(dict1: dict, dict2: dict):
         else:
             result[key] = value
     return result
+
+
+def dynamic_import(loader: dict, kwargs: Optional[dict]=None):
+    class_path = loader.get("class_path")
+    init_args = loader.get("init_args", {})
+    if kwargs is not None:
+        init_args |= kwargs
+    
+    loader_path = class_path.rsplit(".", 1)
+    module_path, class_name = loader_path
+    loader_cls = getattr(importlib.import_module(module_path), class_name)
+    
+    return loader_cls(**init_args)

@@ -2,16 +2,16 @@ import os
 
 from config_utils import save_yaml
 from constants import (
-    CHECKPOINT_PATH,
+    CHECKPOINTS_PATH,
     CONFIG_PATH,
-    EXPERIMENT_SUFFIX,
-    FILE_EXT_MAP,
+    PREDICTIONS_PATH,
     LOG_PATH,
+    EXPERIMENT_SUFFIX,
     JOB_NAME,
-    SAMPLE_CONFIG_PATH,
-    SAMPLE_NAME,
+    PIPELINE_CONFIG_PATH,
+    SHAPE_NAME,
 )
-from pipeline.settings import SAMPLER_CONFIG
+from pipeline.settings import PIPELINE_CONFIG
 
 
 # default package settings
@@ -20,15 +20,11 @@ PACKAGE_CONFIG = {
 }
 
 # default lightning dataloader settings
-DATALOADER_CONFIG = {
+DATAMODULE_CONFIG = {
     "batch_size": 32,
     "num_workers": 4,                                       # number of workers to use for loading onto GPU
-    "chip_size": SAMPLER_CONFIG["pixel_edge_size"],         # chip size of the images. If smaller than what is stored, the loader will center crop                                   
-    "window": None,
-    "file_type": FILE_EXT_MAP[SAMPLER_CONFIG["file_type"]], # file type to load. will default to same file type used in Downloader but if a custom dataset is added you may adjust here.
-    "split_tif": None,                                      # tifs can only hold 3 dimensions. If a dimensions need to be split perform so here.
-    "class_indices": None,
-    "extension_config": {"extensions": []},                 # additional extensions to read into memory from meta_data shapefile
+    "sampler": {"class_path": "",
+                "init_args": {}},                                
     "dataloader_config": {},
     "static_transform_config": {"transforms": []},          # transforms defined as nn.Modules to perform sequentially. follows Pytorch Lightning format w/ class_path & init_args
                                                             # set "image_only" to true if the transforms should only be performed on image and not annotation
@@ -43,15 +39,15 @@ DATALOADER_CONFIG = {
 # default lightning model checkpoint save settings (See https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html)
 # can be set in any of the config files under "model_checkpoint key"
 CHECKPOINT_CONFIG = {
-    "dirpath": CHECKPOINT_PATH,                             # directory path to save checkpoint files. will default to specification in settings.py
+    "dirpath": CHECKPOINTS_PATH,                             # directory path to save checkpoint files. will default to specification in settings.py
     "filename": "{epoch:04d}",
     "monitor": "val_loss",
-    "save_top_k": 8,
+    "save_top_k": 3,
     "save_last": False,
     "auto_insert_metric_name": True,
     "save_weights_only": False,
     "every_n_epochs": 1,
-    "enable_version_counter": True
+    "enable_version_counter": False
 }
 
 # default lightning logger settings (See https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.loggers.comet.html#module-lightning.pytorch.loggers.comet)
@@ -60,7 +56,7 @@ LOGGER_CONFIG = {
     "api_key": os.getenv("COMET_API_KEY"),
     "workspace": os.getenv("COMET_WORKSPACE"),
     "save_dir": LOG_PATH,
-    "project_name": SAMPLE_NAME.replace("_", "-"),
+    "project_name": SHAPE_NAME.replace("_", "-"),
     "experiment_name": JOB_NAME,
     "log_code": False,
     "auto_param_logging": False,
@@ -72,13 +68,18 @@ LOGGER_CONFIG = {
 }
 
 if __name__ == "__main__":
+    os.makedirs(CONFIG_PATH)
+    os.makedirs(CHECKPOINTS_PATH)
+    os.makedirs(PREDICTIONS_PATH)
+    os.makedirs(LOG_PATH)
+
     run_config = {
         "model": None,
         "data": {
             "class_path": "dataloaders.generic_chips_dataset.GenericChipsDataModule",
-            "init_args": DATALOADER_CONFIG
+            "init_args": DATAMODULE_CONFIG
         }
     }
     config_path = os.path.join(CONFIG_PATH, "base.yaml")
     save_yaml(run_config, config_path)
-    save_yaml(SAMPLER_CONFIG, SAMPLE_CONFIG_PATH)
+    save_yaml(PIPELINE_CONFIG, PIPELINE_CONFIG_PATH)

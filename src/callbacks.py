@@ -25,13 +25,11 @@ from typing import Optional, Tuple
 from config_utils import load_yaml
 from constants import (DATA_PATH,
                        EXPERIMENT_FULL_NAME,
-                       EXPERIMENT_SUFFIX,
                        IDX_NAME_ZFILL,
                        LOG_PATH,
-                       META_DATA_PATH,
-                       PREDICTION_PATH,
+                       PREDICTIONS_PATH,
                        STAT_DATA_PATH)
-from pipeline.settings import SAMPLER_CONFIG
+from pipeline.settings import PIPELINE_CONFIG
 from utils import log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
@@ -41,19 +39,6 @@ class ModelSetupCallback(L.Callback):
               pl_module: L.LightningModule,
               stage: str):
         pl_module.strict_loading = False
-
-
-class DrawPrithviONNXCallback(L.Callback):
-    def setup(self,
-              trainer: L.Trainer,
-              pl_module: L.LightningModule,
-              stage: str):
-        d = pl_module.prithvi_params["model_args"]["num_frames"]
-        c = pl_module.prithvi_params["model_args"]["in_chans"]
-        h = pl_module.prithvi_params["model_args"]["img_size"]
-        example_input = torch.randn((1, c, d, h, h),
-                                    device=pl_module.device)
-        pl_module.to_onnx(LOG_PATH, example_input)
 
 
 class DefineCriterionCallback(L.Callback):
@@ -162,7 +147,7 @@ class GenerateTrainGifCallback(L.Callback):
         for c in range(self.frames[0].shape[0]):
             pil_frames = [to_pil_image(frame[c]) for frame in self.frames]
             if pil_frames:
-                pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
+                pil_frames[0].save(PREDICTIONS_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
 
 
 class GenerateValidateGifCallback(L.Callback):
@@ -207,7 +192,7 @@ class GenerateValidateGifCallback(L.Callback):
         for c in range(self.frames[0].shape[0]):
             pil_frames = [to_pil_image(frame[c]) for frame in self.frames]
             if pil_frames:
-                pil_frames[0].save(PREDICTION_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
+                pil_frames[0].save(PREDICTIONS_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
 
 
 class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
@@ -222,15 +207,13 @@ class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
         if config["trainer"]["callbacks"]:
             config["trainer"]["callbacks"] = [{k: vars(v) if hasattr(
                 v, "__dict__") else v for k, v in vars(c).items()} for c in config["trainer"]["callbacks"]]
-
-        stat_data = load_yaml(STAT_DATA_PATH)
-        if "chip_verify" in stat_data:
-            del stat_data["chip_verify"]
-        if "anno_verify" in stat_data:
-            del stat_data["anno_verify"]
+        if os.path.exists(STAT_DATA_PATH):
+            stat_data = load_yaml(STAT_DATA_PATH)
+        else:
+            stat_data = {}
         pl_module.logger.log_hyperparams(config),
         pl_module.logger.log_hyperparams({"stat_data": stat_data,
-                                          "sampler": SAMPLER_CONFIG})
+                                          "pipeline_config": PIPELINE_CONFIG})
 
 
 class LogTrainCallback(L.Callback):
@@ -359,85 +342,6 @@ class LogTrainMulticlassExtCallback(L.Callback):
             prog_bar=False,
             sync_dist=True
         )
-        
-
-class MulticlassPerSampleCallback(L.Callback):
-    def __init__(self,
-                 class_names: list[str],
-                 out_path: str = None,
-                 base_year: int = 1992):
-        super().__init__()
-        self.class_names = class_names
-        self.out_path = out_path if out_path is not None else os.path.join(DATA_PATH, EXPERIMENT_FULL_NAME+".csv")
-        self.base_year = base_year
-        self.results = []
-    
-    def calc_and_log(self,
-                     pl_module: L.LightningModule,
-                     outputs: torch.Tensor,
-                     batch: Tuple[torch.Tensor]):
-        annotations = batch["anno"]
-        output = outputs["output"]
-        indices = batch["indx"]
-        if 'time_indx' in batch:
-            time_indices = batch["time_indx"]
-
-        preds = torch.argmax(output, dim=1, keepdim=True).to(torch.float32)
-        target = torch.argmax(annotations, dim=1, keepdim=True).to(torch.float32)
-
-        for i in range(preds.shape[0]):
-            image_index = int(indices[i].item())
-            
-            if 'time_indx' in batch:
-                time_indx = int(time_indices[i].item())
-
-            indx = indices[i]
-            counts = np.bincount(target[i].to(torch.int).cpu().numpy().flatten())
-            most_frequent = np.argmax(counts[:-1])
-            
-            metrics = {
-                "image_index": image_index,
-                "time_index": time_indx,
-                "most_frequent": self.class_names[most_frequent],
-                "bin_count": counts.tolist(),
-                "loss": pl_module.criterion(output[i].unsqueeze(0), annotations[i].unsqueeze(0)).item(),
-                "accuracy": multiclass_accuracy(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
-                "jaccard_index": multiclass_jaccard_index(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
-                "precision": multiclass_precision(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
-                "recall": multiclass_recall(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
-                "ssim": structural_similarity_index_measure(preds[i].unsqueeze(0), target[i].unsqueeze(0), pl_module.num_classes).item(),
-            }
-            self.results.append(metrics)
-    
-    def on_validation_end(self,
-                          trainer: L.Trainer,
-                          pl_module: L.LightningModule):
-        pd.DataFrame(self.results).to_csv(self.out_path)
-        
-
-    def on_validation_batch_end(self,
-                                trainer: L.Trainer,
-                                pl_module: L.LightningModule,
-                                outputs: torch.Tensor,
-                                batch: Tuple[torch.Tensor],
-                                batch_idx: int,
-                                dataloader_idx: int = 0):
-        self.calc_and_log(pl_module, outputs, batch)
-    
-    def on_test_end(self,
-                    trainer: L.Trainer,
-                    pl_module: L.LightningModule):
-        pd.DataFrame(self.results).to_csv(self.out_path)
-    
-    def on_test_batch_end(self,
-                                trainer: L.Trainer,
-                                pl_module: L.LightningModule,
-                                outputs: torch.Tensor,
-                                batch: Tuple[torch.Tensor],
-                                batch_idx: int,
-                                dataloader_idx: int = 0):
-        self.calc_and_log(pl_module, outputs, batch)
-
 
 
 class LogTrainRegressionExtCallback(L.Callback):
@@ -501,196 +405,3 @@ class LogAvgMagGradientCallback(L.Callback):
                 prog_bar=False,
                 sync_dist=True
             )
-
-
-class LogTestCallback(L.Callback):
-    def on_test_batch_end(self,
-                          trainer: L.Trainer,
-                          pl_module: L.LightningModule,
-                          outputs: torch.Tensor,
-                          batch: Tuple[torch.Tensor],
-                          batch_idx: int,
-                          dataloader_idx: int = 0):
-        chips = batch["chip"]
-        annotations = batch["anno"]
-        indices = batch["indx"]
-        loss = outputs["loss"]
-        output = outputs["output"]
-        
-        if 'time_indx' in batch:
-            time_indices = batch["time_indx"]
-
-        pl_module.log(
-            name="test_loss",
-            value=loss,
-            logger=True,
-            prog_bar=False,
-        )
-
-        # unnormalize chips for loggings
-        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
-            means = torch.tensor(
-                trainer.test_dataloaders.dataset.means,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            stds = torch.tensor(
-                trainer.test_dataloaders.dataset.stds,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            chips = chips * stds + means
-            max_bands = means + (stds * 3)
-            min_bands = means - (stds * 3)
-            rgb_max_sr = torch.mean(max_bands[:3]).item()
-            rgb_min_sr = torch.mean(min_bands[:3]).item()
-            fls_max_sr = torch.mean(max_bands[3:]).item()
-            fls_min_sr = torch.mean(min_bands[3:]).item()
-            
-
-        for i in range(chips.shape[0]):
-            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            anno = annotations[i]
-            pred = output[i]
-            if 'time_indx' in batch:
-                time_indx = time_indices[i]
-                index_name += f"-{time_indx}"
-
-            # save rgb and ir band separately
-            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment, rgb_min_sr, rgb_max_sr)
-            log_false_color_image(chip, index_name, "chip", pl_module.logger.experiment, fls_min_sr, fls_max_sr)
-            
-            # save original annotations
-            for c in range(anno.shape[0]):
-                image = anno[c].unsqueeze(-1)
-                pl_module.logger.experiment.log_image(
-                    image_data=image.cpu(),
-                    name=f"{index_name}_c{c}_anno.png",
-                    image_scale=2.0,
-                    image_minmax=(0, 1)
-                )
-
-            # save predictions generated from model
-            for c in range(pred.shape[0]):
-                image = pred[c].unsqueeze(-1)
-                pl_module.logger.experiment.log_image(
-                    image_data=image.to(torch.float32).cpu(),
-                    name=f"{index_name}_c{c}_pred.png",
-                    image_scale=2.0,
-                    image_minmax=(0, 1)
-                )
-
-
-class LogTestReconstructCallback(L.Callback):
-    def on_test_batch_end(self,
-                          trainer: L.Trainer,
-                          pl_module: L.LightningModule,
-                          outputs: torch.Tensor,
-                          batch: Tuple[torch.Tensor],
-                          batch_idx: int,
-                          dataloader_idx: int = 0):
-        chips = batch["chip"]
-        indices = batch["indx"]
-        loss = outputs["loss"]
-        output = outputs["output"]
-        diffs = outputs["diff"]
-
-        pl_module.log(
-            name="test_loss",
-            value=loss,
-            logger=True,
-            prog_bar=False,
-        )
-
-        # unnormalize chips for loggings
-        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
-            means = torch.tensor(
-                trainer.test_dataloaders.dataset.means,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            stds = torch.tensor(
-                trainer.test_dataloaders.dataset.stds,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            chips = chips * stds + means
-
-        for i in range(chips.shape[0]):
-            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            pred = output[i]
-            diff = diffs[i]
-
-            # save rgb and ir band separately
-            log_rgb_image(chip, index_name, "chip", pl_module.logger.experiment)
-            log_rgb_image(pred, index_name, "pred", pl_module.logger.experiment)
-            log_rgb_image(diff, index_name, "diff", pl_module.logger.experiment)
-
-
-class SaveImageCallback(L.Callback):
-    def __init__(self, suffix=None, **kwargs):
-        super().__init__(**kwargs)
-        self.suffix = "_" + suffix if suffix else ""
-
-    def on_test_batch_end(self,
-                          trainer: L.Trainer,
-                          pl_module: L.LightningModule,
-                          outputs: torch.Tensor,
-                          batch: torch.Tensor,
-                          batch_idx: int,
-                          dataloader_idx: int = 0):
-        chips = batch["chip"]
-        annotations = batch["anno"]
-        indices = batch["indx"]
-        output = outputs["output"]
-
-        # unnormalize chips for loggings
-        if trainer.test_dataloaders.dataset.means is not None and trainer.test_dataloaders.dataset.stds is not None:
-            means = torch.tensor(
-                trainer.test_dataloaders.dataset.means,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            stds = torch.tensor(
-                trainer.test_dataloaders.dataset.stds,
-                dtype=torch.float,
-                device=pl_module.device).view(-1, 1, 1, 1)
-            chips = chips * stds + means
-
-        for i in range(chips.shape[0]):
-            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            chip = chips[i]
-            anno = annotations[i]
-            pred = output[i]
-
-            # save rgb and ir bands separately
-            save_rgb_ir_tensor(chip, index_name, PREDICTION_PATH)
-
-
-class SaveTensorCallback(L.Callback):
-    def __init__(self, suffix, **kwargs):
-        super().__init__(**kwargs)
-        self.suffix = "_" + suffix if suffix else ""
-
-    
-    def on_predict_batch_end(self,
-                             trainer: L.Trainer,
-                             pl_module: L.LightningModule,
-                             outputs: torch.Tensor,
-                             batch: Tuple[torch.Tensor],
-                             batch_idx: int,
-                             dataloader_idx: int = 0):
-        indices = batch["indx"]
-        times = batch["time_indx"]
-        output = outputs["output"]
-
-        save_path = os.path.join(PREDICTION_PATH, EXPERIMENT_SUFFIX)
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-
-        for i in range(output.shape[0]):
-            index_name = str(indices[i].item()).zfill(IDX_NAME_ZFILL)
-            time = times[i]
-            pred = output[i]
-            embed_path = os.path.join(save_path, f"{index_name}_t{time:02d}{self.suffix}.pt")
-            torch.save(pred, embed_path)
-            
-    def on_test_batch_end(self, *args, **kwargs):
-        self.on_predict_batch_end(*args, **kwargs)

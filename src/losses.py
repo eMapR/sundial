@@ -13,8 +13,9 @@ class Base(nn.Module):
     def __init__(self,
                  logits: bool = True,
                  multiclass: bool = False,
-                 reduction: Literal["none", "mean", "sum"] = "mean"):
-        super().__init__()
+                 reduction: Literal["none", "mean", "sum"] = "mean",
+                 **kwargs):
+        super().__init__(**kwargs)
         self.logits = logits
         self.multiclass = multiclass
         self.reducer = Reducer(reduction)
@@ -176,15 +177,27 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
                  reduce: Any | None = None,
                  reduction: str = 'mean',
                  label_smoothing: float = 0,
-                 device: torch.device | None = None):
+                 device: torch.device | None = None,
+                 mask: bool = False,):
         if weight is not None:
             weight = torch.tensor(weight, device=device, dtype=torch.float)
         super().__init__(weight=weight,
                          size_average=size_average,
                          ignore_index=ignore_index,
                          reduce=reduce,
-                         reduction=reduction,
+                         reduction=reduction if not mask else None,
                          label_smoothing=label_smoothing)
+        self.mask = mask 
+        if self.mask:
+            self.r = Reducer(reduction)
+    
+    def forward(self, inputs, targets):
+        loss = super().forward(inputs, targets)
+        if self.mask:
+            # hopefull this isn't too slow
+            mask = targets.sum(dim=1)
+            loss *= self.r(loss)
+        return loss
 
 
 class SSIMLoss(Base):

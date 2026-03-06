@@ -1,7 +1,7 @@
 import os
 
 # experiment information
-SAMPLE_NAME = os.getenv("SUNDIAL_SAMPLE_NAME")
+SHAPE_NAME = os.getenv("SUNDIAL_SHAPE_NAME")
 EXPERIMENT_PREFIX = os.getenv("SUNDIAL_EXPERIMENT_PREFIX")
 EXPERIMENT_SUFFIX = os.getenv("SUNDIAL_EXPERIMENT_SUFFIX")
 EXPERIMENT_BASE_NAME = os.getenv("SUNDIAL_EXPERIMENT_BASE_NAME")
@@ -12,54 +12,33 @@ JOB_NAME = f"{METHOD}_{EXPERIMENT_FULL_NAME}"
 # base paths
 BASE_PATH = os.getenv("SUNDIAL_BASE_PATH")
 DATA_PATH = os.path.join(BASE_PATH, "data")
-CONFIGS_PATH = os.path.join(BASE_PATH, "configs")
 SHAPES_PATH = os.path.join(BASE_PATH, "shapes")
-SAMPLES_PATH = os.path.join(BASE_PATH, "samples")
-CHECKPOINTS_PATH = os.path.join(BASE_PATH, "checkpoints")
-PREDICTIONS_PATH = os.path.join(BASE_PATH, "predictions")
-LOGS_PATH = os.path.join(BASE_PATH, "logs")
+EXPERIMENTS_PATH = os.path.join(BASE_PATH, "experiments")
 
 # experiment paths
-CONFIG_PATH = os.path.join(CONFIGS_PATH, EXPERIMENT_BASE_NAME)
-SAMPLE_PATH = os.path.join(SAMPLES_PATH, EXPERIMENT_BASE_NAME)
-CHECKPOINT_PATH = os.path.join(CHECKPOINTS_PATH, EXPERIMENT_BASE_NAME)
-PREDICTION_PATH = os.path.join(PREDICTIONS_PATH, EXPERIMENT_BASE_NAME)
-LOG_PATH = os.path.join(LOGS_PATH, EXPERIMENT_BASE_NAME)
+EXPERIMENT_PATH = os.path.join(EXPERIMENTS_PATH, EXPERIMENT_BASE_NAME)
+CHECKPOINTS_PATH = os.path.join(EXPERIMENT_PATH, "checkpoints", EXPERIMENT_SUFFIX)
+PREDICTIONS_PATH = os.path.join(EXPERIMENT_PATH, "predictions", EXPERIMENT_SUFFIX)
+OUTPUT_DATA_PATH = os.path.join(EXPERIMENT_PATH, "output_data", EXPERIMENT_SUFFIX)
+CONFIG_PATH = os.path.join(EXPERIMENT_PATH, "configs")
+LOG_PATH = os.path.join(EXPERIMENT_PATH, "logs", EXPERIMENT_SUFFIX)
 
 # config paths
-SAMPLE_CONFIG_PATH = os.path.join(CONFIG_PATH, "sample.yaml")
+PIPELINE_CONFIG_PATH = os.path.join(CONFIG_PATH, "pipeline.yaml")
 METHOD_CONFIG_PATH = os.path.join(CONFIG_PATH, f"{METHOD}.yaml")
 BASE_CONFIG_PATH = os.path.join(CONFIG_PATH, "base.yaml")
 
 # sample and data paths
-META_DATA_PATH = os.path.join(SAMPLE_PATH, "meta_data")
-STAT_DATA_PATH = os.path.join(SAMPLE_PATH, "stat_data.yaml")
-CHIP_DATA_PATH = os.path.join(SAMPLE_PATH, "chip_data")
-ANNO_DATA_PATH = os.path.join(SAMPLE_PATH, "anno_data")
-ALL_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "all_sample.npy")
-TRAIN_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "train_sample.npy")
-VALIDATE_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "validate_sample.npy")
-PREDICT_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "predict_sample.npy")
-TEST_SAMPLE_PATH = os.path.join(SAMPLE_PATH, "test_sample.npy")
+STAT_DATA_PATH = os.path.join(EXPERIMENT_PATH, "stat_data.yaml")
+IMAGERY_PATH = os.path.join(EXPERIMENT_PATH, "imagery")
+ANNOTATIONS_PATH = os.path.join(EXPERIMENT_PATH, "annotations")
 
 # shapefile and source data paths
-GEO_RAW_PATH = os.path.join(SHAPES_PATH, SAMPLE_NAME)
-GEO_POP_PATH = os.path.join(SAMPLE_PATH, "gpop_data")
+GEO_PROC_PATH = os.path.join(SHAPES_PATH, SHAPE_NAME)
 
 # non configurable GEE, image, and meta data settings
 RANDOM_SEED = 42
-APPEND_DIM = "sample"
-CLASS_LABEL = "class"
-DATETIME_LABEL = "datetime"
-NO_DATA_VALUE = 0
 IDX_NAME_ZFILL = 8
-GEE_REQUEST_LIMIT = 40
+GEE_REQUEST_LIMIT = 42
+GEE_REQUEST_LIMIT_MB = 50331648
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
-
-# GEE file type mapping to file extension
-FILE_EXT_MAP = {
-    "GEO_TIFF": "tif",
-    "NPY": "npy",
-    "NUMPY_NDARRAY": "npy",
-    "ZARR": "zarr"
-}

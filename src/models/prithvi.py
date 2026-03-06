@@ -1,9 +1,12 @@
 import gc
 import lightning as L
+from huggingface_hub import snapshot_download
+import sys
 import torch
 import torch.nn.functional as F
 
 from torch import nn
+from transformers import ViTConfig, ViTModel
 
 from models.base import SundialPLBase
 from models.utils import InteractionBlock, SpatialPriorModule, deform_inputs
@@ -40,8 +43,11 @@ class PrithviBackbone(L.LightningModule):
         self.prithvi_ckpt_path = prithvi_ckpt_path
         self.prithvi_params = prithvi_params
         self.freeze_encoder = freeze_encoder
-
-        from models.backbones.prithvi.prithvi2 import PrithviMAE
+        
+        PRITHVI_DIR = snapshot_download(repo_id="ibm-nasa-geospatial/Prithvi-EO-2.0-300M")
+        sys.path.append(PRITHVI_DIR)
+        from prithvi_mae import PrithviMAE
+        
         self.model = PrithviMAE(**self.prithvi_params)
         if self.prithvi_ckpt_path is not None:
             checkpoint = torch.load(self.prithvi_ckpt_path, weights_only=False)
@@ -114,18 +120,21 @@ class PrithviFCN(SundialPLBase):
         self.embed = embed
         
         if self.ablate:
-            self.prithvi =  DoubleConv2d(prithvi_params["in_chans"], 1024),
+            self.prithvi =  ViTModel(ViTConfig(**prithvi_params))
+            self.patch_size = prithvi_params["patch_size"]
+            dim = prithvi_params["hidden_size"]*prithvi_params["num_frames"]
         else:
             self.prithvi = PrithviBackbone(
                 prithvi_params=prithvi_params,
                 freeze_encoder=freeze_encoder,
                 prithvi_ckpt_path=prithvi_ckpt_path,
                 reshape=True)
+            dim = prithvi_params["embed_dim"]*prithvi_params["num_frames"]
+
         
         if not self.embed:
             from torchvision.models.segmentation.fcn import FCNHead
             from models.utils import Upscaler
-            dim = prithvi_params["embed_dim"]*prithvi_params["num_frames"]
             self.head = nn.Sequential(
                 Upscaler(dim, 4),
                 FCNHead(dim // 2**4, self.num_classes)
@@ -135,8 +144,13 @@ class PrithviFCN(SundialPLBase):
     def forward(self, data):
         if self.ablate:
             B, C, T, H, W = data["chip"].shape
-            x = data["chip"].reshape(B, -1, H, W)
-            latent = self.prithvi(x)
+            Hp, Wp = H // self.patch_size, W // self.patch_size
+            latent = []
+            for i in range(T):
+                time_step = data["chip"][:,:,i,...]
+                l = self.prithvi(time_step).last_hidden_state[:,1:,...].transpose(1,2).reshape(B, -1, Hp, Wp)
+                latent.append(l)
+            latent = torch.concat(latent, dim=1)
         else:
             latent = self.prithvi(data)
         if self.embed:
@@ -217,17 +231,11 @@ class PrithviFCNDelta(SundialPLBase):
         from torchvision.models.segmentation.fcn import FCNHead
         from models.utils import Upscaler
 
-        match self.method:
-            case 'delta':
-                dim = prithvi_params["embed_dim"]*num_frames
-            case 'cat_delta':
-                dim = prithvi_params["embed_dim"]*num_frames
-            case 'normal':
-                dim = prithvi_params["embed_dim"]*num_frames
+        dim = prithvi_params["embed_dim"]*num_frames
         
         self.head = nn.Sequential(
             Upscaler(dim, self.upscale_depth),
-            FCNHead(dim // 2**self.upscale_depth, self.num_classes)
+            FCNHead(dim // 2**(self.upscale_depth+2), self.num_classes)
         )
             
     def forward(self, data):
@@ -247,7 +255,7 @@ class PrithviFCNDelta(SundialPLBase):
                 latent = latent[:,:-D_,:,:] - latent[:,D_:,:,:]
             case 'cat_delta':
                 latent = torch.cat([latent[:,:D_,:,:], latent[:,:-D_,:,:] - latent[:,D_:,:,:]], dim=1)
-            case 'normal':
+            case 'stack':
                 pass
         predictions = self.head(latent)
         

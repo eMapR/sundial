@@ -46,14 +46,14 @@ class DoubleConv2d(nn.Module):
 
 
 class DoubleConv3d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, mid_channels=None, embed=False):
+    def __init__(self, in_channels, out_channels, in_kernel_size=(1,3,3), out_kernel_size=(1,3,3), stride=1, padding=(0,1,1), mid_channels=None, embed=False):
         super().__init__()
         self.embed = embed
         if not mid_channels:
-            mid_channels = out_channels
+            mid_channels = max(in_channels, out_channels)
         self.double_conv = nn.Sequential(
-            Conv3dBlock(in_channels, mid_channels, kernel_size, stride, padding),
-            Conv3dBlock(mid_channels, out_channels, kernel_size, stride, padding),
+            Conv3dBlock(in_channels, mid_channels, in_kernel_size, stride, padding),
+            Conv3dBlock(mid_channels, out_channels, out_kernel_size, stride, padding),
         )
 
     def forward(self, x):
@@ -83,17 +83,25 @@ class Upscaler(nn.Module):
                 stride=2),
             nn.BatchNorm2d(out_ch),
             nn.GELU(),
-            nn.Dropout(0.1) if dropout else nn.Identity(),
+            nn.Dropout(0.2) if dropout else nn.Identity(),
             nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True))
+            nn.GELU())
+        self.embed_dim = embed_dim
 
-        self.upscale_blocks = nn.Sequential(
-            *[build_block(int(embed_dim // 2**i), int(embed_dim // 2**(i+1))) for i in range(depth)]
-        )
+        self.upscale_blocks = nn.ModuleList()
+        for i in range(depth):
+            if i == 0:
+                dim0 = self.embed_dim
+            else:
+                dim0 = self.embed_dim // (2 ** (i))
+            dim1 = self.embed_dim // (2 ** (i + 1))
+            self.upscale_blocks.append(build_block(dim0, dim1))
 
     def forward(self, x):
-        return self.upscale_blocks(x)
+        for blk in self.upscale_blocks:
+            x = blk(x)
+        return x
 
 
 class ResizeConv2d(nn.Module):

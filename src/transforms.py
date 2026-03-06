@@ -74,11 +74,11 @@ class BeforeAfter(nn.Module):
         return torch.stack([x[:,-3,:,:], x[:,-1,:,:]], dim=1)
     
 
-class AppendBackground(nn.Module):
+class PrependBackground(nn.Module):
     def forward(self, x):
         background_mask = torch.sum(x, dim=0)
         background_mask = (background_mask == 0).float().unsqueeze(0)
-        return torch.cat([x, background_mask], dim=0)
+        return torch.cat([background_mask, x], dim=0)
     
 
 class RandomAffineAugmentation(nn.Module):

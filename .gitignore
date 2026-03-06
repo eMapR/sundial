@@ -160,13 +160,10 @@ cython_debug/
 #.idea/
 
 ###############################################################################
-data/
+adhoc_analysis/
+archive/
 shapes/
-logs/
-*/logs/
-samples/
-checkpoints/
-predictions/
+experiments/
 .vscode
 
 *.tar.gz

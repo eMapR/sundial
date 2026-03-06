@@ -5,27 +5,19 @@ import time
 from constants import LOG_PATH, METHOD
 
 
-LOGGERS = {}
-
-
 def get_logger(log_path: str, name: str) -> logging.Logger:
-    if not os.path.exists(log_path):
-        os.makedirs(log_path)
-
-    if LOGGERS.get(name):
-        return LOGGERS.get(name)
-
     logger = logging.getLogger(name)
+
+    if logger.handlers:
+        return logger
+
+    os.makedirs(log_path, exist_ok=True)
     logger.setLevel(logging.DEBUG)
 
     file_handler = logging.FileHandler(os.path.join(log_path, name + '.log'))
     file_handler.setLevel(logging.DEBUG)
-
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
-    LOGGERS[name] = logger
 
     return logger
 

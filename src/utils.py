@@ -1,7 +1,6 @@
 import cupy as cp
 import geopandas as gpd
 import glob
-import importlib
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 import numpy as np
@@ -15,17 +14,6 @@ from cupyx.scipy.ndimage import distance_transform_edt
 from rasterio.transform import from_bounds
 from sklearn.manifold import TSNE
 from typing import Any, Optional
-
-
-def dynamic_import(loader: dict):
-    class_path = loader.get("class_path")
-    init_args = loader.get("init_args", {})
-    
-    loader_path = class_path.rsplit(".", 1)
-    module_path, class_name = loader_path
-    loader_cls = getattr(importlib.import_module(module_path), class_name)
-    
-    return loader_cls(**init_args)
 
 
 def distance_transform(targets: torch.tensor):
@@ -67,14 +55,11 @@ def log_tsne_plot(tensor: torch.Tensor,
     logger.log_figure(figure_name=plot_name, figure=plt)
 
 
-def get_best_ckpt(dir_path: str | os.PathLike,
-                  experiment: Optional[str] = None) -> str | None:
-    glob_exp = "_" + experiment if experiment else ""
-    glob_pat = f"epoch=*_*=*{glob_exp}.ckpt"
+def get_best_ckpt(dir_path: str | os.PathLike) -> str | None:
+    glob_pat = f"epoch=*_*=*.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
-    regex_exp = experiment if experiment else ".+"
-    regex_str = fr"epoch=(\d+)_(?:.*)=(\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
+    regex_str = fr"epoch=(\d+)_(?:.*)=(\d+\.\d+)(?:-v(\d+))?\.ckpt"
     regex = re.compile(regex_str)
 
     min_val_loss = float('inf')
@@ -101,14 +86,11 @@ def get_best_ckpt(dir_path: str | os.PathLike,
     return best_file
 
 
-def get_latest_ckpt(dir_path: str | os.PathLike,
-                    experiment: Optional[str] = None) -> str | None:
-    glob_exp = "_" + experiment if experiment else ""
-    glob_pat = f"epoch=*_*=*{glob_exp}.ckpt"
+def get_latest_ckpt(dir_path: str | os.PathLike) -> str | None:
+    glob_pat = f"epoch=*_*=*.ckpt"
     files = glob.glob(os.path.join(dir_path, glob_pat))
 
-    regex_exp = experiment if experiment else ".+"
-    regex_str = fr"epoch=(\d+)_(?:.*)=(?:\d+\.\d+)(?:-v(\d+))?(?:_{regex_exp})?\.ckpt"
+    regex_str = fr"epoch=(\d+)_(?:.*)=(?:\d+\.\d+)(?:-v(\d+))?\.ckpt"
     regex = re.compile(regex_str)
 
     max_epoch = -1
