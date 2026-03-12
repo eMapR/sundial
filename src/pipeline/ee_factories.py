@@ -22,7 +22,7 @@ class EEBase:
     
     def create_ee_image(self):
         raise NotImplementedError
-
+    
 
 class LTMedoidImages(EEBase):
     def __init__(self, mask_labels=["cloud", "shadow", "water"], **kwargs):
@@ -52,6 +52,7 @@ class LTMedoidImages(EEBase):
             .divide(10000)
 
         return image
+    
 
 class LSMedianImage(EEBase):
     def __init__(self, **kwargs):
@@ -96,7 +97,16 @@ class LSMedianImage(EEBase):
             image = image.select(['SR_B1', 'SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B7'],
                                 LBANDS)
         return image
+    
 
+class NLCD2019(LTMedoidImages):
+    def create_ee_image(self, coordinates):
+        ls_image = super().create_ee_image(coordinates):
+        nlcd = ee.ImageCollection('USGS/NLCD_RELEASES/2019_REL/NLCD')
+        nlcd2019 = dataset.filter(ee.Filter.eq('system:index', '2019')).first()
+        landcover = nlcd2019.select('landcover')
+        return landcover.addBands(ls_image)
+        
 
 class Sentinel2MedianImage(EEBase):
     _sr_band_scale = 1e4
