@@ -1,4 +1,3 @@
-import cupy as cp
 import geopandas as gpd
 import glob
 import matplotlib.pyplot as plt
@@ -10,21 +9,9 @@ import rasterio
 import re
 import shutil
 
-from cupyx.scipy.ndimage import distance_transform_edt
 from rasterio.transform import from_bounds
 from sklearn.manifold import TSNE
 from typing import Any, Optional
-
-
-def distance_transform(targets: torch.tensor):
-    distances = torch.zeros_like(targets, device=targets.device)
-    cx = cp.from_dlpack(targets)
-    for k in range(targets.shape[0]):
-        if cp.any(cx[k] > 0):
-            distance = distance_transform_edt(1 - cx[k]) * (1 - cx[k]) \
-                - (distance_transform_edt(cx[k]) - 1) * cx[k]
-            distances[k] = torch.tensor(distance, dtype=targets.dtype, device=targets.device)
-    return distances
 
 
 def log_tsne_plot(tensor: torch.Tensor,

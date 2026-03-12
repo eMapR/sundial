@@ -2,7 +2,6 @@ import geopandas as gpd
 import lightning as L
 import numpy as np
 import os
-import pandas as pd
 import re
 import torch
 import xarray as xr
@@ -19,7 +18,6 @@ from constants import (
     ANNOTATIONS_PATH,
     STAT_DATA_PATH,
 )
-from settings import DATAMODULE_CONFIG
 from config_utils import dynamic_import
 
 
@@ -29,8 +27,8 @@ class GenericChippingDataset(Dataset):
                  imagery_path: str,
                  annotations_path: str | None,
                  sampler: dict,
-                 dynamic_transform_config: Optional[dict],
-                 static_transform_config: Optional[dict],
+                 dynamic_transform_config: Optional[dict] = None,
+                 static_transform_config: Optional[dict] = None,
                  **kwargs):
         super().__init__()
         self.split = split
@@ -50,33 +48,28 @@ class GenericChippingDataset(Dataset):
 
 
     def __getitem__(self, indx):
-        data = {}
-
-        chip, anno, meta = self._sampler(indx)
-        data["meta"] = meta
+        data = self._sampler(indx)
         
         if self.chip_static_transforms is not None:
-            chip = self.chip_static_transforms(chip)
+            data["chip"] = self.chip_static_transforms(data["chip"])
 
-        if anno.numel() and self.anno_static_transforms is not None:
-            anno = self.anno_static_transforms(anno)
+        if data["anno"].numel() and self.anno_static_transforms is not None:
+            data["anno"] = self.anno_static_transforms(data["anno"])
 
-        if self.dynamic_transforms.empty:
-            data["chip"] = chip
-            data["anno"] = anno
-        else:
-            chc = v2.RandomChoice(self.dynamic_transforms)
+        if not self.dynamic_transforms:
+            cdx = torch.randint(len(self.dynamic_transforms), (1,)).item()
+            chc = self.dynamic_transforms[cdx]
             dynamic_transform = chc["transform"]
             image_only = chc["image_only"]
-            if not image_only and anno.numel():
+            if not image_only and data["anno"].numel():
                 seed = int(datetime.now().timestamp())
                 torch.manual_seed(seed)
-                data["chip"] = dynamic_transform(chip)
+                data["chip"] = dynamic_transform(data["chip"])
                 torch.manual_seed(seed)
-                data["anno"] = dynamic_transform(anno)
+                data["anno"] = dynamic_transform(data["anno"])
             else:
-                data["chip"] = dynamic_transform(chip)
-                data["anno"] = anno
+                data["chip"] = dynamic_transform(data["chip"])
+                data["anno"] = data["anno"]
 
         return data
 
@@ -89,7 +82,7 @@ class GenericChippingDataset(Dataset):
             annotations = xr.open_dataarray(self.annotations_path, engine='zarr', cache=False)
         else:
             annotations = None
-        self._sampler = dynamic_import(self.sampler, {"split": self.split, "imagery_da": imagery, "annotations_da": annotations})
+        self._sampler = dynamic_import(self.sampler, {"imagery_da": imagery, "annotations_da": annotations, "split": self.split})
 
     def _init_dynamic_transforms(self):
         transform_list = []
@@ -99,7 +92,7 @@ class GenericChippingDataset(Dataset):
         for t in self.dynamic_transform_config.get("transforms", []):
             transform_list.append({"transform": dynamic_import(t).forward, "image_only": t.get("image_only", True)})
 
-        self.dynamic_transforms = pd.DataFrame(transform_list)
+        self.dynamic_transforms = transform_list
         
     def _init_static_transforms(self):
         chip_transforms = []
@@ -117,18 +110,20 @@ class GenericChippingDataset(Dataset):
         self.anno_static_transforms = v2.Compose(anno_transforms) if anno_transforms else None
 
 
-class GenericChipsDataModule(L.LightningDataModule):
+class GenericChippingDataModule(L.LightningDataModule):
     def __init__(
             self,
-            batch_size: int = DATAMODULE_CONFIG["batch_size"],
-            num_workers: int = DATAMODULE_CONFIG["num_workers"],
-            dataloader_config: dict = DATAMODULE_CONFIG["dataloader_config"],
-            static_transform_config: dict = DATAMODULE_CONFIG["static_transform_config"],
-            dynamic_transform_config: dict = DATAMODULE_CONFIG["dynamic_transform_config"],
+            sampler: dict,
+            batch_size: int,
+            num_workers: int,
+            dataloader_config: dict,
+            static_transform_config: dict,
+            dynamic_transform_config: dict,
             imagery_path: str = IMAGERY_PATH,
             annotations_path: str = ANNOTATIONS_PATH,
             stat_data_path: str | None = STAT_DATA_PATH):
         super().__init__()
+        self.sampler = sampler
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.dataloader_config = dataloader_config
@@ -180,7 +175,7 @@ class GenericChipsDataModule(L.LightningDataModule):
         match stage:
             case "fit":
                 train_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "train"])}
-                self.training_ds = GenericChipsDataset(
+                self.training_ds = GenericChippingDataset(
                     **self.dataset_config | {
                         "split": "train",
                         "static_transform_config": train_static_transform_config,
@@ -188,7 +183,7 @@ class GenericChipsDataModule(L.LightningDataModule):
                     })
 
                 validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
-                self.validate_ds = GenericChipsDataset(
+                self.validate_ds = GenericChippingDataset(
                     **self.dataset_config | {
                         "split": "validate",
                         "static_transform_config": validate_static_transform_config,
@@ -196,16 +191,17 @@ class GenericChipsDataModule(L.LightningDataModule):
 
             case "validate":
                 validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
-                self.validate_ds = GenericChipsDataset(
+                self.validate_ds = GenericChippingDataset(
                     **self.dataset_config | {
+                        "split": "validate",
                         "static_transform_config": validate_static_transform_config
                     })
 
             case "test":
                 test_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "test"])}
-                self.test_ds = GenericChipsDataset(
+                self.test_ds = GenericChippingDataset(
                     **self.dataset_config | {
-                        "split": "test"
+                        "split": "test",
                         "static_transform_config": test_static_transform_config
                     })
 
@@ -213,7 +209,7 @@ class GenericChipsDataModule(L.LightningDataModule):
                 predict_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "predict"])}
                 self.predict_ds = GenericChipsDataset(
                     **self.dataset_config | {
-                        "split": "predict"
+                        "split": "predict",
                         "static_transform_config": predict_static_transform_config})
 
     def train_dataloader(self):

@@ -1,10 +1,11 @@
 import gc
 import lightning as L
-from huggingface_hub import snapshot_download
+import os
 import sys
 import torch
 import torch.nn.functional as F
 
+from huggingface_hub import snapshot_download
 from torch import nn
 from transformers import ViTConfig, ViTModel
 
@@ -50,29 +51,12 @@ class PrithviBackbone(L.LightningModule):
         
         self.model = PrithviMAE(**self.prithvi_params)
         if self.prithvi_ckpt_path is not None:
-            checkpoint = torch.load(self.prithvi_ckpt_path, weights_only=False)
-            if "encoder.pos_embed" not in checkpoint.keys():
-                key = "model" if "model" in checkpoint.keys() else "state_dict"
-                keys = list(checkpoint[key].keys())
-                checkpoint = checkpoint[key]
-            else:
-                keys = list(checkpoint.keys())
-            for k in keys:
-                if ((prithvi_params["encoder_only"]) and ("decoder" in k)) or "pos_embed" in k:
-                    del checkpoint[k]
-                elif "prithvi" in k:
-                    print(f"Warning: renaming prithvi layer {k}")
-                    new_k = k.replace("prithvi.", "")
-                    checkpoint[new_k] = checkpoint[k]
-                elif k in self.model.state_dict() and checkpoint[k].shape != self.model.state_dict()[k].shape:
-                    print(f"Warning: size mismatch for layer {k}, deleting: {checkpoint[k].shape} != {self.model.state_dict()[k].shape}")
-                    del checkpoint[k]
-                
-            _ = self.model.load_state_dict(checkpoint, strict=False)
-            
+            pt_path = os.path.join(PRITHVI_DIR, self.prithvi_ckpt_path)
+            checkpoint = torch.load(pt_path, weights_only=False)
+            _ = self.model.load_state_dict(checkpoint, strict=True)
+        
         self.reshaper = PrithviReshape(prithvi_params["patch_size"], prithvi_params["img_size"]) if reshape else nn.Identity()
         if self.freeze_encoder:
-            self.model.encoder.eval()
             for blk in self.model.encoder.blocks:
                 for param in blk.parameters():
                     param.requires_grad = False
@@ -87,18 +71,11 @@ class PrithviBackbone(L.LightningModule):
             chip = data
             temporal = None
             location = None
-        
-        if self.prithvi_params["encoder_only"]:
-            latent = self.model.forward_features(chip,
-                                                 temporal,
-                                                 location)
-        else:
-            latent, mask, ids_restore = self.model.encoder(chip, temporal, location, 0.0)
-            latent = self.model.decoder(latent,
-                                ids_restore,
-                                temporal,
-                                location,
-                                input_size=(self.prithvi_params["num_frames"], self.prithvi_params["img_size"], self.prithvi_params["img_size"]))
+
+        latent = self.model.forward_features(chip,
+                                                temporal,
+                                                location)
+
         return self.reshaper(latent)
 
 
@@ -113,10 +90,13 @@ class PrithviFCN(SundialPLBase):
                  freeze_encoder: bool = True,
                  prithvi_ckpt_path: str = None,
                  ablate: bool = False,
-                 embed: bool = False):
-        super().__init__()
+                 bayesian: bool = False,
+                 embed: bool = False,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.num_classes = num_classes
         self.ablate = ablate
+        self.bayesian = bayesian
         self.embed = embed
         
         if self.ablate:
@@ -139,6 +119,19 @@ class PrithviFCN(SundialPLBase):
                 Upscaler(dim, 4),
                 FCNHead(dim // 2**4, self.num_classes)
             )
+            
+        if bayesian:
+            from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
+            const_bnn_prior_parameters = {
+                    "prior_mu": 0.0,
+                    "prior_sigma": 1.0,
+                    "posterior_mu_init": 0.0,
+                    "posterior_rho_init": -3.0,
+                    "type": "Reparameterization",
+                    "moped_enable": True,
+                    "moped_delta": 0.5,
+            }
+            dnn_to_bnn(self.head, const_bnn_prior_parameters)
             
         
     def forward(self, data):
@@ -166,8 +159,9 @@ class PrithviFCNMosaic(SundialPLBase):
                  upscale_depth: int,
                  prithvi_params: dict,
                  freeze_encoder: bool = True,
-                 prithvi_ckpt_path: str = None):
-        super().__init__()
+                 prithvi_ckpt_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.num_classes = num_classes
         self.upscale_depth = upscale_depth
         self.kernel_size = prithvi_params["img_size"]
@@ -214,8 +208,9 @@ class PrithviFCNDelta(SundialPLBase):
                  separate: bool,
                  prithvi_params: dict,
                  freeze_encoder: bool = True,
-                 prithvi_ckpt_path: str = None):
-        super().__init__()
+                 prithvi_ckpt_path: str = None,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.num_classes = num_classes
         self.upscale_depth = upscale_depth
         self.separate = separate
@@ -273,7 +268,8 @@ class PrithviDecoder3dUNet(SundialPLBase):
         freeze_encoder: bool = True,
         prithvi_ckpt_path: str = None,
         ablate: bool = False,
-        embed: bool = False):
+        embed: bool = False,
+        **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.num_channels = num_channels
@@ -349,7 +345,7 @@ class PrithviAdapter(SundialPLBase):
         drop_channels_rate: float = 0.0,
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.interaction_indexes = interaction_indexes
         self.D = prithvi_params["embed_dim"]*prithvi_params["num_frames"]
 
@@ -475,8 +471,9 @@ class PrithviMosaicEmbedding(SundialPLBase):
                  freeze_encoder: bool = True,
                  prithvi_ckpt_path: str = None,
                  stride: int = 1,
-                 ablate: bool = False):
-        super().__init__()
+                 ablate: bool = False,
+                 **kwargs):
+        super().__init__(**kwargs)
         self.stride = stride
         self.ablate = ablate
         

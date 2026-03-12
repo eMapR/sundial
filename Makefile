@@ -74,8 +74,6 @@ default:
 	echo "        clean_logs:     Removes all logs for experiment."
 	echo "        clean_dnld:     Removes all imagery data for experiment."
 	echo "        clean_anno:     Removes all annotation data for experiment."
-	echo "        clean_ckpt:     Removes all checkpoints for experiment."
-	echo "        clean_pred:     Removes all predictions for experiment."
 	echo "        clean_nuke:     Removes all data for experiment including configs."
 	echo
 	echo "    Variables:"
@@ -105,12 +103,13 @@ setup_env:
 
 setup: _experiment_name_check
 	echo "Setting up Sundial experiment for $(SUNDIAL_EXPERIMENT_BASE_NAME)...";
+	$(eval export SUNDIAL_METHOD=base) 
 	mkdir -p $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME);
 	if [[ -d $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/configs ]]; then \
 		echo "WARNING: Configs directory found. To restart experiment from scratch, use 'make clean_nuke' then 'make setup'..."; \
 	else \
 		echo "Generating Sundial config files for experiment with values from settings.py..."; \
-		python $(SUNDIAL_BASE_PATH)/src/settings.py; \
+		python $(SUNDIAL_BASE_PATH)/src/config_utils.py; \
 	fi;
 
 clink: _experiment_name_check
@@ -216,13 +215,11 @@ package_err: _package
 
 clean_expt: _experiment_name_check
 	echo "Cleaning up logs, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/*;
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/checkpoints/*;
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/predictions/*;
+	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_EXPERIMENT_SUFFIX);
 
 clean_logs: _experiment_name_check
 	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/*;
+	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/*.log;
 
 clean_dnld: _experiment_name_check
 	echo "Cleaning up imagery data for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
@@ -233,14 +230,6 @@ clean_anno: _experiment_name_check
 	echo "Cleaning up annotation data for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
 	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/annotations/;
 	mkdir $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/annotations/;
-
-clean_ckpt: _experiment_name_check
-	echo "Cleaning up checkpoints generated for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/checkpoints/*;
-
-clean_pred: _experiment_name_check
-	echo "Cleaning up predictions generated for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/predictions/*;
 
 clean_nuke: _experiment_name_check
 	echo "Cleaning up all data for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
@@ -318,9 +307,9 @@ _run: _experiment_name_check
 		else \
 			mem=$(SUNDIAL_MEM); \
 		fi; \
-		if [[ "$(SUNDIAL_METHOD)" == download ]]; then \
+		if [[ "$(SUNDIAL_METHOD)" == download || "$(SUNDIAL_METHOD)" == annotate ]]; then \
 			cpus=42; \
-		else \
+    else \
 			cpus=4; \
 		fi; \
 		echo "Running on HPC..."; \

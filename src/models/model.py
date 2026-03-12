@@ -13,6 +13,7 @@ from typing import Tuple
 from models.multiscale_deformable_attention import MultiScaleDeformableAttention
 from models.utils import DoubleConv2d
 
+
 class PatchEmbed(nn.Module):
     def __init__(
             self,

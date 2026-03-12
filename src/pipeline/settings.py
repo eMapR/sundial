@@ -7,17 +7,19 @@ from constants import GEE_REQUEST_LIMIT, PIPELINE_CONFIG_PATH
 # configs relating to sampler methods
 PIPELINE_CONFIG = {
     ### Sampling settings
-    
-    "label_column": None,
-    "date_column": None,
-    "stat_actions": ["band_mean_stdv"],
+    "annotator":{"class_path": "pipeline.annotators.XarrDateAnnotator",
+                 "init_args": {
+                    "label_column": None,
+                    "date_column": None,       
+                    }
+    },
+    "stats_actions": ["band_mean_stdv", "class_counts"],
 
     ### Image and downloadng settings
 
-    "chunk_sizes": [1, 6, 224, 224],
+    "chunk_sizes": [6, 1, 224, 224],
     "scale": 30,
     "filter_intersect": False,
-    "projection": "EPSG:5070",
     
     "ee_factory": {"class_path": "pipeline.ee_factories.LTMedoidImage",
                    "init_args": {}},

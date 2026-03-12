@@ -17,43 +17,12 @@ from pipeline.logging import function_timer, get_logger
 from pipeline.downloader import Downloader
 from pipeline.settings import PIPELINE_CONFIG
 from pipeline.utils import (
-    get_band_stats,
+    get_band_stats, generate_stats
 )
 from config_utils import dynamic_import
 
 
 LOGGER = get_logger(LOG_PATH, METHOD)
-
-
-@function_timer
-def generate_stats(
-    imagery_da: xr.DataArray,
-    annotations_da: xr.DataArray | None,
-    stat_actions: list[str],
-    label_column: str):
-    stat_data = {}
-
-    for action in postprocess_actions:
-        match action:
-            case "band_mean_stdv":
-                match PIPELINE_CONFIG["file_type"]:
-                    case "ZARR":
-                        LOGGER.info(f"Verifying chip data...")
-                        # TODO: fix redudant summing
-                        stat_data["chip_stats"] |= get_band_stats(imagery_da)
-                    case _:
-                        raise ValueError(
-                            f"Invalid file type: {PIPELINE_CONFIG['file_type']}")
-            case "class_counts":
-                gdf = gpd.read_file(GEO_PROC_PATH)
-                gdf.loc[:, "area"] = gdf.area
-                
-                groupby = gdf.loc[:, [label_column, "area"]].groupby(label_column)
-                stat_data["class_geo_count"] = groupby.size().to_dict()
-                stat_data["class_geo_area"] = groupby.sum()["area"].to_dict()
-            case _:
-                raise ValueError(f"Invalid action: {action}")
-    update_yaml(stat_data, STAT_DATA_PATH)
 
 
 @function_timer
@@ -99,6 +68,8 @@ def stats():
     stat_config = {
         "imagery_da": imagery_da,
         "annotations_da": annotations_da,
+        "geo_proc_data": gpd.read_file(GEO_PROC_PATH),
+        "stat_data_path": STAT_DATA_PATH,
         **PIPELINE_CONFIG,
     }
     generate_stats(**stat_config)

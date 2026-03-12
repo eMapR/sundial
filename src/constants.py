@@ -17,15 +17,16 @@ EXPERIMENTS_PATH = os.path.join(BASE_PATH, "experiments")
 
 # experiment paths
 EXPERIMENT_PATH = os.path.join(EXPERIMENTS_PATH, EXPERIMENT_BASE_NAME)
-CHECKPOINTS_PATH = os.path.join(EXPERIMENT_PATH, "checkpoints", EXPERIMENT_SUFFIX)
-PREDICTIONS_PATH = os.path.join(EXPERIMENT_PATH, "predictions", EXPERIMENT_SUFFIX)
-OUTPUT_DATA_PATH = os.path.join(EXPERIMENT_PATH, "output_data", EXPERIMENT_SUFFIX)
+CHECKPOINTS_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "checkpoints")
+PREDICTIONS_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "predictions")
+OUTPUT_DATA_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "output_data")
 CONFIG_PATH = os.path.join(EXPERIMENT_PATH, "configs")
-LOG_PATH = os.path.join(EXPERIMENT_PATH, "logs", EXPERIMENT_SUFFIX)
+LOG_PATH = os.path.join(EXPERIMENT_PATH, "logs")
 
 # config paths
 PIPELINE_CONFIG_PATH = os.path.join(CONFIG_PATH, "pipeline.yaml")
 METHOD_CONFIG_PATH = os.path.join(CONFIG_PATH, f"{METHOD}.yaml")
+EXPERIMENT_CONFIG_PATH = os.path.join(CONFIG_PATH, METHOD, f"{EXPERIMENT_SUFFIX}.yaml")
 BASE_CONFIG_PATH = os.path.join(CONFIG_PATH, "base.yaml")
 
 # sample and data paths

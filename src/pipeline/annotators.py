@@ -15,7 +15,7 @@ class XarrDateAnnotator(ParallelGridAlign):
         self._labels = sorted(self._geo_proc_data[self._label_column].unique())
         self._dates = sorted(self._geo_proc_data[self._date_column].unique())
         
-        self._chunk_sizes = (len(self._dates), len(self._labels), *self._chunk_sizes[-2:])
+        self._chunk_sizes = (len(self._labels), len(self._dates), *self._chunk_sizes[-2:])
     
     def _consumer(self, consumer_index: int):
         chunk_batch = []
@@ -32,7 +32,7 @@ class XarrDateAnnotator(ParallelGridAlign):
                     subset = self._geo_proc_data[mask].geometry
                     chunk.append(rasterizer(subset, bounds, self._chunk_sizes[-2], self._chunk_sizes[-1], np.nan, 1))
             chunk = np.stack(chunk)
-            chunk = chunk.reshape(len(self._dates), len(self._labels), self._chunk_sizes[-2], self._chunk_sizes[-1])
+            chunk = chunk.reshape(len(self._labels), len(self._dates), self._chunk_sizes[-2], self._chunk_sizes[-1])
             
             self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {ty, tx}"))
             chunk_batch.append((chunk, ty, tx))

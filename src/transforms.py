@@ -81,18 +81,24 @@ class PrependBackground(nn.Module):
         return torch.cat([background_mask, x], dim=0)
     
 
+class Rot90(nn.Module):
+    def forward(self, x):
+        return torchvision.transforms.v2.functional.rotate(x, 90)
+    
+    
+class Rot180(nn.Module):
+    def forward(self, x):
+        return torchvision.transforms.v2.functional.rotate(x, 180)
+    
+    
+class Rot270(nn.Module):
+    def forward(self, x):
+        return torchvision.transforms.v2.functional.rotate(x, 270)
+
+
 class RandomAffineAugmentation(nn.Module):
     def __init__(self):
         super().__init__()
-        class Rot90(nn.Module):
-            def forward(self, x):
-                return torchvision.transforms.v2.functional.rotate(x, 90)
-        class Rot180(nn.Module):
-            def forward(self, x):
-                return torchvision.transforms.v2.functional.rotate(x, 180)
-        class Rot270(nn.Module):
-            def forward(self, x):
-                return torchvision.transforms.v2.functional.rotate(x, 270)
         self.rotation = torchvision.transforms.v2.RandomChoice([torch.nn.Identity(), Rot90(), Rot180(), Rot270()])
         self.hflip = torchvision.transforms.v2.RandomHorizontalFlip()
         self.vflip = torchvision.transforms.v2.RandomVerticalFlip()

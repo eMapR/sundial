@@ -4,6 +4,11 @@ from torch import nn
 
 
 class SundialPLBase(L.LightningModule):
+    def __init__(self, criterion, activation):
+        super().__init__()
+        self.criterion = criterion
+        self.activation = activation
+    
     def training_step(self, batch):
         loss = self.criterion(self(batch), batch["anno"])
         return {"loss": loss}

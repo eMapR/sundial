@@ -41,73 +41,6 @@ class ModelSetupCallback(L.Callback):
         pl_module.strict_loading = False
 
 
-class DefineCriterionCallback(L.Callback):
-    def __init__(self,
-                 class_path: Optional[str] = None,
-                 init_args: Optional[dict] = {}):
-        super().__init__()
-        self.class_path = class_path
-        self.init_args = init_args
-
-    def setup(self,
-              trainer: L.Trainer,
-              pl_module: L.LightningModule,
-              stage: str) -> None:
-        if self.class_path:
-            # TODO: Add support for multiple criterions
-            class_path = self.class_path.rsplit(".", 1)
-            match len(class_path):
-                case 1:
-                    modules = ["losses", "torch.nn"]
-                    success = False
-                    for module in modules:
-                        try:
-                            criterion_mod = importlib.import_module(module)
-                            criterion_cls = getattr(criterion_mod, self.class_path)
-                            if "device" in inspect.signature(criterion_cls).parameters:
-                                self.init_args |= {"device": pl_module.device}
-                            success = True
-                            break
-                        except AttributeError:
-                            pass
-                    if not success:
-                        raise AttributeError(
-                            f"Criterion class {self.class_path} not found in torch.nn or src.losses")
-                case 2:
-                    module_path, class_name = class_path
-                    criterion_mod = importlib.import_module(module_path)
-                    criterion_cls = getattr(criterion_mod, class_name)
-            pl_module.criterion = criterion_cls(**self.init_args)
-        else:
-            pl_module.criterion = None
-
-class DefineActivationCallback(L.Callback):
-    def __init__(self,
-                 class_path: Optional[str] = None,
-                 init_args: Optional[dict] = {}):
-        super().__init__()
-        self.class_path = class_path
-        self.init_args = init_args
-
-    def setup(self,
-              trainer: L.Trainer,
-              pl_module: L.LightningModule,
-              stage: str) -> None:
-        if self.class_path:
-            paths = self.class_path.rsplit(".", 1)
-            if len(paths) == 1:
-                module = torch.nn
-                class_name = self.class_path
-            else:
-                module_path, class_name = paths
-                module = importlib.import_module(module_path)
-            activation_class = getattr(module, class_name)
-            activation = activation_class(**self.init_args)
-            pl_module.activation = activation
-        else:
-            pl_module.activation = None
-
-
 class GenerateTrainGifCallback(L.Callback):
     def __init__(self,
                  index_name: str):
@@ -193,28 +126,6 @@ class GenerateValidateGifCallback(L.Callback):
             pil_frames = [to_pil_image(frame[c]) for frame in self.frames]
             if pil_frames:
                 pil_frames[0].save(PREDICTIONS_PATH + f"/{self.index_name}_out_per_epoch_c{c}.gif", save_all=True, append_images=pil_frames[1:], duration=200, loop=0)
-
-
-class LogSetupCallback(L.pytorch.cli.SaveConfigCallback):
-    def save_config(self,
-                    trainer: L.Trainer,
-                    pl_module: L.LightningModule,
-                    stage: str) -> None:
-        config = copy.deepcopy(self.config)
-        del config["trainer"]["logger"]
-        
-        config["config"] = [str(s) for s in config["config"]]
-        if config["trainer"]["callbacks"]:
-            config["trainer"]["callbacks"] = [{k: vars(v) if hasattr(
-                v, "__dict__") else v for k, v in vars(c).items()} for c in config["trainer"]["callbacks"]]
-        if os.path.exists(STAT_DATA_PATH):
-            stat_data = load_yaml(STAT_DATA_PATH)
-        else:
-            stat_data = {}
-        pl_module.logger.log_hyperparams(config),
-        pl_module.logger.log_hyperparams({"stat_data": stat_data,
-                                          "pipeline_config": PIPELINE_CONFIG})
-
 
 class LogTrainCallback(L.Callback):
     def on_train_batch_end(self,

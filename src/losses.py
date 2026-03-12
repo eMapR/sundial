@@ -4,9 +4,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 from torchmetrics.functional.image import structural_similarity_index_measure
 from torchvision.ops import sigmoid_focal_loss
-from typing import Any, Literal, Sequence
-
-from utils import distance_transform
+from typing import Any, Literal, Sequence, Optional
 
 
 class Base(nn.Module):
@@ -81,12 +79,19 @@ class JaccardLoss(Base):
 
 class DiceLoss(Base):
     def __init__(self,
+                 ignore_classes: Optional[list[int] | int] = None,
                  epsilon: float = 1e-6,
                  **kwargs):
         super().__init__(**kwargs)
+        self.ignore_classes = ignore_classes
         self.epsilon = epsilon
             
     def forward_loss(self, inputs, targets):
+        if self.ignore_classes is not None:
+            mask = torch.ones(inputs.shape[1], dtype=torch.bool)
+            mask[self.ignore_classes] = False
+            inputs = inputs[:, mask]
+            targets = targets[:, mask]
         intersection = einsum("bcwh,bcwh->bc", inputs, targets)
         sum_probs = einsum("bcwh->bc", inputs) + einsum("bcwh->bc", targets)
         loss = (2. * intersection + self.epsilon) / (sum_probs + self.epsilon)  
@@ -230,24 +235,6 @@ class SSIMLoss(Base):
                                                    k1=self.k1,
                                                    k2=self.k2)
         return 1 - loss
-
-
-class DiceBoundaryLoss(Base):
-    def __init__(self,
-                 alpha: float = 0.01,
-                 epsilon: float = 1e-6):
-        super().__init__()
-        self.alpha = alpha
-        self.epsilon = epsilon
-        self.dice = DiceLoss(epsilon=epsilon, logits=False, reduction=None)
-
-    def forward_loss(self, inputs, targets):
-        distances = torch.stack([distance_transform(targets[b])
-                                for b in range(targets.shape[0])])
-                
-        boundary_loss = einsum('bcwh,bcwh->bcwh', inputs, distances).mean()
-        loss = self.dice(inputs, targets) + self.alpha * boundary_loss
-        return loss
 
 
 class GeneralzedDiceBoundaryLoss(Base):
