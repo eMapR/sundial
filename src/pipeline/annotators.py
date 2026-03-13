@@ -20,11 +20,11 @@ class XarrDateAnnotator(ParallelGridAlign):
     def _consumer(self, consumer_index: int):
         chunk_batch = []
         while (chunk_task := self._chunk_queue.get()) is not None:
-            ty, tx = chunk_task
-            bounds = (tx, ty - self._grid_y_size, tx + self._grid_x_size, ty)
+            translateY, translateX = chunk_task
+            bounds = (translateX, translateY - self._grid_y_size, translateX + self._grid_x_size, translateY)
             
             chunk = []
-            self._report_queue.put(("INFO", f"Consumer {consumer_index} rasterizing chunk {ty, tx}..."))
+            self._report_queue.put(("INFO", f"Consumer {consumer_index} rasterizing chunk {translateY, translateX}..."))
             for date in self._dates:
                 for label in self._labels:
                     mask = self._geo_proc_data[self._label_column] == label
@@ -34,8 +34,8 @@ class XarrDateAnnotator(ParallelGridAlign):
             chunk = np.stack(chunk)
             chunk = chunk.reshape(len(self._labels), len(self._dates), self._chunk_sizes[-2], self._chunk_sizes[-1])
             
-            self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {ty, tx}"))
-            chunk_batch.append((chunk, ty, tx))
+            self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {translateY, translateX}"))
+            chunk_batch.append((chunk, translateY, translateX))
             self._report_queue.put(("INFO", f"Consumer {consumer_index} contains {len(chunk_batch)} chunks..."))
 
             if len(chunk_batch) == self._io_limit:

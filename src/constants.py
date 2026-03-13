@@ -43,3 +43,4 @@ IDX_NAME_ZFILL = 8
 GEE_REQUEST_LIMIT = 42
 GEE_REQUEST_LIMIT_MB = 50331648
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
+TOO_MANY_REQUEST_STR = 'Too Many Requests: Request was rejected because the request rate or concurrency limit was exceeded.'

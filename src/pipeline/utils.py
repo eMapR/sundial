@@ -99,7 +99,6 @@ class ParallelGridAlign:
         
     def _write_array_batch(self, chunk_batch) -> None:
         for array, translateY, translateX  in chunk_batch:
-            array = array.astype(self._dtype)
             if array.dtype.names is not None:
                 names = array.dtype.names
                 H, W = array.shape
@@ -107,6 +106,7 @@ class ParallelGridAlign:
                 array = rfn.structured_to_unstructured(array)
                 array = array.reshape(H, W, self._chunk_sizes[1], self._chunk_sizes[0])
                 array = array.transpose(3, 2, 0, 1)
+            array = array.astype(self._dtype)
 
             # NOTE: all arange calls may have errors at large scales consider linspace but for now this is fine for equal area proj.
             lats = np.arange(translateY, translateY - self._grid_y_size, -self._scale)
@@ -189,14 +189,14 @@ def filter_chunks(chunks, geo_proc_data, grid_y_size, grid_x_size):
         hits = _spatial_index.query(b, predicate="intersects")
         if hits.size > 0:
             res.append(c)
-    return np.array(res)
+    return res
 
 
 def chunk_bounds(total_bounds, grid_y_size, grid_x_size):
     lats = np.arange(total_bounds[3], total_bounds[1], -grid_y_size)
     lons = np.arange(total_bounds[0], total_bounds[2], grid_x_size)
     chunks = np.array(np.meshgrid(lats, lons)).T.reshape(-1, 2)
-    return chunks
+    return chunks.tolist()
 
 
 def coord_bounds(total_bounds, grid_y_size, grid_x_size, scale):
