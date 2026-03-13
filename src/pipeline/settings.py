@@ -16,8 +16,8 @@ PIPELINE_CONFIG = {
     "stats_actions": ["band_mean_stdv", "class_counts"],
 
     ### Image and downloadng settings
-
     "chunk_sizes": [6, 1, 224, 224],
+    "dtype": "float32",
     "scale": 30,
     "filter_intersect": False,
     

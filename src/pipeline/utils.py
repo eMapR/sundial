@@ -22,9 +22,6 @@ from typing import Literal, Optional, Tuple
 from config_utils import update_yaml
 
 
-DTYPEg
-
-
 class ParallelGridAlign:
     def __init__(self, **kwargs):
         self._geo_proc_data = kwargs.get("geo_proc_data")
@@ -102,7 +99,7 @@ class ParallelGridAlign:
         
     def _write_array_batch(self, chunk_batch) -> None:
         for array, translateY, translateX  in chunk_batch:
-            array = array.astype(self.dtype)
+            array = array.astype(self._dtype)
             if array.dtype.names is not None:
                 names = array.dtype.names
                 H, W = array.shape

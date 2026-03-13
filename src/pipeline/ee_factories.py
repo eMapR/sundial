@@ -4,7 +4,7 @@ from ltgee import LandsatComposite
 from datetime import datetime
 
 
-LBANDS = ["Fmask", "B2", "B3", "B4", "B5", "B6", "B7"]
+LBANDS = ["B2", "B3", "B4", "B5", "B6", "B7"]
 SBANDS = ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B10", "B11", "B12"]
 
 
@@ -59,28 +59,57 @@ class LSMedianImage(EEBase):
         super().__init__(**kwargs)
         
     def create_ee_image(self, coordinates):
-        even_odd = (self.projection == "EPSG:4326")
-        polygon = ee.Geometry.Polygon(coordinates, proj=self.projection, evenOdd=even_odd)
-        image = get_ls_combined_sr_collection()\
-                        .filterBounds(polygon)\
-                        .filter(ee.Filter.date(start_date, end_date))\
-                        .median()\
-                        .multiply(0.0000275).add(-0.2)
+        try: 
+            even_odd = (self.projection == "EPSG:4326")
+            polygon = ee.Geometry.Polygon(coordinates, proj=self.projection, evenOdd=even_odd)
 
-        return image    
+            start_date = ee.Date.fromYMD(
+                year = self.start_date.year,
+                month = self.start_date.month,
+                day = self.start_date.day)
+            end_date = ee.Date.fromYMD(
+                year = self.end_date.year,
+                month = self.end_date.month,
+                day = self.end_date.day)
+
+            image = self.get_ls_combined_sr_collection()\
+                            .filterBounds(polygon)\
+                            .filter(ee.Filter.date(start_date, end_date))\
+                            .median()\
+                            .multiply(0.0000275).add(-0.2)
+            
+            start_date = ee.Date.fromYMD(
+                year = self.start_date.year-1,
+                month = 11,
+                day = self.start_date.day)
+            end_date = ee.Date.fromYMD(
+                year = self.end_date.year,
+                month = 4,
+                day = self.end_date.day)
+            
+            image2 = self.get_ls_combined_sr_collection()\
+                            .filterBounds(polygon)\
+                            .filter(ee.Filter.date(start_date, end_date))\
+                            .median()\
+                            .multiply(0.0000275).add(-0.2)
+        except Exception as e:
+            print(self.start_date, self.end_date)
+            raise e
+
+        return image2.addBands(image) 
 
     def get_ls_combined_sr_collection(self):
-        lt5 = get_ls_sr_collection('LT05')
-        le7 = get_ls_sr_collection('LE07')
+        lt5 = self.get_ls_sr_collection('LT05')
+        le7 = self.get_ls_sr_collection('LE07')
         # SLC-OFF for Landsat 7 after 2003-05-31
         le7 = le7.filter(ee.Filter.Or([ee.Filter.lte('system:time_start', 1054425600000), ee.Filter.gte('system:time_start', 1086048000000)]))
-        lc8 = get_ls_sr_collection('LC08')
-        lc9 = get_ls_sr_collection('LC09')
+        lc8 = self.get_ls_sr_collection('LC08')
+        lc9 = self.get_ls_sr_collection('LC09')
         return lt5.merge(le7).merge(lc8).merge(lc9)
 
     def get_ls_sr_collection(self, sensor: str):
         ls_col = ee.ImageCollection(f'LANDSAT/{sensor}/C02/T1_L2')
-        ls_col = ls_col.map(lambda image: preprocess_ls_image(image, sensor))
+        ls_col = ls_col.map(lambda image: self.preprocess_ls_image(image, sensor))
         return ls_col
 
     def preprocess_ls_image(self, image: ee.Image, sensor: str):
@@ -101,7 +130,7 @@ class LSMedianImage(EEBase):
 
 class NLCD2019(LTMedoidImages):
     def create_ee_image(self, coordinates):
-        ls_image = super().create_ee_image(coordinates):
+        ls_image = super().create_ee_image(coordinates)
         nlcd = ee.ImageCollection('USGS/NLCD_RELEASES/2019_REL/NLCD')
         nlcd2019 = dataset.filter(ee.Filter.eq('system:index', '2019')).first()
         landcover = nlcd2019.select('landcover')
