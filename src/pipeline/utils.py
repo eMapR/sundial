@@ -192,11 +192,14 @@ def filter_chunks(chunks, geo_proc_data, grid_y_size, grid_x_size):
     return res
 
 
-def chunk_bounds(total_bounds, grid_y_size, grid_x_size):
+def chunk_bounds(total_bounds, grid_y_size, grid_x_size, to_list=True):
     lats = np.arange(total_bounds[3], total_bounds[1], -grid_y_size)
     lons = np.arange(total_bounds[0], total_bounds[2], grid_x_size)
     chunks = np.array(np.meshgrid(lats, lons)).T.reshape(-1, 2)
-    return chunks.tolist()
+    if to_list:
+        return chunks.tolist()
+    else:
+        return chunks
 
 
 def coord_bounds(total_bounds, grid_y_size, grid_x_size, scale):

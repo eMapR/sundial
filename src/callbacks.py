@@ -280,7 +280,7 @@ class LogTrainRegressionExtCallback(L.Callback):
             prog_bar=False,
             sync_dist=True
         )
-        
+
         
 class LogAvgMagGradientCallback(L.Callback):
     def __init__(self,
@@ -316,3 +316,10 @@ class LogAvgMagGradientCallback(L.Callback):
                 prog_bar=False,
                 sync_dist=True
             )
+        
+        
+class UpdateDataSamplerExtCallback(L.Callback):
+    def on_train_epoch_end(self,
+                           trainer: L.Trainer,
+                           pl_module: L.LightningModule):
+        trainer.train_dataloader.dataset.sampler.resample()

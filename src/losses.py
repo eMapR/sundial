@@ -285,6 +285,11 @@ class DiceCrossEntropyLoss(Base):
     def forward(self, inputs, targets):
         loss = self.dice(inputs, targets) + self.ce(inputs, targets)
         return loss
+    
+
+class RBMPassThrough(nn.Module):
+    def forward(self, inputs, targets):
+        return
 
 
 class InfoNCE(nn.Module):

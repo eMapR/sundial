@@ -77,4 +77,47 @@ class DataArraySampler:
                     "idx": idx,
                     "ydx": ydx}
                 }
+
+
+class DataArrayPixelPatchSampler:
+    def __init__(self, imagery_da, annotations_da, split, epoch_sample_ratio, sample_size, pixel_size):
+        self._imagery_da = imagery_da
+        self._annotations_da = annotations_da
+        self._split = split
+        self._epoch_sample_ratio = epoch_sample_ratio
+        self._sample_size = sample_size
+        self._pixel_size = pixel_size
+        self._patch_size = sample_size*pixel_size
+
+        self._geo_proc_data = gpd.read_file(GEO_PROC_PATH)
+        tx, tY, tX, ty = self._geo_proc_data.total_bounds
+        tX -= self._patch_size
+        tY += self._patch_size
+        self._total_bounds = (tx, tY, tX, ty)
+        
+        self._num_pixels = int(np.prod(self._imagery_da.shape[-2:])*self._epoch_sample_ratio)
+
+        self.resample()
+        
+    def __len__(self):
+        return self._num_pixels
+
+    def __call__(self, indx):
+        corner = self._pixels[indx]
+        ty, tx = corner
+        tY, tX = ty - self._patch_size, tx + self._patch_size
+        
+        imagery = self._imagery_da.sel(
+            lat=slice(ty, tY + self._pixel_size),
+            lon=slice(tx, tX - self._pixel_size)
+        ).to_numpy()
+        imagery = torch.tensor(imagery)
+        imagery = torch.where(imagery.isnan(), -1.0, imagery)
+        
+        return {"chip": imagery,
+                "meta": {"bounds": (tx, tY, tX, ty)}}
+    
+    def resample(self):
+        self._pixels = chunk_bounds(self._total_bounds, self._pixel_size, self._pixel_size, to_list=False)
+        self._pixels = self._pixels[np.random.choice(np.arange(len(self._pixels)), size=self._num_pixels, replace=False)]
         

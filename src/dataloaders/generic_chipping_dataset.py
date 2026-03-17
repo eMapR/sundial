@@ -53,23 +53,21 @@ class GenericChippingDataset(Dataset):
         if self.chip_static_transforms is not None:
             data["chip"] = self.chip_static_transforms(data["chip"])
 
-        if data["anno"].numel() and self.anno_static_transforms is not None:
+        if "anno" in data.keys() and self.anno_static_transforms is not None:
             data["anno"] = self.anno_static_transforms(data["anno"])
 
-        if not self.dynamic_transforms:
-            cdx = torch.randint(len(self.dynamic_transforms), (1,)).item()
-            chc = self.dynamic_transforms[cdx]
-            dynamic_transform = chc["transform"]
-            image_only = chc["image_only"]
-            if not image_only and data["anno"].numel():
-                seed = int(datetime.now().timestamp())
-                torch.manual_seed(seed)
-                data["chip"] = dynamic_transform(data["chip"])
-                torch.manual_seed(seed)
-                data["anno"] = dynamic_transform(data["anno"])
-            else:
-                data["chip"] = dynamic_transform(data["chip"])
-                data["anno"] = data["anno"]
+        cdx = torch.randint(len(self.dynamic_transforms), (1,)).item()
+        chc = self.dynamic_transforms[cdx]
+        dynamic_transform = chc["transform"]
+        image_only = chc["image_only"]
+        if not image_only and "anno" in data.keys():
+            seed = int(datetime.now().timestamp())
+            torch.manual_seed(seed)
+            data["chip"] = dynamic_transform(data["chip"])
+            torch.manual_seed(seed)
+            data["anno"] = dynamic_transform(data["anno"])
+        else:
+            data["chip"] = dynamic_transform(data["chip"])
 
         return data
 
@@ -121,7 +119,8 @@ class GenericChippingDataModule(L.LightningDataModule):
             dynamic_transform_config: dict,
             imagery_path: str = IMAGERY_PATH,
             annotations_path: str = ANNOTATIONS_PATH,
-            stat_data_path: str | None = STAT_DATA_PATH):
+            stat_data_path: str | None = STAT_DATA_PATH,
+            no_val: bool = False):
         super().__init__()
         self.sampler = sampler
         self.batch_size = batch_size
@@ -132,6 +131,7 @@ class GenericChippingDataModule(L.LightningDataModule):
         self.imagery_path = imagery_path
         self.annotations_path = annotations_path
         self.stat_data_path = stat_data_path
+        self.no_val = no_val
 
         # loading means and stds from stat_data_path
         if stat_data_path and os.path.exists(self.stat_data_path):
@@ -181,6 +181,9 @@ class GenericChippingDataModule(L.LightningDataModule):
                         "static_transform_config": train_static_transform_config,
                         "dynamic_transform_config": self.dynamic_transform_config,
                     })
+                
+                if self.no_val:
+                    return
 
                 validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
                 self.validate_ds = GenericChippingDataset(
@@ -216,6 +219,8 @@ class GenericChippingDataModule(L.LightningDataModule):
         return DataLoader(**self.dataloader_config | {"dataset": self.training_ds, "shuffle": True, "drop_last": True})
 
     def val_dataloader(self):
+        if self.no_val:
+            return
         return DataLoader(**self.dataloader_config | {"dataset": self.validate_ds})
 
     def test_dataloader(self):

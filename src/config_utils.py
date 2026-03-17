@@ -23,7 +23,7 @@ PACKAGE_CONFIG = {
 RUN_CONFIG_DEFAULTS = {
     "model": None,
     "data": {
-        "class_path": "dataloaders.generic_chips_dataset.GenericChipsDataModule",
+        "class_path": "dataloaders.generic_chipping_dataset.GenericChippingDataModule",
         "init_args": {
             "batch_size": 32,
             "num_workers": 4,
@@ -35,6 +35,8 @@ RUN_CONFIG_DEFAULTS = {
         }
     },
     "trainer": {
+        "accelerator": "cuda",
+        "log_every_n_steps": 16,
         "callbacks":[
             {
                 "class_path": "callbacks.ModelSetupCallback"
@@ -55,8 +57,6 @@ RUN_CONFIG_DEFAULTS = {
             }
         ]
     },
-    "accelerator": "cuda",
-    "log_every_n_steps": 16,
 }
 
 
