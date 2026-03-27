@@ -46,7 +46,6 @@ Debug / help methods
 Cleaning methods
 
         clean_expt:     Removes all logs, checkpoints, and predictions for experiment.
-        clean_logs:     Removes all logs for experiment.
         clean_dnld:     Removes all imagery data for experiment.
         clean_anno:     Removes all annotation data for experiment.
         clean_ckpt:     Removes all checkpoints for experiment.

@@ -109,7 +109,25 @@ class RandomAffineAugmentation(nn.Module):
         x = self.vflip(x)
         return x
 
-   
+
+class UnpackData(nn.Module):
+    def __init__(self, T_size, segments, counts):
+        super().__init__()
+        self.T_size = T_size
+        self.segments = segments
+        self.counts = counts
+    
+    def forward(self, x):
+        C, _, H, W = x.shape
+
+        splits = [c * self.T_size for c in self.counts]
+        chunks = x.split(splits, dim=1)
+        data = {}
+        for key, chunk, count in zip(self.segments, chunks, self.counts):
+            data[key] = chunk.reshape(C, count, self.T_size, H, W)
+        return data
+
+
 class RandomCropAndAffine(nn.Module):
     def __init__(self, size):
         super().__init__()

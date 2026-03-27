@@ -5,14 +5,17 @@ import yaml
 from typing import Optional
 
 from constants import (
+    ANNOTATIONS_PATH,
     CHECKPOINTS_PATH,
     CONFIG_PATH,
     PREDICTIONS_PATH,
+    IMAGERY_PATH,
     LOG_PATH,
     EXPERIMENT_SUFFIX,
     JOB_NAME,
     PIPELINE_CONFIG_PATH,
     SHAPE_NAME,
+    STAT_DATA_PATH
 )
 
 
@@ -23,15 +26,18 @@ PACKAGE_CONFIG = {
 RUN_CONFIG_DEFAULTS = {
     "model": None,
     "data": {
-        "class_path": "dataloaders.generic_chipping_dataset.GenericChippingDataModule",
+        "class_path": "dataloaders.generic_chipping_dataset.GenericDataModule",
         "init_args": {
             "batch_size": 32,
-            "num_workers": 4,
-            "sampler": {"class_path": "",
-                        "init_args": {}},                                
+            "num_workers": 4,                             
             "dataloader_config": {},
+            "sampler_config": {},
             "static_transform_config": {"transforms": []},
             "dynamic_transform_config": {"transforms": []},
+            "imagery_path": IMAGERY_PATH,
+            "annotations_path": ANNOTATIONS_PATH,
+            "stat_data_path": STAT_DATA_PATH,
+            "no_val": False
         }
     },
     "trainer": {
@@ -108,10 +114,6 @@ def dynamic_import(loader: dict, kwargs: Optional[dict]=None):
 if __name__ == "__main__":
     from pipeline.settings import PIPELINE_CONFIG
     os.makedirs(CONFIG_PATH)
-    os.makedirs(CHECKPOINTS_PATH)
-    os.makedirs(PREDICTIONS_PATH)
-    os.makedirs(LOG_PATH)
-
     config_path = os.path.join(CONFIG_PATH, "base.yaml")
     save_yaml(RUN_CONFIG_DEFAULTS, config_path)
     save_yaml(PIPELINE_CONFIG, PIPELINE_CONFIG_PATH)

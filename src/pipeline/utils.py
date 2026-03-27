@@ -28,6 +28,8 @@ class ParallelGridAlign:
         self._epsg_str = self._geo_proc_data.crs.to_string()
         
         self._dtype = np.dtype(kwargs.get("dtype"))
+        self._num_bands = kwargs.get("num_bands")
+        self._num_time_steps = kwargs.get("num_time_steps")
         self._chunk_sizes = kwargs.get("chunk_sizes")
         self._scale = kwargs.get("scale")
         
@@ -49,7 +51,7 @@ class ParallelGridAlign:
             self._chunks = filter_chunks(self._chunks, self._geo_proc_data, self._grid_y_size, self._grid_x_size)
         self._lat_coords, self._lon_coords = coord_bounds(self._total_bounds, self._grid_y_size, self._grid_x_size, self._scale)
 
-        shape = (*self._chunk_sizes[:2], len(self._lat_coords), len(self._lon_coords))
+        shape = (self._num_bands, self._num_time_steps, len(self._lat_coords), len(self._lon_coords))
         dims = ["band", "time", "lat", "lon"]
         dummy_zarr(self._dtype, self._chunk_sizes, shape, dims, self._lat_coords, self._lon_coords, self._source_path)
 
@@ -100,11 +102,9 @@ class ParallelGridAlign:
     def _write_array_batch(self, chunk_batch) -> None:
         for array, translateY, translateX  in chunk_batch:
             if array.dtype.names is not None:
-                names = array.dtype.names
                 H, W = array.shape
-
                 array = rfn.structured_to_unstructured(array)
-                array = array.reshape(H, W, self._chunk_sizes[1], self._chunk_sizes[0])
+                array = array.reshape(H, W, self._num_time_steps, self._num_bands)
                 array = array.transpose(3, 2, 0, 1)
             array = array.astype(self._dtype)
 
@@ -116,8 +116,8 @@ class ParallelGridAlign:
                 array,
                 dims=["band", "time", "lat", "lon"],
                 coords={
-                    "band": list(range(self._chunk_sizes[0])),
-                    "time": list(range(self._chunk_sizes[1])),
+                    "band": list(range(self._num_bands)),
+                    "time": list(range(self._num_time_steps)),
                     "lat": lats,
                     "lon": lons
                 },
@@ -127,8 +127,8 @@ class ParallelGridAlign:
             lon_start = np.searchsorted(self._lon_coords, lons[0])
 
             region = {
-                "band": slice(0, self._chunk_sizes[0]),
-                "time": slice(0, self._chunk_sizes[1]),
+                "band": slice(0, self._num_bands),
+                "time": slice(0, self._num_time_steps),
                 "lat": slice(lat_start, lat_start + len(lats)),
                 "lon": slice(lon_start, lon_start + len(lons)),
             }
@@ -222,12 +222,12 @@ def dummy_zarr(dtype, chunk_sizes, shape, dims, y_coords, x_coords, out_path):
             chunks=chunk_sizes,
         ),
         dims=dims,
-        coords={"band": list(range(chunk_sizes[0])), "time": list(range(chunk_sizes[1])), "lat": y_coords, "lon": x_coords},
+        coords={"band": list(range(shape[0])), "time": list(range(shape[1])), "lat": y_coords, "lon": x_coords},
         name="dat",
     )
 
-    dummy_da.to_zarr(out_path, compute=False, mode="w")
-
+    dummy_da.to_zarr(out_path, mode="w", compute=False)
+    
 
 def clip_xy_xarray(xarr: xr.DataArray, 
                    pixel_edge_size: int) -> xr.DataArray:
@@ -335,7 +335,7 @@ def generate_stats(
     for action in kwargs.get("stats_actions", []):
         match action:
             case "band_mean_stdv":
-                stat_data["chip_stats"] = get_band_stats(imagery_da, geo_proc_data, **kwargs)
+                stat_data["inpt_stats"] = get_band_stats(imagery_da, geo_proc_data, **kwargs)
             case "class_counts":
                 label_column = kwargs.get("annotator")["init_args"]["label_column"]
                 geo_proc_data.loc[:, "area"] = geo_proc_data.area

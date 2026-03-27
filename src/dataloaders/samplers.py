@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import torch
+import xarray as xr
 
 from datetime import datetime
 from shapely import STRtree
@@ -69,9 +70,8 @@ class DataArraySampler:
         annotation = torch.tensor(annotation)
         annotation = torch.where(annotation.isnan(), 0, annotation)
         
-        
-        return {"chip": imagery,
-                "anno": annotation,
+        return {"inpt": imagery,
+                "target": annotation,
                 "meta": {
                     "bounds": (tx, tY, tX, ty),
                     "idx": idx,
@@ -79,25 +79,33 @@ class DataArraySampler:
                 }
 
 
-class DataArrayPixelPatchSampler:
-    def __init__(self, imagery_da, annotations_da, split, epoch_sample_ratio, sample_size, pixel_size):
+class PrePostPixelPatchSampler:
+    def __init__(self,
+                 imagery_da: xr.DataArray, 
+                 split: str, 
+                 epoch_sample_ratio: float,
+                 sample_size: int,
+                 pixel_size: int,
+                 temporal_size:int=16, temporal_holdout: int=3, cache: bool=False, **kwargs):
         self._imagery_da = imagery_da
-        self._annotations_da = annotations_da
         self._split = split
         self._epoch_sample_ratio = epoch_sample_ratio
         self._sample_size = sample_size
         self._pixel_size = pixel_size
-        self._patch_size = sample_size*pixel_size
-
-        self._geo_proc_data = gpd.read_file(GEO_PROC_PATH)
-        tx, tY, tX, ty = self._geo_proc_data.total_bounds
-        tX -= self._patch_size
-        tY += self._patch_size
-        self._total_bounds = (tx, tY, tX, ty)
+        self._temporal_size = temporal_size
+        self._temporal_holdout = temporal_holdout
         
-        self._num_pixels = int(np.prod(self._imagery_da.shape[-2:])*self._epoch_sample_ratio)
-
+        self._patch_size = sample_size*pixel_size
+        
+        y_coords = np.meshgrid(self._imagery_da.coords["lat"][-self._sample_size:])
+        x_coords = np.meshgrid(self._imagery_da.coords["lon"][-self._sample_size:])
+        self._all_pixels = np.array(np.meshgrid(y_coords, x_coords)).T.reshape(-1, 2)
+        
+        self._num_pixels = int(self._all_pixels*self._epoch_sample_ratio)
         self.resample()
+        
+        if cache:
+            self._imagery_da = self._imagery_da.compute()
         
     def __len__(self):
         return self._num_pixels
@@ -110,14 +118,99 @@ class DataArrayPixelPatchSampler:
         imagery = self._imagery_da.sel(
             lat=slice(ty, tY + self._pixel_size),
             lon=slice(tx, tX - self._pixel_size)
-        ).to_numpy()
-        imagery = torch.tensor(imagery)
-        imagery = torch.where(imagery.isnan(), -1.0, imagery)
+        )
+        T = self._imagery_da.shape[1]
+    
+        if self.split in ["train", "validate"]:
+            tindx = np.random.randint(self._temporal_size+self._temporal_holdout, T-self._temporal_holdout)
+            cur = imagery.isel(time=slice(tindx-self._temporal_size, tindx)).to_numpy()
+            cur = torch.tensor(cur)
+            cur = torch.where(cur.isnan(), -1.0, cur)
+            cur = cur.unsqueeze(1)
+            bwd = []
+            for i in range(self._temporal_holdout, 0, -1):
+                bindx = tindx-i
+                p = imagery.isel(time=slice(bindx-self._temporal_size, bindx)).to_numpy()
+                p = torch.tensor(p)
+                p = torch.where(p.isnan(), -1.0, p)
+                bwd.append(p)
+            bwd = torch.stack(bwd, dim=1)
+            
+            fwd = []
+            for i in range(1, self._temporal_holdout+1):
+                findx = tindx+i
+                p = imagery.isel(time=slice(findx-self._temporal_size, findx)).to_numpy()
+                p = torch.tensor(p)
+                p = torch.where(p.isnan(), -1.0, p)
+                fwd.append(p)
+            fwd = torch.stack(fwd, dim=1)
         
-        return {"chip": imagery,
-                "meta": {"bounds": (tx, tY, tX, ty)}}
+            inpt = torch.concat([bwd,cur,fwd], dim=1).flatten(start_dim=1, end_dim=2)
+            return {"inpt": inpt,
+                    "meta": {"bounds": (ty, tx)}}
+        else:
+            curs = []
+            for tindx in range(self._temporal_size, self._imagery_da.shape[1]):
+                cur = imagery.isel(time=slice(tindx-self._temporal_size, tindx)).to_numpy()
+                cur = torch.tensor(cur)
+                cur = torch.where(cur.isnan(), -1.0, imagery)
+                curs.append(cur)
+            inpt = torch.stack(curs, dim=1).flatten(start_dim=1, end_dim=2)
+            return {"inpt": inpt,
+                    "meta": {"bounds": (ty-self._pixel_size, tx+self._pixel_size)}}
+
     
     def resample(self):
-        self._pixels = chunk_bounds(self._total_bounds, self._pixel_size, self._pixel_size, to_list=False)
-        self._pixels = self._pixels[np.random.choice(np.arange(len(self._pixels)), size=self._num_pixels, replace=False)]
+        self._pixels = self._all_pixels[np.random.choice(np.arange(len(self._pixels)), size=self._num_pixels, replace=False)]
+
+
+class SinglePrePostPixelPatchSampler:
+    def __init__(self,
+                 imagery_da: xr.DataArray, 
+                 split: str, 
+                 point_path: str,
+                 sample_size: int,
+                 pixel_size: int,
+                 temporal_size:int=16, cache: bool=False, **kwargs):
+        self._imagery_da = imagery_da
+        self._split = split
+        self._point_path = point_path
+        self._sample_size = sample_size
+        self._pixel_size = pixel_size
+        self._temporal_size = temporal_size
+        self._patch_buf = (sample_size//2)*pixel_size
+        
+        from scipy.spatial import cKDTree
+        pairs = np.array(np.meshgrid(self._imagery_da.coords["lat"], self._imagery_da.coords["lon"])).T.reshape(-1, 2)
+        tree = cKDTree(pairs)
+        
+        self._geo_proc_data = gpd.read_file(self._point_path)
+
+        queries = np.array(self._geo_proc_data.geometry.centroid.map(lambda g: list(g.coords[0])).to_numpy().tolist())
+        queries = np.flip(queries, axis=1)
+        distances, closest_idx = tree.query(queries)
+        
+        self._center_points = pairs[closest_idx]
+
+        if cache:
+            self._imagery_da = self._imagery_da.compute()
+        
+    def __len__(self):
+        return len(self._center_points)
+
+    def __call__(self, indx):
+        ty, tx = self._center_points[indx % len(self._geo_proc_data)]
+        b = self._patch_buf
+        curs = []
+        for tindx in range(self._temporal_size, self._imagery_da.shape[1]):
+            imagery = self._imagery_da.sel(
+                lat=slice(ty+b, ty-b),
+                lon=slice(tx-b, tx+b)
+            ).isel(time=slice(tindx-self._temporal_size, tindx)).to_numpy()
+            imagery = torch.tensor(imagery)
+            imagery = torch.where(imagery.isnan(), -1.0, imagery)
+            curs.append(imagery)
+        
+        return {"inpt": torch.stack(curs, dim=1).flatten(start_dim=1, end_dim=2),
+                "meta": {"point": (ty, tx)}}
         

@@ -12,6 +12,7 @@ from constants import (
     EXPERIMENT_FULL_NAME,
     EXPERIMENT_SUFFIX,
     EXPERIMENT_CONFIG_PATH,
+    CHECKPOINTS_PATH,
     LOG_PATH,
     METHOD,
     METHOD_CONFIG_PATH,
@@ -32,28 +33,30 @@ class SundialCLI(LightningCLI):
 
 def run():
     torch.set_float32_matmul_precision("high")
-    args = [METHOD,
-                    f"--config={BASE_CONFIG_PATH}",
-                    f"--config={METHOD_CONFIG_PATH}"]
+    args = [METHOD, f"--config={BASE_CONFIG_PATH}",]
+    if os.path.exists(METHOD_CONFIG_PATH):
+        args.append(f"--config={METHOD_CONFIG_PATH}")
     if os.path.exists(EXPERIMENT_CONFIG_PATH):
         args.append(f"--config={EXPERIMENT_CONFIG_PATH}")    
 
     match METHOD:
+        case "fit":
+            os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
         case "test" | "predict":
             run_configs = load_yaml(METHOD_CONFIG_PATH)
             ckpt_path = run_configs.get("ckpt_path", False)
             match ckpt_path:
                 case "best":
-                    ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
+                    ckpt_path = get_best_ckpt(CHECKPOINTS_PATH)
                 case "latest":
-                    ckpt_path = get_latest_ckpt(CHECKPOINT_PATH)
+                    ckpt_path = get_latest_ckpt(CHECKPOINTS_PATH)
                 case False:
-                    ckpt_path = get_best_ckpt(CHECKPOINT_PATH)
+                    ckpt_path = get_best_ckpt(CHECKPOINTS_PATH)
                 case None:
                     ckpt_path = "null"
                 case _:
-                    if CHECKPOINT_PATH not in ckpt_path:
-                        ckpt_path = os.path.join(CHECKPOINT_PATH, ckpt_path)
+                    if CHECKPOINTS_PATH not in ckpt_path:
+                        ckpt_path = os.path.join(CHECKPOINTS_PATH, ckpt_path)
             args.append(f"--ckpt_path={ckpt_path}")
 
     SundialCLI(
@@ -67,7 +70,7 @@ def run():
             "logger": {
                 "class_path": "lightning.pytorch.loggers.CSVLogger",
                 "init_args": {
-                    "name": EXPERIMENT_SUFFIX,
+                    "name": None,
                     "save_dir": LOG_PATH,
                 }    
             }

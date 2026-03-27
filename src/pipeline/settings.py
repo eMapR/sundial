@@ -20,6 +20,8 @@ PIPELINE_CONFIG = {
     "dtype": "float32",
     "scale": 30,
     "filter_intersect": False,
+    "num_bands": 6,
+    "num_time_steps": 1,
     
     "ee_factory": {"class_path": "pipeline.ee_factories.LTMedoidImage",
                    "init_args": {}},

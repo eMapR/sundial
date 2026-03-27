@@ -8,7 +8,7 @@ import time
 from numpy.lib import recfunctions as rfn
 from shapely.geometry import box
 
-from constants import EE_END_POINT, GEE_REQUEST_LIMIT_MB, TOO_MANY_REQUEST_STR
+from constants import EE_END_POINT, GEE_REQUEST_LIMIT, GEE_REQUEST_LIMIT_MB, GEE_REQUEST_LIMIT_BANDS, TOO_MANY_REQUEST_STR
 from pipeline.utils import ParallelGridAlign
 from config_utils import dynamic_import
 
@@ -60,7 +60,6 @@ class Downloader(ParallelGridAlign):
     def _consumer(self, consumer_index: int) -> None:
         ee.Initialize(opt_url=EE_END_POINT)
         chunk_batch = []
-        exp_band_count = np.prod(self._chunk_sizes[:2]).item()
         max_retries = 3
         
         while (chunk_task := self._chunk_queue.get()) is not None:
@@ -70,30 +69,22 @@ class Downloader(ParallelGridAlign):
                 chunk = None
                 try:
                     payload, translateY, translateX = self._image_generator(chunk_task)
-                    if (band_count := len(payload["expression"].bandNames().getInfo())) != exp_band_count:
-                        self._report_queue.put(("WARNING", f"Band count {band_count} != {exp_band_count} mismatch found for chunk skipping... {translateY, translateX}"))
+                    bands = payload['expression'].bandNames().getInfo()
+                    if len(bands) > GEE_REQUEST_LIMIT_BANDS:
+                        chunk = self.chunk_call(payload, GEE_REQUEST_LIMIT_BANDS//GEE_REQUEST_LIMIT, bands, translateY, translateX)
                     else:
-                        self._report_queue.put(("INFO", f"Requesting image pixels for chunk... {translateY, translateX}"))
+                        self._report_queue.put(("INFO", f"Requesting image pixels for chunk... num_bands: {len(bands)} {translateY, translateX}"))
                         chunk = ee.data.computePixels(payload)
                     attempts += max_retries
                 except ee.ee_exception.EEException as e:
                     if "Total request size" in str(e):
                         try:
                             match = re.search(r'(?:Total request size) \((\d+)(?= bytes\) must)', str(e))
-                            factor = math.ceil(int(match.group(1)) / GEE_REQUEST_LIMIT_MB)
                             bands = payload['expression'].bandNames().getInfo()
-                            band_chunk_size = len(bands) // factor
-                            self._report_queue.put(("INFO", f"{str(e)} attempting band subsets of {band_chunk_size} / {len(bands)}. ... {translateY, translateX}"))
                             
-                            chunk_arrays = []
-                            for i in range(factor):
-                                s = band_chunk_size * i
-                                e_idx = min(len(bands), s + band_chunk_size)
-                                subchunk = ee.data.computePixels(payload | {"bandIds": bands[s:e_idx]})
-                                chunk_arrays.append(subchunk)
+                            band_chunk_size = len(bands) // math.ceil(int(match.group(1)) / GEE_REQUEST_LIMIT_MB)
+                            chunk = self.chunk_call(payload, band_chunk_size, bands, translateY, translateX)
                             
-                            chunk = rfn.merge_arrays(chunk_arrays, flatten=True)
-                            chunk = chunk.reshape(self._chunk_sizes[-2:])
                             attempts += max_retries
                         except Exception as inner_e:
                             last_error = str(inner_e)
@@ -139,3 +130,17 @@ class Downloader(ParallelGridAlign):
 
         self._report_queue.put(("INFO", f"Consumer {consumer_index} completed. exiting..."))
         self._result_queue.put(None)
+
+    def chunk_call(self, payload, band_chunk_size, bands, translateY, translateX):
+        chunk_arrays = []
+        s = 0
+        while s < len(bands):
+            e_idx = min(len(bands), s + band_chunk_size)
+            self._report_queue.put(("INFO", f"Requesting image pixels for chunk {s+1}-{e_idx} / {len(bands)}. ... {translateY, translateX}"))
+            subchunk = ee.data.computePixels(payload | {"bandIds": bands[s:e_idx]})
+            chunk_arrays.append(subchunk)
+            s += band_chunk_size
+        chunk = rfn.merge_arrays(chunk_arrays, flatten=True)
+        chunk = chunk.reshape(self._chunk_sizes[-2:])
+
+        return chunk

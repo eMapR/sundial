@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import tarfile
 import torch
+import xarray as xr
 
 from torchmetrics.functional.classification import (binary_accuracy,
                                                     binary_precision,
@@ -30,7 +31,7 @@ from constants import (DATA_PATH,
                        PREDICTIONS_PATH,
                        STAT_DATA_PATH)
 from pipeline.settings import PIPELINE_CONFIG
-from utils import log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
+from utils import dummy_zarr, log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -140,6 +141,14 @@ class LogTrainCallback(L.Callback):
             logger=True,
             prog_bar=True,
         )
+        for k, v in outputs.items():
+            if k != "loss":
+                pl_module.log(
+                    name=k,
+                    value=v,
+                    logger=True,
+                    prog_bar=False,
+                )
 
     def on_validation_batch_end(self,
                                 trainer: L.Trainer,
@@ -316,10 +325,102 @@ class LogAvgMagGradientCallback(L.Callback):
                 prog_bar=False,
                 sync_dist=True
             )
+            
+
+class DelayedModelCheckpoint(L.pytorch.callbacks.ModelCheckpoint):
+    def __init__(self, start_after_step:int =0, start_after_epoch: int=0, **kwargs):
+        super().__init__(**kwargs)
+        self.start_after_step = start_after_step
+        self.start_after_epoch = start_after_epoch
+
+    def on_validation_end(self, trainer, pl_module):
+        if trainer.current_epoch >= self.start_after_epoch:
+            super().on_validation_end(trainer, pl_module)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step >= self.start_after_step:
+            super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
         
         
 class UpdateDataSamplerExtCallback(L.Callback):
+    def on_train_batch_end(self,
+                           trainer: L.Trainer,
+                           pl_module: L.LightningModule,
+                           outputs,
+                           batch,
+                           batch_idx):
+        pl_module.update_ema()    
+    
     def on_train_epoch_end(self,
                            trainer: L.Trainer,
                            pl_module: L.LightningModule):
-        trainer.train_dataloader.dataset.sampler.resample()
+        trainer.train_dataloader.dataset._sampler.resample()
+        
+        
+class SavePixelPatchCallback(L.Callback):
+    def __init__(self, outpath: str, **kwargs):
+        super().__init__(**kwargs)
+        self.outpath = outpath
+        
+    def on_test_batch_end(self,
+                          trainer: L.Trainer,
+                          pl_module: L.LightningModule,
+                          outputs,
+                          batch,
+                          batch_idx):
+        B = int(outputs.shape[0])
+        y, x = batch["meta"]["point"]
+
+        for b in range(B):
+            name = f"{y[b]}_{x[b]}.pt"
+            torch.save(outputs[b], os.path.join(self.outpath, name))
+            
+class SaveLinesCallback(L.Callback):
+    def __init__(self, dtype, chunk_sizes, shape, dims, out_path, **kwargs):
+        super().__init__(**kwargs)
+        self.dtype = dtype
+        self.chunk_sizes = chunk_sizes
+        self.dims = dims
+        self.outpath = out_path
+        
+    def on_test_start(self, trainer, pl_module):
+        imagery_da = trainer.train_dataloader.dataset._imagery_da
+        sample_size = trainer.train_dataloader.dataset._sample_size
+        y_coords = np.meshgrid(imagery_da.coords["lat"][-_sample_size:])
+        x_coords = np.meshgrid(imagery_da.coords["lon"][-_sample_size:])
+        dummy_zarr(self.dtype, self.chunk_sizes, self.shape, self.dims, y_coords, x_coords, self.out_path)
+        
+    def on_test_batch_end(self,
+                          trainer: L.Trainer,
+                          pl_module: L.LightningModule,
+                          outputs,
+                          batch,
+                          batch_idx):
+        lats, lons = batch["meta"]["point"]
+        C = self.chunk_sizes[0]
+        T = self.chunk_sizes[1]
+        array = output.permute(1, 2, 0).reshape(C, T, 1, -1)
+        chunk_da = xr.DataArray(
+            array,
+            dims=["band", "time", "lat", "lon"],
+            coords={
+                "band": list(range(C)),
+                "time": list(range(T)),
+                "lat": lats,
+                "lon": lons
+            },
+            name="dat"
+        )
+        
+        lat_start = np.searchsorted(-self._lat_coords, -lats[0])
+        lon_start = np.searchsorted(self._lon_coords, lons[0])
+
+        region = {
+            "band": slice(0, self._chunk_sizes[0]),
+            "time": slice(0, self._chunk_sizes[1]),
+            "lat": slice(lat_start, lat_start + len(lats)),
+            "lon": slice(lon_start, lon_start + len(lons)),
+        }
+
+        chunk_da.to_zarr(self._source_path, region=region)
+        

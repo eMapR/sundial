@@ -17,11 +17,11 @@ EXPERIMENTS_PATH = os.path.join(BASE_PATH, "experiments")
 
 # experiment paths
 EXPERIMENT_PATH = os.path.join(EXPERIMENTS_PATH, EXPERIMENT_BASE_NAME)
-CHECKPOINTS_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "checkpoints")
-PREDICTIONS_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "predictions")
-OUTPUT_DATA_PATH = os.path.join(EXPERIMENT_PATH, EXPERIMENT_SUFFIX, "output_data")
 CONFIG_PATH = os.path.join(EXPERIMENT_PATH, "configs")
-LOG_PATH = os.path.join(EXPERIMENT_PATH, "logs")
+OUTPUT_DATA_PATH = os.path.join(EXPERIMENT_PATH, "outputs", EXPERIMENT_SUFFIX)
+CHECKPOINTS_PATH = os.path.join(OUTPUT_DATA_PATH, "checkpoints")
+PREDICTIONS_PATH = os.path.join(OUTPUT_DATA_PATH, "predictions")
+LOG_PATH = os.path.join(OUTPUT_DATA_PATH, "logs")
 
 # config paths
 PIPELINE_CONFIG_PATH = os.path.join(CONFIG_PATH, "pipeline.yaml")
@@ -42,5 +42,6 @@ RANDOM_SEED = 42
 IDX_NAME_ZFILL = 8
 GEE_REQUEST_LIMIT = 42
 GEE_REQUEST_LIMIT_MB = 50331648
+GEE_REQUEST_LIMIT_BANDS = 1024
 EE_END_POINT = 'https://earthengine-highvolume.googleapis.com'
 TOO_MANY_REQUEST_STR = 'Too Many Requests: Request was rejected because the request rate or concurrency limit was exceeded.'

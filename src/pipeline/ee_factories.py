@@ -1,7 +1,8 @@
+import calendar
 import ee
 
 from ltgee import LandsatComposite
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 
 LBANDS = ["B2", "B3", "B4", "B5", "B6", "B7"]
@@ -58,7 +59,56 @@ class LTMedoidImages(EEBase):
             .divide(10000)
 
         return image
+
+
+class LTMedoidMonthlyImages(EEBase):
+    _first_avail = date(1984, 3, 16)
     
+    def __init__(self, mask_labels=["cloud", "shadow", "water"], **kwargs):
+        super().__init__(**kwargs)
+        self.mask_labels = mask_labels
+        self.ranges = self.get_monthly_ranges()
+        self.ranges = [r for r in self.ranges if r[0].date() >= self._first_avail]
+        
+    def create_ee_image(self, coordinates):
+        even_odd = (self.projection == "EPSG:4326")
+        polygon = ee.Geometry.Polygon(coordinates, proj=self.projection, evenOdd=even_odd)
+        
+        images = []
+        for start_date, end_date in self.ranges:
+            collection = LandsatComposite(
+                start_date=start_date,
+                end_date=end_date,
+                area_of_interest=polygon,
+                mask_labels=self.mask_labels,
+                exclude={"slcOff": True}
+            )
+
+            old_band_names = [f"0_{band}" for band in collection._band_names]
+            new_band_names = [f"{str(start_date.year)}_{str(start_date.month)}_{band}" for band in collection._band_names]
+            
+            images.append(collection
+                .toBands()
+                .select(old_band_names, new_band_names)
+                .divide(10000))
+        all_years = ee.ImageCollection(images)
+        all_years = all_years.toBands()
+        
+        return all_years
+    
+    def get_monthly_ranges(self) -> list[tuple[date, date]]:
+        ranges = []
+        for year in range(self.start_date.year, self.end_date.year+1):
+            sd = self.start_date.replace(year=year)
+            ed = self.end_date.replace(year=year)
+            current = sd
+            while current < ed:
+                range_start = max(sd, current)
+                range_end = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+                ranges.append((range_start, range_end))
+                current = range_end
+        return ranges
+
 
 class LSMedianImage(EEBase):
     def __init__(self, **kwargs):

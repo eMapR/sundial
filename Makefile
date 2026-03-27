@@ -71,7 +71,6 @@ default:
 	echo		Cleaning methods
 	echo
 	echo "        clean_expt:     Removes all logs, checkpoints, and predictions for experiment."
-	echo "        clean_logs:     Removes all logs for experiment."
 	echo "        clean_dnld:     Removes all imagery data for experiment."
 	echo "        clean_anno:     Removes all annotation data for experiment."
 	echo "        clean_nuke:     Removes all data for experiment including configs."
@@ -215,11 +214,7 @@ package_err: _package
 
 clean_expt: _experiment_name_check
 	echo "Cleaning up logs, checkpoints, and predictions for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_EXPERIMENT_SUFFIX);
-
-clean_logs: _experiment_name_check
-	echo "Cleaning up logs for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
-	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/*.log;
+	rm -rvf $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/outputs/$(SUNDIAL_EXPERIMENT_SUFFIX);
 
 clean_dnld: _experiment_name_check
 	echo "Cleaning up imagery data for $(SUNDIAL_EXPERIMENT_BASE_NAME).";
@@ -310,13 +305,13 @@ _run: _experiment_name_check
 		if [[ "$(SUNDIAL_METHOD)" == download || "$(SUNDIAL_METHOD)" == annotate ]]; then \
 			cpus=42; \
     else \
-			cpus=4; \
+			cpus=70; \
 		fi; \
 		echo "Running on HPC..."; \
 		sbatch \
 			--job-name=$$job_name \
-			--output=$(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).o \
-			--error=$(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).e \
+			--output=$(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/slurm_logs/$(SUNDIAL_METHOD).o \
+			--error=$(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/slurm_logs/$(SUNDIAL_METHOD).e \
 			--chdir=$(SUNDIAL_BASE_PATH) \
 			--partition=$(SUNDIAL_PARTITION) \
 			--nodelist=$$nodelist \
@@ -331,11 +326,11 @@ _run: _experiment_name_check
 	fi;
 
 _read_err: _experiment_name_check
-	if [[ -f $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).e ]]; then \
-		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).e; \
+	if [[ -f $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/slurm_logs/$(SUNDIAL_METHOD).e ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/slurm_logs/$(SUNDIAL_METHOD).e; \
 	fi; \
-	if [[ -f $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).log ]]; then \
-		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).log | grep ERROR; \
-		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).log | grep CRITICAL; \
-		tail $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/logs/$(SUNDIAL_METHOD).log; \
+	if [[ -f $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/outputs/$(SUNDIAL_EXPERIMENT_SUFFIX)/logs/$(SUNDIAL_METHOD).log ]]; then \
+		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/outputs/$(SUNDIAL_EXPERIMENT_SUFFIX)/logs/$(SUNDIAL_METHOD).log | grep ERROR; \
+		cat $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/outputs/$(SUNDIAL_EXPERIMENT_SUFFIX)/logs/$(SUNDIAL_METHOD).log | grep CRITICAL; \
+		tail $(SUNDIAL_BASE_PATH)/experiments/$(SUNDIAL_EXPERIMENT_BASE_NAME)/outputs/$(SUNDIAL_EXPERIMENT_SUFFIX)/logs/$(SUNDIAL_METHOD).log; \
 	fi;
