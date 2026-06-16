@@ -13,7 +13,18 @@ from pipeline.utils import chunk_bounds
 
 
 class DataArraySampler:
-    def __init__(self, imagery_da, annotations_da, split, grid_y_size, grid_x_size, pixel_size, class_indices, offset, window=(2, 2)):
+    def __init__(self,
+                 imagery_da: xr.DataArray,
+                 annotations_da: xr.DataArray,
+                 split: str, 
+                 grid_y_size: int,
+                 grid_x_size: int,
+                 pixel_size: int,
+                 class_indices: list[int],
+                 offset: int,
+                 window: tuple[int, int]=(2, 2),
+                 jitters: int=None,
+                 jitter_size: int=None):
         self._imagery_da = imagery_da
         self._annotations_da = annotations_da
         self._split = split
@@ -23,14 +34,23 @@ class DataArraySampler:
         self._class_indices = class_indices
         self._offset = offset
         self._window = window
+        self._jitters = jitters
+        self._jitter_size = jitter_size
 
         self._geo_proc_data = gpd.read_file(GEO_PROC_PATH)
-        self._date_column = PIPELINE_CONFIG.get("annotator")["init_args"]["date_column"]
-        self._label_column = PIPELINE_CONFIG.get("annotator")["init_args"]["label_column"]
-        self._years = sorted(self._geo_proc_data[self._date_column].unique())
-        self._labels = sorted(self._geo_proc_data[self._label_column].unique())
-        self._labels = [v for i, v in enumerate(self._labels) if i in self._class_indices]
-        self._geo_proc_data = self._geo_proc_data.loc[self._geo_proc_data[self._label_column].isin(self._labels)]
+        annotator_kwargs = PIPELINE_CONFIG.get("annotator", {}).get("init_args", {})
+        self._date_column = annotator_kwargs.get("date_column",)
+        self._label_column = annotator_kwargs.get("label_column")
+
+        if self._date_column is not None:
+            self._years = sorted(self._geo_proc_data[self._date_column].unique())
+        else:
+            self._years = list(range(self._imagery_da.shape[1]-(sum(self._window))-1))
+
+        if self._label_column is not None:    
+            self._labels = sorted(self._geo_proc_data[self._label_column].unique())
+            self._labels = [v for i, v in enumerate(self._labels) if i in self._class_indices]
+            self._geo_proc_data = self._geo_proc_data.loc[self._geo_proc_data[self._label_column].isin(self._labels)]
             
         maxy, miny = self._imagery_da.coords["lat"][0], self._imagery_da.coords["lat"][-1]
         minx, maxx = self._imagery_da.coords["lon"][0], self._imagery_da.coords["lon"][-1]
@@ -39,44 +59,65 @@ class DataArraySampler:
         
         spatial_index = STRtree(self._geo_proc_data.geometry)
         for chunk in self._chunks:
-            ty, tx = chunk
-            bounds = tx, ty - grid_y_size, tx + grid_x_size, ty
+            tY, tx = chunk
+            bounds = tx, tY - grid_y_size, tx + grid_x_size, tY
             hits = spatial_index.query(box(*bounds), predicate="intersects")
             if hits.size > 0:
-                for year in np.sort(self._geo_proc_data.iloc[hits][self._date_column].unique()):
-                    self._chunk_samples.append((bounds, year))
-        
+                if self._date_column is not None:
+                    for year in self._geo_proc_data.iloc[hits][self._date_column].unique():
+                        self._chunk_samples.append((bounds, year))
+                else:
+                    for year in self._years:
+                        self._chunk_samples.append((bounds, year))
+
     def __len__(self):
-        return len(self._chunk_samples)
+        if self._jitters is not None:
+            return len(self._chunk_samples)*self._jitters
+        else:
+            return len(self._chunk_samples)
 
     def __call__(self, indx):
-        (tx, tY, tX, ty), year = self._chunk_samples[indx]
+        out = {}
+        
+        if self._jitters is not None:
+            sindx = indx % self._jitters
+            jindx = indx // self._jitters
+            (tx, ty, tX, tY), year = self._chunk_samples[sindx]
+            jitter_y = np.random.randint(-self._grid_y_size, self._grid_y_size, self._jitter_size)
+            jitter_x = np.random.randint(-self._grid_x_size, self._grid_x_size, self._jitter_size)
+            ty += jitter_y
+            tY += jitter_y
+            tx += jitter_x
+            tX += jitter_x
+        else:
+            (tx, ty, tX, tY), year = self._chunk_samples[indx]            
 
         ydx = self._years.index(year)
         idx = ydx+self._offset
         time_indices = list(range(idx - self._window[0], idx + self._window[1]))
 
         imagery = self._imagery_da.sel(
-            lat=slice(ty, tY + self._pixel_size),
+            lat=slice(tY, ty + self._pixel_size),
             lon=slice(tx, tX - self._pixel_size)
         ).isel(time=time_indices).to_numpy()
         imagery = torch.tensor(imagery)
         imagery = torch.where(imagery.isnan(), -1.0, imagery)
 
-        annotation = self._annotations_da.sel(
-            lat=slice(ty, tY + self._pixel_size),
-            lon=slice(tx, tX - self._pixel_size)
-        ).isel(band=self._class_indices, time=ydx).to_numpy()
-        annotation = torch.tensor(annotation)
-        annotation = torch.where(annotation.isnan(), 0, annotation)
-        
-        return {"inpt": imagery,
-                "target": annotation,
-                "meta": {
-                    "bounds": (tx, tY, tX, ty),
-                    "idx": idx,
-                    "ydx": ydx}
-                }
+        out["inpt"] = imagery
+        out["meta"] = {"bounds": (tx, ty, tX, tY),
+                       "idx": idx,
+                       "ydx": ydx}
+
+        if self._annotations_da is not None:
+            annotation = self._annotations_da.sel(
+                lat=slice(tY, ty + self._pixel_size),
+                lon=slice(tx, tX - self._pixel_size)
+            ).isel(band=self._class_indices, time=ydx).to_numpy()
+            annotation = torch.tensor(annotation)
+            annotation = torch.where(annotation.isnan(), 0, annotation)
+            out["target"] = annotation
+            
+        return out
 
 
 class PrePostPixelPatchSampler:
@@ -157,7 +198,7 @@ class PrePostPixelPatchSampler:
                 curs.append(cur)
             inpt = torch.stack(curs, dim=1).flatten(start_dim=1, end_dim=2)
             return {"inpt": inpt,
-                    "meta": {"bounds": (ty-self._pixel_size, tx+self._pixel_size)}}
+                    "meta": {"point": (ty-self._pixel_size, tx+self._pixel_size)}}
 
     
     def resample(self):

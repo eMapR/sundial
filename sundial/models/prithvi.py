@@ -54,6 +54,7 @@ class PrithviBackbone(L.LightningModule):
             pt_path = os.path.join(PRITHVI_DIR, self.prithvi_ckpt_path)
             checkpoint = torch.load(pt_path, weights_only=False)
             _ = self.model.load_state_dict(checkpoint, strict=True)
+        del self.model.decoder
         
         self.reshaper = PrithviReshape(prithvi_params["patch_size"], prithvi_params["img_size"]) if reshape else nn.Identity()
         if self.freeze_encoder:
@@ -64,7 +65,7 @@ class PrithviBackbone(L.LightningModule):
 
     def forward(self, data):
         if isinstance(data, dict):
-            chip = data.get("chip")
+            chip = data.get("inpt")
             temporal = data.get("temporal_coords")
             location = data.get("location_coords")
         else:
@@ -136,11 +137,11 @@ class PrithviFCN(SundialPLBase):
         
     def forward(self, data):
         if self.ablate:
-            B, C, T, H, W = data["chip"].shape
+            B, C, T, H, W = data["inpt"].shape
             Hp, Wp = H // self.patch_size, W // self.patch_size
             latent = []
             for i in range(T):
-                time_step = data["chip"][:,:,i,...]
+                time_step = data["inpt"][:,:,i,...]
                 l = self.prithvi(time_step).last_hidden_state[:,1:,...].transpose(1,2).reshape(B, -1, Hp, Wp)
                 latent.append(l)
             latent = torch.concat(latent, dim=1)
@@ -181,14 +182,14 @@ class PrithviFCNMosaic(SundialPLBase):
         )
             
     def forward(self, data):
-        B, C, T, H, W = data["chip"].shape
+        B, C, T, H, W = data["inpt"].shape
         assert H % self.kernel_size == 0
         
         N = (H // self.kernel_size)*(W // self.kernel_size)
         H_ = W_ = self.kernel_size
         B_ = B * N
         
-        imgs = torch.functional.F.unfold(data["chip"].view(B,C*T,H,W), kernel_size=self.kernel_size, stride=self.kernel_size, padding=0)
+        imgs = torch.functional.F.unfold(data["inpt"].view(B,C*T,H,W), kernel_size=self.kernel_size, stride=self.kernel_size, padding=0)
         imgs = imgs.permute(0, 2, 1).reshape(B_, C, T, H_, W_)
         
         latent = self.prithvi(imgs)
@@ -234,11 +235,11 @@ class PrithviFCNDelta(SundialPLBase):
         )
             
     def forward(self, data):
-        B, C, T, H, W = data["chip"].shape
+        B, C, T, H, W = data["inpt"].shape
         latent = []
         if self.separate:
             for t in range(T):
-                img = data["chip"][:,:,t].unsqueeze(2)
+                img = data["inpt"][:,:,t].unsqueeze(2)
                 latent.append(self.prithvi(img))
             latent = torch.concat(latent, dim=1)
         else:
@@ -255,75 +256,6 @@ class PrithviFCNDelta(SundialPLBase):
         predictions = self.head(latent)
         
         return predictions
-
-
-class PrithviDecoder3dUNet(SundialPLBase):
-    def __init__(self,
-        num_classes: int,
-        num_channels: int,
-        kernel_size: tuple | int,
-        stride: tuple | int,
-        padding: tuple | int,
-        prithvi_params: dict,
-        freeze_encoder: bool = True,
-        prithvi_ckpt_path: str = None,
-        ablate: bool = False,
-        embed: bool = False,
-        **kwargs):
-        super().__init__()
-        self.num_classes = num_classes
-        self.num_channels = num_channels
-        self.ablate = ablate
-        self.embed = embed
-        params = {
-            "kernel_size": kernel_size,
-            "stride": stride,
-            "padding": padding
-        }
-        
-        from models.utils import DoubleConv3d, Up3d, OutConv3d
-        self.inc = DoubleConv3d(self.num_channels, 16, **params)
-        self.down1 = DoubleConv3d(16, 32, **params)
-        self.down2 = DoubleConv3d(32, 64, **params)
-        self.down3 = DoubleConv3d(64, 128, **params)
-
-        if ablate:
-            self.prithvi = DoubleConv3d(128, 128, **params)
-        else:
-            self.prithvi = PrithviBackbone(
-                prithvi_params=prithvi_params,
-                freeze_encoder=freeze_encoder,
-                prithvi_ckpt_path=prithvi_ckpt_path,
-                reshape=False)
-
-        self.up1 = Up3d(256, 128, **params)
-        self.up2 = Up3d(192, 64, **params)
-        self.up3 = Up3d(96, 32, **params)
-        self.up4 = Up3d(48, 16, **params)
-        params["kernel_size"] = (prithvi_params["num_frames"], 3, 3)
-        params["padding"] = (0, 1, 1)
-        self.out = OutConv3d(16, self.num_classes, **params)
-    
-    def forward(self, data):
-        x1 = data["chip"]
-        x1 = self.inc(x1)
-
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        
-        x5 = self.prithvi(x4)
-        if self.embed:
-            return x5
-        if not self.ablate:
-            x5 = self.prithvi.model.unpatchify(x5)
-
-        x6 = self.up1(x5, x4)
-        x7 = self.up2(x6, x3)
-        x8 = self.up3(x7, x2)
-        x9 = self.up4(x8, x1)
-        x10 = self.out(x9).squeeze(2)
-        return x10
 
 
 class PrithviAdapter(SundialPLBase):
@@ -394,20 +326,20 @@ class PrithviAdapter(SundialPLBase):
         c4 = c4 + self.level_embed[2]
         return c2, c3, c4
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        input = input["chip"]
-        B, C, T, H, W = input.shape
+    def forward(self, inpt: torch.Tensor) -> torch.Tensor:
+        inpt = inpt["inpt"]
+        B, C, T, H, W = inpt.shape
 
         # deform_inputsN = [reference_points, spatial_shapes, level_start_index]
-        deform_inputs1, deform_inputs2 = deform_inputs(x=input, ps=self.Ps)
+        deform_inputs1, deform_inputs2 = deform_inputs(x=inpt, ps=self.Ps)
 
         # Spatial Prior Module (SPM) forward
-        c1, c2, c3, c4 = self.spm(input)
+        c1, c2, c3, c4 = self.spm(inpt)
         c2, c3, c4 = self._add_level_embed(c2, c3, c4)
         c = torch.cat([c2, c3, c4], dim=1)
 
         # Patch Embedding forward
-        x = self.backbone.model.encoder.patch_embed(input)
+        x = self.backbone.model.encoder.patch_embed(inpt)
         _, L, D = x.shape
         pos_embed = self.backbone.model.encoder.pos_embed[:, 1:]
         x = self.drop_channels(x + pos_embed)
@@ -492,14 +424,14 @@ class PrithviMosaicEmbedding(SundialPLBase):
         self.E = prithvi_params["img_size"] // prithvi_params["patch_size"][-1]
         
     def forward(self, data):
-        B, C, T, H, W = data["chip"].shape
+        B, C, T, H, W = data["inpt"].shape
 
         if not self.ablate:
             if self.stride != H:
                 Hp, Wp = self.kernel_size
                 G = ((H - Hp) // self.stride) + 1
-                data["chip"] = torch.functional.F.unfold(data["chip"].view(B, C*T, H, W), kernel_size=self.kernel_size, padding=0, stride=self.stride)
-                data["chip"] = data["chip"].view(B, C*T, Hp, Wp, G*G).permute(0, 4, 1, 2, 3).flatten(0, 1).view(B*G*G, C, T, Hp, Wp)       
+                data["inpt"] = torch.functional.F.unfold(data["inpt"].view(B, C*T, H, W), kernel_size=self.kernel_size, padding=0, stride=self.stride)
+                data["inpt"] = data["inpt"].view(B, C*T, Hp, Wp, G*G).permute(0, 4, 1, 2, 3).flatten(0, 1).view(B*G*G, C, T, Hp, Wp)       
                 if "temporal_coords" in data:
                     data["temporal_coords"] = torch.tile(data["temporal_coords"], (G*G, 1, 1))
                 if "location_coords" in data:

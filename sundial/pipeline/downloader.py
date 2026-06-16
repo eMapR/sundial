@@ -2,13 +2,13 @@ import ee
 import geopandas as gpd
 import math
 import numpy as np
-import regex as re
+import re
 import time
 
 from numpy.lib import recfunctions as rfn
 from shapely.geometry import box
 
-from constants import EE_END_POINT, GEE_REQUEST_LIMIT, GEE_REQUEST_LIMIT_MB, GEE_REQUEST_LIMIT_BANDS, TOO_MANY_REQUEST_STR
+from constants import EE_END_POINT, GEE_REQUEST_LIMIT, GEE_REQUEST_LIMIT_MB, GEE_REQUEST_LIMIT_BANDS
 from pipeline.utils import ParallelGridAlign
 from config_utils import dynamic_import
 
@@ -65,63 +65,50 @@ class Downloader(ParallelGridAlign):
         while (chunk_task := self._chunk_queue.get()) is not None:
             attempts = 0
             while attempts < max_retries:
-                last_error = ""
+                last_e = None
                 chunk = None
                 try:
                     payload, translateY, translateX = self._image_generator(chunk_task)
                     bands = payload['expression'].bandNames().getInfo()
                     if len(bands) > GEE_REQUEST_LIMIT_BANDS:
-                        chunk = self.chunk_call(payload, GEE_REQUEST_LIMIT_BANDS//GEE_REQUEST_LIMIT, bands, translateY, translateX)
+                        chunk = self.chunk_call(payload, GEE_REQUEST_LIMIT_BANDS, bands, translateY, translateX)
                     else:
                         self._report_queue.put(("INFO", f"Requesting image pixels for chunk... num_bands: {len(bands)} {translateY, translateX}"))
                         chunk = ee.data.computePixels(payload)
                     attempts += max_retries
-                except ee.ee_exception.EEException as e:
+                    break
+                except Exception as e:
                     if "Total request size" in str(e):
                         try:
-                            match = re.search(r'(?:Total request size) \((\d+)(?= bytes\) must)', str(e))
-                            bands = payload['expression'].bandNames().getInfo()
-                            
-                            band_chunk_size = len(bands) // math.ceil(int(match.group(1)) / GEE_REQUEST_LIMIT_MB)
+                            match = re.search(r'(?:Total request size) \((\d+)(?= bytes\) must)', str(e))                            
+                            band_chunk_size = len(bands) // math.ceil(int(match.group(1)) / (GEE_REQUEST_LIMIT_MB/2))
                             chunk = self.chunk_call(payload, band_chunk_size, bands, translateY, translateX)
-                            
                             attempts += max_retries
+                            break
                         except Exception as inner_e:
-                            last_error = str(inner_e)
+                            last_e = inner_e
                     else:
-                        last_error = str(e)
-                
-                    if last_error == TOO_MANY_REQUEST_STR and attempts < max_retries:
-                        self._report_queue.put(("WARNING", f"Attempt {attempts+1}/{max_retries} failed (EEException): {type(e)} {e} {translateY, translateX}"))
+                        last_e = e
+                        
+                    if "Too Many Requests" in str(last_e):
+                        self._report_queue.put(("WARNING", f"Attempt {attempts+1}/{max_retries} failed (EEException): {type(last_e)} {last_e} {translateY, translateX}"))
                         time.sleep(2 ** attempts)
                         attempts += 1
-                        continue
                     else:
-                        self._report_queue.put(("ERROR", f"Attempt {attempts+1}/{max_retries} failed (EEException): {type(e)} {e} {translateY, translateX}"))
+                        self._report_queue.put(("ERROR", f"Attempt {attempts+1}/{max_retries} failed unexpectedly, skipping: {type(last_e)} {last_e} {translateY, translateX}"))
+                        self._result_queue.put((translateY, translateX))
                         attempts += max_retries
-
-                except Exception as e:
-                    self._report_queue.put(("ERROR", f"Failed to download chunk: {type(e)} {e} {translateY, translateX}"))
-                    attempts += max_retries
+                        break                    
 
             if chunk is None:
                 continue
 
-            try:
-                self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {translateY, translateX}"))
-                chunk_batch.append((chunk, translateY, translateX))
-                self._report_queue.put(("INFO", f"Consumer {consumer_index} contains {len(chunk_batch)} chunks..."))
-
-                if len(chunk_batch) == self._io_limit:
-                    self._write_array_batch(chunk_batch)
-                    chunk_batch.clear()
-
-            except Exception as e:
-                self._report_queue.put(("ERROR", f"Failed to process chunks for path {self._source_path}: {type(e)} {e} {translateY, translateX}"))
-
-                # reporting failure to watcher and skipping entire batch
-                for _, translateY, translateX in chunk_batch:
-                    self._result_queue.put((translateY, translateX))
+            self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {translateY, translateX}"))
+            chunk_batch.append((chunk, translateY, translateX))
+            self._report_queue.put(("INFO", f"Consumer {consumer_index} contains {len(chunk_batch)} chunks..."))
+            
+            if len(chunk_batch) == self._io_limit:
+                self._write_array_batch(chunk_batch)
                 chunk_batch.clear()
 
         if len(chunk_batch) > 0:

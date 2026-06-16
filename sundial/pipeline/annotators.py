@@ -15,26 +15,33 @@ class XarrDateAnnotator(ParallelGridAlign):
         self._labels = sorted(self._geo_proc_data[self._label_column].unique())
         self._dates = sorted(self._geo_proc_data[self._date_column].unique())
         
+        self._num_bands = len(self._labels)
+        self._num_time_steps = len(self._dates)
         self._chunk_sizes = (len(self._labels), len(self._dates), *self._chunk_sizes[-2:])
-    
+
     def _consumer(self, consumer_index: int):
         chunk_batch = []
         while (chunk_task := self._chunk_queue.get()) is not None:
             translateY, translateX = chunk_task
             bounds = (translateX, translateY - self._grid_y_size, translateX + self._grid_x_size, translateY)
             
-            chunk = []
+            chunk_stack = []
             self._report_queue.put(("INFO", f"Consumer {consumer_index} rasterizing chunk {translateY, translateX}..."))
-            for date in self._dates:
-                for label in self._labels:
-                    mask = self._geo_proc_data[self._label_column] == label
-                    mask &= self._geo_proc_data[self._date_column] == date
-                    subset = self._geo_proc_data[mask].geometry
-                    chunk.append(rasterizer(subset, bounds, self._chunk_sizes[-2], self._chunk_sizes[-1], np.nan, 1))
-            chunk = np.stack(chunk)
-            chunk = chunk.reshape(len(self._labels), len(self._dates), self._chunk_sizes[-2], self._chunk_sizes[-1])
+            for label in self._labels:
+                label_subset = self._geo_proc_data[self._geo_proc_data[self._label_column] == label]
+                date_stack = []
+                for date in self._dates:
+                    date_subset = label_subset[label_subset[self._date_column] == date]
+                    if len(date_subset) > 0:
+                        arr = rasterizer(date_subset.geometry, bounds, self._chunk_sizes[-2], self._chunk_sizes[-1], 0, 1)
+                    else:
+                        arr = np.zeros(self._chunk_sizes[-2:])
+                    date_stack.append(arr)
+                date_stack = np.stack(date_stack)
+                chunk_stack.append(date_stack)
+            chunk = np.stack(chunk_stack)
             
-            self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index} ... {translateY, translateX}"))
+            self._report_queue.put(("INFO", f"Appending chunk {chunk.shape} to consumer {consumer_index}... {translateY, translateX}"))
             chunk_batch.append((chunk, translateY, translateX))
             self._report_queue.put(("INFO", f"Consumer {consumer_index} contains {len(chunk_batch)} chunks..."))
 

@@ -17,7 +17,7 @@ PIPELINE_CONFIG = {
 
     ### Image and downloadng settings
     "chunk_sizes": [6, 1, 224, 224],
-    "dtype": "float32",
+    "dtype": "float16",
     "scale": 30,
     "filter_intersect": False,
     "num_bands": 6,
@@ -27,7 +27,6 @@ PIPELINE_CONFIG = {
                    "init_args": {}},
     
     ### MP and GEE specific settings
-    
     "num_workers": GEE_REQUEST_LIMIT,
     "io_limit": 8,
 }

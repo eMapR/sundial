@@ -5,19 +5,19 @@ from torch import nn
 
 
 class SundialPLBase(L.LightningModule):
-    def __init__(self, criterion, activation):
+    def __init__(self, criterion=None, activation=None):
         super().__init__()
         self.criterion = criterion
         self.activation = activation
     
     def training_step(self, batch):
-        loss = self.criterion(self(batch), batch["anno"])
+        loss = self.criterion(self(batch), batch["target"])
         return {"loss": loss}
 
     def validation_step(self, batch):
         output = {"output": self(batch)}
         if self.criterion is not None:
-            output["loss"] = self.criterion(output["output"], batch["anno"])
+            output["loss"] = self.criterion(output["output"], batch["target"])
         if self.activation is not None:
             output["output"] = self.activation(output["output"])
         return output 
@@ -25,7 +25,7 @@ class SundialPLBase(L.LightningModule):
     def test_step(self, batch):
         output = {"output": self(batch)}
         if self.criterion is not None:
-            output["loss"] = self.criterion(output["output"], batch["anno"])
+            output["loss"] = self.criterion(output["output"], batch["target"])
         if self.activation is not None:
             output["output"] = self.activation(output["output"])
         return output 

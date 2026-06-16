@@ -82,7 +82,7 @@ if __name__ == "__main__":
     match METHOD:
         case "download":
             download()
-        case "annotate":
+        case "annotation":
             annotate()
         case "stats":
             stats()

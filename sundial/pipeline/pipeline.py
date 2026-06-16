@@ -46,13 +46,13 @@ def download():
 def annotate():
     try:
         LOGGER.info("Generating annotations...")
-        annotation_config = {
+        annotator_config = {
             **PIPELINE_CONFIG,
             "geo_proc_data": gpd.read_file(GEO_PROC_PATH),
             "annotations_path": ANNOTATIONS_PATH,
             "logger": LOGGER,
         }
-        annotator = dynamic_import(annotation_config.pop("annotator"), annotation_config)
+        annotator = dynamic_import(annotator_config.pop("annotator"), annotator_config)
         annotator.start()
     except Exception as e:
         LOGGER.critical(f"Failed to generate annotations: {type(e)} {e}")

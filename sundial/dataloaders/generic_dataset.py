@@ -1,0 +1,233 @@
+import geopandas as gpd
+import lightning as L
+import numpy as np
+import os
+import re
+import torch
+import xarray as xr
+
+from datetime import datetime
+from rioxarray import open_rasterio
+from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import v2
+from typing import Literal, Optional, Tuple
+
+from config_utils import dynamic_import, load_yaml
+from constants import (
+    IMAGERY_PATH,
+    ANNOTATIONS_PATH,
+    STAT_DATA_PATH,
+)
+
+class GenericDataset(Dataset):
+    def __init__(self,
+                 split: Literal["fit", "validate", "test", "predict"],
+                 imagery_path: str,
+                 annotations_path: str,
+                 sampler_config: dict,
+                 dynamic_transform_config: dict,
+                 static_transform_config: dict,
+                 **kwargs):
+        super().__init__()
+        self.split = split
+        self.imagery_path = imagery_path
+        self.annotations_path = annotations_path
+        self.sampler_config = sampler_config
+        
+        self.dynamic_transform_config = dynamic_transform_config if dynamic_transform_config else {}
+        self.static_transform_config = static_transform_config if static_transform_config else {}
+
+        self.means = kwargs.get("means")
+        self.stds = kwargs.get("stds")
+        
+        self._init_sampler()
+        self._init_static_transforms()
+        self._init_dynamic_transforms()
+
+
+    def __getitem__(self, indx):
+        data = self._sampler(indx)
+        
+        if self.inpt_static_transforms is not None:
+            data["inpt"] = self.inpt_static_transforms(data["inpt"])
+
+        if "target" in data.keys() and self.target_static_transforms is not None:
+            data["target"] = self.target_static_transforms(data["target"])
+
+        if self.dynamic_transforms:
+            cdx = torch.randint(len(self.dynamic_transforms), (1,)).item()
+            chc = self.dynamic_transforms[cdx]
+            dynamic_transform = chc["transform"]
+            if not chc["inpt_only"] and "target" in data.keys():
+                seed = int(datetime.now().timestamp())
+                torch.manual_seed(seed)
+                data["inpt"] = dynamic_transform(data["inpt"])
+                torch.manual_seed(seed)
+                data["target"] = dynamic_transform(data["target"])
+            else:
+                data["inpt"] = dynamic_transform(data["inpt"])
+
+        return data
+
+    def __len__(self):
+        return len(self._sampler)
+
+    def _init_sampler(self):
+        imagery = xr.open_dataarray(self.imagery_path, engine='zarr', cache=False)
+        if self.annotations_path is not None and os.path.exists(self.annotations_path):
+            annotations = xr.open_dataarray(self.annotations_path, engine='zarr', cache=False)
+        else:
+            annotations = None
+        self._sampler = dynamic_import(self.sampler_config, {"imagery_da": imagery, "annotations_da": annotations, "split": self.split})
+
+    def _init_dynamic_transforms(self):
+        transform_list = []
+
+        for t in self.dynamic_transform_config.get("transforms", []):
+            transform_list.append({"transform": dynamic_import(t).forward, "inpt_only": t.get("inpt_only", False)})
+
+        if transform_list and self.dynamic_transform_config.get("include_original", True):
+            transform_list.append({"transform": torch.nn.Identity(), "inpt_only": False})
+
+        self.dynamic_transforms = transform_list
+        
+    def _init_static_transforms(self):
+        inpt_transforms = []
+        target_transforms = []
+
+        for transform in self.static_transform_config.get("transforms", []):
+            transform_obj = dynamic_import(transform)
+            targets = transform.get("targets", ["inpt", "target"])
+            if "inpt" in targets:
+                inpt_transforms.append(transform_obj)
+            if "target" in targets:
+                target_transforms.append(transform_obj)
+
+        self.inpt_static_transforms = v2.Compose(inpt_transforms) if inpt_transforms else None
+        self.target_static_transforms = v2.Compose(target_transforms) if target_transforms else None
+
+
+class GenericDataModule(L.LightningDataModule):
+    def __init__(
+            self,
+            batch_size: int,
+            num_workers: int,
+            dataloader_config: dict,
+            sampler_config: dict,
+            static_transform_config: dict,
+            dynamic_transform_config: dict,
+            imagery_path: str = IMAGERY_PATH,
+            annotations_path: str = ANNOTATIONS_PATH,
+            stat_data_path: str = STAT_DATA_PATH,
+            no_val: bool = False):
+        super().__init__()
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.dataloader_config = dataloader_config
+        self.sampler_config = sampler_config
+        self.static_transform_config = static_transform_config
+        self.dynamic_transform_config = dynamic_transform_config
+        self.imagery_path = imagery_path
+        self.annotations_path = annotations_path
+        self.stat_data_path = stat_data_path
+        self.no_val = no_val
+
+        # loading means and stds from stat_data_path
+        if stat_data_path and os.path.exists(self.stat_data_path):
+            stats = load_yaml(self.stat_data_path)
+            if not self.static_transform_config.get("transforms"):
+                self.static_transform_config["transforms"] = []
+            
+            means = stats.get("inpt_stats")["band_means"]
+            stds = stats.get("inpt_stats")["band_stds"]
+            self.static_transform_config["transforms"].insert(0, {
+                "class_path": "transforms.GeoNormalization",
+                "init_args": {
+                    "means": means,
+                    "stds": stds
+                },
+                "methods": ["all"],
+                "targets": ["inpt"]
+            })
+        else:
+            means = None
+            stds = None
+
+        self.dataset_config = {
+            "imagery_path": self.imagery_path,
+            "annotations_path": self.annotations_path,
+            "sampler_config": self.sampler_config,
+            "dynamic_transform_config": self.dynamic_transform_config,
+            "means": means,
+            "stds": stds,
+        }
+
+        self.dataloader_config = {
+            "batch_size": self.batch_size,
+            "num_workers": self.num_workers,
+            "persistent_workers": True,
+            "pin_memory": True,
+            "drop_last": False,
+        } | dataloader_config
+
+    def setup(self, stage: Literal["fit", "validate", "test", "predict"]) -> None:
+        transforms = self.static_transform_config.get("transforms", [])
+        match stage:
+            case "fit":
+                train_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "train"])}
+                self.training_ds = GenericDataset(
+                    **self.dataset_config | {
+                        "split": "train",
+                        "static_transform_config": train_static_transform_config,
+                    })
+                
+                if self.no_val:
+                    return
+
+                validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
+                self.validate_ds = GenericDataset(
+                    **self.dataset_config | {
+                        "split": "validate",
+                        "static_transform_config": validate_static_transform_config,
+                    })
+
+            case "validate":
+                validate_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "validate"])}
+                self.validate_ds = GenericDataset(
+                    **self.dataset_config | {
+                        "split": "validate",
+                        "static_transform_config": validate_static_transform_config
+                    })
+
+            case "test":
+                test_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "test"])}
+                self.test_ds = GenericDataset(
+                    **self.dataset_config | {
+                        "split": "test",
+                        "static_transform_config": test_static_transform_config,
+                    })
+
+            case "predict":
+                predict_static_transform_config = {"transforms": self._filter_configs(transforms, "methods", ["all", "predict"])}
+                self.predict_ds = GenericDataset(
+                    **self.dataset_config | {
+                        "split": "predict",
+                        "static_transform_config": predict_static_transform_config})
+
+    def train_dataloader(self):
+        return DataLoader(**self.dataloader_config | {"dataset": self.training_ds, "shuffle": True, "drop_last": True})
+
+    def val_dataloader(self):
+        if self.no_val:
+            return
+        return DataLoader(**self.dataloader_config | {"dataset": self.validate_ds})
+
+    def test_dataloader(self):
+        return DataLoader(**self.dataloader_config | {"dataset": self.test_ds})
+
+    def predict_dataloader(self):
+        return DataLoader(**self.dataloader_config | {"dataset": self.predict_ds})
+        
+    def _filter_configs(self, configs, label, filters):
+        return [c for c in configs if (set(filters) & set(c.get(label, ["all"])))]
+                    

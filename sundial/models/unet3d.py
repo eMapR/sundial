@@ -7,7 +7,7 @@ from models.utils import DoubleConv3d
 
 
 class Down3d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=(3,3,3), stride=1, padding=(1,1,1), mid_channels=None):
+    def __init__(self, in_channels, out_channels, kernel_size=(1,3,3), stride=1, padding=(0,1,1), mid_channels=None):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool3d((1, 2, 2), padding=0),
@@ -20,16 +20,16 @@ class Down3d(nn.Module):
 
 class Up3d(nn.Module):
     """Upscaling then double conv"""
-    def __init__(self, in_channels, out_channels, kernel_size=(3,3,3), stride=1, padding=(1,1,1), bilinear=False):
+    def __init__(self, in_channels, out_channels, kernel_size=(1,3,3), stride=1, padding=(0,1,1), bilinear=False, mid_channels=None):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv3d(in_channels + in_channels // 2, out_channels, in_channels // 2, stride=stride, padding=padding)
+            self.conv = DoubleConv3d(in_channels + in_channels // 2, out_channels, in_channels // 2, stride=stride, padding=padding, mid_channels=mid_channels)
         else:
             self.up = nn.ConvTranspose3d(in_channels, in_channels // 2, kernel_size=(1,2,2), stride=(1,2,2))
-            self.conv = DoubleConv3d(in_channels, out_channels, kernel_size, kernel_size, stride=stride, padding=padding)
+            self.conv = DoubleConv3d(in_channels, out_channels, kernel_size, kernel_size, stride=stride, padding=padding, mid_channels=mid_channels)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -45,8 +45,9 @@ class UNet3D(SundialPLBase):
                  in_kernel_size=1,
                  out_kernel_size=1,
                  bilinear=False,
-                 embed=False):
-        super().__init__()
+                 embed=False,
+                 **kwargs):
+        super().__init__(**kwargs)
 
         self.num_classes = n_classes
         self.n_channels = n_channels
@@ -63,21 +64,21 @@ class UNet3D(SundialPLBase):
         factor = 2 if bilinear else 1
         self.down4 = Down3d(512, 1024 // factor)
         
-        self.up1 = Up3d(1024, 512 // factor, bilinear=bilinear)
-        self.up2 = Up3d(512, 256 // factor, bilinear=bilinear)
-        self.up3 = Up3d(256, 128 // factor, bilinear=bilinear)
-        self.up4 = Up3d(128, 64, bilinear=bilinear)
-        self.outc = nn.Conv3d(64, n_classes, kernel_size=(out_kernel_size,1,1))
+        self.up1 = Up3d(1024, 512 // factor, bilinear=bilinear, mid_channels=512)
+        self.up2 = Up3d(512, 256 // factor, bilinear=bilinear, mid_channels=256)
+        self.up3 = Up3d(256, 128 // factor, bilinear=bilinear, mid_channels=128)
+        self.up4 = Up3d(128, 64, bilinear=bilinear, mid_channels=64)
+        self.outc = nn.ModuleDict({"conv": nn.Conv3d(64, n_classes, kernel_size=(out_kernel_size,1,1))})
 
     def forward(self, x):
-        x = x["chip"]
+        x = x["inpt"]
         
         x1 = self.inc(x)
         x2 = self.down1(x1)
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-
+        
         if self.embed:
             embed = x5.flatten(2).transpose(1,2)
             return embed
@@ -86,5 +87,5 @@ class UNet3D(SundialPLBase):
         x = self.up2(x, x3)
         x = self.up3(x, x2)
         x = self.up4(x, x1)
-        logits = self.outc(x).squeeze(2)
+        logits = self.outc['conv'](x).squeeze(2)
         return logits

@@ -101,40 +101,42 @@ class ParallelGridAlign:
         
     def _write_array_batch(self, chunk_batch) -> None:
         for array, translateY, translateX  in chunk_batch:
-            if array.dtype.names is not None:
-                H, W = array.shape
-                array = rfn.structured_to_unstructured(array)
-                array = array.reshape(H, W, self._num_time_steps, self._num_bands)
-                array = array.transpose(3, 2, 0, 1)
-            array = array.astype(self._dtype)
+            try:
+                if array.dtype.names is not None:
+                    H, W = array.shape
+                    array = rfn.structured_to_unstructured(array)
+                    array = array.reshape(H, W, self._num_time_steps, self._num_bands)
+                    array = array.transpose(3, 2, 0, 1)
+                array = array.astype(self._dtype)
 
-            # NOTE: all arange calls may have errors at large scales consider linspace but for now this is fine for equal area proj.
-            lats = np.arange(translateY, translateY - self._grid_y_size, -self._scale)
-            lons = np.arange(translateX, translateX + self._grid_x_size, self._scale)
+                lat_start = np.searchsorted(-self._lat_coords, -translateY).item()
+                lon_start = np.searchsorted(self._lon_coords, translateX).item()
+                lat_count = array.shape[2]
+                lon_count = array.shape[3]
 
-            chunk_da = xr.DataArray(
-                array,
-                dims=["band", "time", "lat", "lon"],
-                coords={
-                    "band": list(range(self._num_bands)),
-                    "time": list(range(self._num_time_steps)),
-                    "lat": lats,
-                    "lon": lons
-                },
-                name="dat"
-            )
-            lat_start = np.searchsorted(-self._lat_coords, -lats[0])
-            lon_start = np.searchsorted(self._lon_coords, lons[0])
+                chunk_da = xr.DataArray(
+                    array,
+                    dims=["band", "time", "lat", "lon"],
+                    coords={
+                        "band": list(range(self._num_bands)),
+                        "time": list(range(self._num_time_steps)),
+                        "lat": self._lat_coords[lat_start:lat_start + lat_count],
+                        "lon": self._lon_coords[lon_start:lon_start + lon_count],
+                    },
+                    name="dat"
+                )
 
-            region = {
-                "band": slice(0, self._num_bands),
-                "time": slice(0, self._num_time_steps),
-                "lat": slice(lat_start, lat_start + len(lats)),
-                "lon": slice(lon_start, lon_start + len(lons)),
-            }
-
-            chunk_da.to_zarr(self._source_path, region=region)
-            self._result_queue.put((translateY, translateX))
+                region = {
+                    "band": slice(0, self._num_bands),
+                    "time": slice(0, self._num_time_steps),
+                    "lat": slice(lat_start, lat_start + lat_count),
+                    "lon": slice(lon_start, lon_start + lon_count),
+                }
+                chunk_da.to_zarr(self._source_path, region=region)
+                self._result_queue.put((translateY, translateX))
+            except Exception as e:
+                self._result_queue.put((translateY, translateX))
+                self._report_queue.put(("ERROR", f"Failed to write chunk, skipping: {type(e)} {e} {translateY, translateX}"))
 
     def _reporter(self) -> None:
         while (report := self._report_queue.get()) is not None:
@@ -184,8 +186,8 @@ def filter_chunks(chunks, geo_proc_data, grid_y_size, grid_x_size):
     res = []
     _spatial_index = STRtree(geo_proc_data.geometry)
     for c in chunks:
-        ty, tx = c
-        b = box(tx, ty - grid_y_size, tx + grid_x_size, ty)
+        tY, tx = c
+        b = box(tx, tY - grid_y_size, tx + grid_x_size, tY)
         hits = _spatial_index.query(b, predicate="intersects")
         if hits.size > 0:
             res.append(c)
@@ -193,8 +195,12 @@ def filter_chunks(chunks, geo_proc_data, grid_y_size, grid_x_size):
 
 
 def chunk_bounds(total_bounds, grid_y_size, grid_x_size, to_list=True):
-    lats = np.arange(total_bounds[3], total_bounds[1], -grid_y_size)
-    lons = np.arange(total_bounds[0], total_bounds[2], grid_x_size)
+    nlats = int((total_bounds[3] - total_bounds[1]) // grid_y_size)
+    nlons = int((total_bounds[2] - total_bounds[0]) // grid_x_size)
+    
+    lats = np.arange(total_bounds[3], total_bounds[1], -grid_y_size)[:nlats]
+    lons = np.arange(total_bounds[0], total_bounds[2], grid_x_size)[:nlons]
+    
     chunks = np.array(np.meshgrid(lats, lons)).T.reshape(-1, 2)
     if to_list:
         return chunks.tolist()
@@ -203,13 +209,14 @@ def chunk_bounds(total_bounds, grid_y_size, grid_x_size, to_list=True):
 
 
 def coord_bounds(total_bounds, grid_y_size, grid_x_size, scale):
-    grid_y_size, grid_x_size
-    
     ybuf = grid_y_size - ((total_bounds[3] - total_bounds[1]) % grid_y_size)
     xbuf = grid_x_size - ((total_bounds[2] - total_bounds[0]) % grid_x_size)
     
-    lat_coords = np.arange(total_bounds[3], total_bounds[1] - ybuf, -scale)
-    lon_coords = np.arange(total_bounds[0], total_bounds[2] + xbuf, scale)
+    nlats = int((total_bounds[3] - total_bounds[1] + ybuf) // scale)
+    nlons = int((total_bounds[2] - total_bounds[0] + xbuf) // scale)
+    
+    lat_coords = np.arange(total_bounds[3], total_bounds[1] - ybuf, -scale)[:nlats]
+    lon_coords = np.arange(total_bounds[0], total_bounds[2] + xbuf, scale)[:nlons]
     return lat_coords, lon_coords
 
 
@@ -312,14 +319,14 @@ def rasterizer(polygons: gpd.GeoSeries,
                fill: int | float,
                default_value: int | float):
 
-    transform = from_bounds(*bounds, chunk_y_size, chunk_x_size)
+    transform = from_bounds(*bounds, chunk_x_size, chunk_y_size)
     raster = rasterize(
         shapes=polygons,
         out_shape=(chunk_y_size, chunk_x_size),
         fill=fill,
         transform=transform,
         default_value=default_value,
-        dtype="float32")
+        dtype="float16")
 
     return raster
 

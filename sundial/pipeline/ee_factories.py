@@ -4,6 +4,8 @@ import ee
 from ltgee import LandsatComposite
 from datetime import datetime, date, timedelta
 
+from constants import EE_END_POINT
+
 
 LBANDS = ["B2", "B3", "B4", "B5", "B6", "B7"]
 SBANDS = ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B9", "B11", "B12"]
@@ -32,9 +34,10 @@ class EEBase:
     
 
 class LTMedoidImages(EEBase):
-    def __init__(self, mask_labels=["cloud", "shadow", "water"], **kwargs):
+    def __init__(self, mask_labels=["cloud", "shadow", "water"], exclude={}, **kwargs):
         super().__init__(**kwargs)
         self.mask_labels = mask_labels
+        self.exclude = exclude
         
     def create_ee_image(self, coordinates):
         even_odd = (self.projection == "EPSG:4326")
@@ -44,7 +47,7 @@ class LTMedoidImages(EEBase):
             end_date=self.end_date,
             area_of_interest=polygon,
             mask_labels=self.mask_labels,
-            exclude={"slcOff": True}
+            exclude=self.exclude
         )
         size = 1 + self.end_date.year - self.start_date.year
 
@@ -64,9 +67,10 @@ class LTMedoidImages(EEBase):
 class LTMedoidMonthlyImages(EEBase):
     _first_avail = date(1984, 3, 16)
     
-    def __init__(self, mask_labels=["cloud", "shadow", "water"], **kwargs):
+    def __init__(self, mask_labels=["cloud", "shadow", "water"], exclude={}, **kwargs):
         super().__init__(**kwargs)
         self.mask_labels = mask_labels
+        self.exclude = exclude
         self.ranges = self.get_monthly_ranges()
         self.ranges = [r for r in self.ranges if r[0].date() >= self._first_avail]
         
@@ -81,7 +85,6 @@ class LTMedoidMonthlyImages(EEBase):
                 end_date=end_date,
                 area_of_interest=polygon,
                 mask_labels=self.mask_labels,
-                exclude={"slcOff": True}
             )
 
             old_band_names = [f"0_{band}" for band in collection._band_names]
@@ -98,15 +101,93 @@ class LTMedoidMonthlyImages(EEBase):
     
     def get_monthly_ranges(self) -> list[tuple[date, date]]:
         ranges = []
-        for year in range(self.start_date.year, self.end_date.year+1):
-            sd = self.start_date.replace(year=year)
-            ed = self.end_date.replace(year=year)
-            current = sd
-            while current < ed:
-                range_start = max(sd, current)
-                range_end = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
-                ranges.append((range_start, range_end))
-                current = range_end
+        sd = self.start_date
+        ed = self.end_date
+        range_start = sd
+        while range_start < ed:
+            range_end = (range_start + timedelta(days=32)).replace(day=1)
+            ranges.append((range_start, range_end))
+            range_start = range_end
+        return ranges
+
+
+class LSImage(EEBase):
+    _first_avail = date(1984, 3, 16)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        import shapely
+        ee.Initialize(opt_url=EE_END_POINT)
+        
+        bounds = kwargs.get("bounds")
+        even_odd = (self.projection == "EPSG:4326")
+        
+        self.ranges = self.get_monthly_ranges()
+        self.ranges = [r for r in self.ranges if r[0].date() >= self._first_avail]
+        
+        coordinates = list(shapely.box(*bounds).exterior.coords)
+        polygon = ee.Geometry.Polygon(coordinates, proj=self.projection, evenOdd=even_odd)
+        poly_area = polygon.area()
+        def add_fraction(img):
+            intersection = img.geometry().intersection(polygon, ee.ErrorMargin(1))
+            fraction = intersection.area().divide(poly_area)
+            return img.set('intersect_fraction', fraction)
+        collection = self.get_ls_combined_sr_collection().filterBounds(polygon).map(add_fraction)
+        
+        self.image = None
+        for start_date, end_date in self.ranges:    
+            ee_start_date = ee.Date.fromYMD(
+                year = start_date.year,
+                month = start_date.month,
+                day = start_date.day)
+            ee_end_date = ee.Date.fromYMD(
+                year = end_date.year,
+                month = end_date.month,
+                day = end_date.day)
+
+            mimage = collection\
+                .filter(ee.Filter.date(ee_start_date, ee_end_date))\
+                .sort('intersect_fraction', ascending=False)\
+                .first()
+            
+            if self.image is None:
+                self.image = mimage
+            else:
+                self.image = self.image.addBands(mimage)
+        
+    def create_ee_image(self, coordinates):
+        return self.image
+
+    def get_ls_combined_sr_collection(self):
+        lt5 = self.get_ls_sr_collection('LT05')
+        le7 = self.get_ls_sr_collection('LE07')
+        lc8 = self.get_ls_sr_collection('LC08')
+        lc9 = self.get_ls_sr_collection('LC09')
+        return lt5.merge(le7).merge(lc8).merge(lc9)
+
+    def get_ls_sr_collection(self, sensor: str):
+        ls_col = ee.ImageCollection(f'LANDSAT/{sensor}/C02/T1_L2')
+        ls_col = ls_col.map(lambda image: self.preprocess_ls_image(image, sensor))
+        return ls_col
+
+    def preprocess_ls_image(self, image: ee.Image, sensor: str):
+        if sensor == 'LC08' or sensor == 'LC09':
+            image = image.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+                                LBANDS)
+        else:
+            image = image.select(['SR_B1', 'SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B7'],
+                                LBANDS)
+        return image
+    
+    def get_monthly_ranges(self) -> list[tuple[date, date]]:
+        ranges = []
+        sd = self.start_date
+        ed = self.end_date
+        range_start = sd
+        while range_start < ed:
+            range_end = (range_start + timedelta(days=32)).replace(day=1)
+            ranges.append((range_start, range_end))
+            range_start = range_end
         return ranges
 
 
@@ -119,34 +200,29 @@ class LSMedianImage(EEBase):
         polygon = ee.Geometry.Polygon(coordinates, proj=self.projection, evenOdd=even_odd)
 
         image = None
-        for year in range(self.start_date.year, self.end_date.year+1):
+        for month in range(self.start_date.month, self.end_date.month+1, 3):
+        # for year in range(self.start_date.year, self.end_date.year+1):
+            # start_date = ee.Date.fromYMD(
+            #     year = year,
+            #     month = self.start_date.month,
+            #     day = self.start_date.day)
+            # end_date = ee.Date.fromYMD(
+            #     year = year,
+            #     month = self.end_date.month,
+            #     day = self.end_date.day)
             start_date = ee.Date.fromYMD(
-                year = year,
-                month = self.start_date.month,
+                year = self.start_date.year,
+                month = month,
                 day = self.start_date.day)
             end_date = ee.Date.fromYMD(
-                year = year,
-                month = self.end_date.month,
+                year = self.end_date.year,
+                month = month+3,
                 day = self.end_date.day)
             yimage = self.get_ls_combined_sr_collection()\
                             .filterBounds(polygon)\
                             .filter(ee.Filter.date(start_date, end_date))\
-                            .median()
-                            
-            if self.start_date_lo is not None and self.end_date_lo is not None:
-                start_date = ee.Date.fromYMD(
-                    year = year-1,
-                    month = self.start_date_lo.month,
-                    day = self.start_date_lo.day)
-                end_date = ee.Date.fromYMD(
-                    year = year,
-                    month = self.end_date_lo.month,
-                    day = self.end_date_lo.day)        
-                loyimage = self.get_ls_combined_sr_collection()\
-                                .filterBounds(polygon)\
-                                .filter(ee.Filter.date(start_date, end_date))\
-                                .median()
-                yimage = loyimage.addBands(yimage)
+                            .median()\
+                            .multiply(0.0000275).add(-0.2)
             
             if image is None:
                 image = yimage
@@ -158,8 +234,6 @@ class LSMedianImage(EEBase):
     def get_ls_combined_sr_collection(self):
         lt5 = self.get_ls_sr_collection('LT05')
         le7 = self.get_ls_sr_collection('LE07')
-        # SLC-OFF for Landsat 7 after 2003-05-31
-        le7 = le7.filter(ee.Filter.lte('system:time_start', 1054425600000))
         lc8 = self.get_ls_sr_collection('LC08')
         lc9 = self.get_ls_sr_collection('LC09')
         return lt5.merge(le7).merge(lc8).merge(lc9)
@@ -173,6 +247,7 @@ class LSMedianImage(EEBase):
         qa = image.select('QA_PIXEL')
         cloud = qa.bitwiseAnd(1 << 3).eq(0)
         shadow = qa.bitwiseAnd(1 << 4).eq(0)
+        water = qa.bitwiseAnd(1 << 7).eq(0)
         mask = cloud.multiply(shadow)
         image = image.updateMask(mask)
 

@@ -31,7 +31,8 @@ from constants import (DATA_PATH,
                        PREDICTIONS_PATH,
                        STAT_DATA_PATH)
 from pipeline.settings import PIPELINE_CONFIG
-from utils import dummy_zarr, log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
+from pipeline.utils import dummy_zarr
+from utils import  log_rgb_image, log_false_color_image, save_rgb_ir_tensor, tensors_to_tifs
 
 
 class ModelSetupCallback(L.Callback):
@@ -374,53 +375,72 @@ class SavePixelPatchCallback(L.Callback):
         for b in range(B):
             name = f"{y[b]}_{x[b]}.pt"
             torch.save(outputs[b], os.path.join(self.outpath, name))
-            
+
+
 class SaveLinesCallback(L.Callback):
-    def __init__(self, dtype, chunk_sizes, shape, dims, out_path, **kwargs):
+    def __init__(self, dtype, chunk_sizes, channels, time_steps, out_path, yrescale=1, xrescale=1, jrewrite=False, **kwargs):
         super().__init__(**kwargs)
         self.dtype = dtype
         self.chunk_sizes = chunk_sizes
-        self.dims = dims
-        self.outpath = out_path
+        self.channels = channels
+        self.num_time_steps = time_steps
+        self.out_path = out_path
+        
+        self.yrescale = yrescale
+        self.xrescale = xrescale
+        self.jrewrite = jrewrite
         
     def on_test_start(self, trainer, pl_module):
-        imagery_da = trainer.train_dataloader.dataset._imagery_da
-        sample_size = trainer.train_dataloader.dataset._sample_size
-        y_coords = np.meshgrid(imagery_da.coords["lat"][-_sample_size:])
-        x_coords = np.meshgrid(imagery_da.coords["lon"][-_sample_size:])
-        dummy_zarr(self.dtype, self.chunk_sizes, self.shape, self.dims, y_coords, x_coords, self.out_path)
-        
-    def on_test_batch_end(self,
-                          trainer: L.Trainer,
-                          pl_module: L.LightningModule,
-                          outputs,
-                          batch,
-                          batch_idx):
-        lats, lons = batch["meta"]["point"]
-        C = self.chunk_sizes[0]
-        T = self.chunk_sizes[1]
-        array = output.permute(1, 2, 0).reshape(C, T, 1, -1)
-        chunk_da = xr.DataArray(
-            array,
-            dims=["band", "time", "lat", "lon"],
-            coords={
-                "band": list(range(C)),
-                "time": list(range(T)),
-                "lat": lats,
-                "lon": lons
-            },
-            name="dat"
-        )
-        
-        lat_start = np.searchsorted(-self._lat_coords, -lats[0])
-        lon_start = np.searchsorted(self._lon_coords, lons[0])
+        imagery_da = trainer.test_dataloaders.dataset._sampler._imagery_da
+        self._pixel_size = trainer.test_dataloaders.dataset._sampler._pixel_size
+        self._lat_coords = imagery_da.coords["lat"].to_numpy()[::self.yrescale]
+        self._lon_coords = imagery_da.coords["lon"].to_numpy()[::self.xrescale]
+        shape = (self.channels, self.num_time_steps, len(self._lat_coords), len(self._lon_coords))
+        dims = ["band", "time", "lat", "lon"]
+        dummy_zarr(self.dtype, self.chunk_sizes, shape, dims, self._lat_coords, self._lon_coords, self.out_path)
+        if self.jrewrite:
+            self.cpath = os.path.join((os.path.dirname(self.out_path)), "count")
+            dummy_zarr(self.dtype, self.chunk_sizes, (1, 1, len(self._lat_coords), len(self._lon_coords)), dims, self._lat_coords, self._lon_coords, self.cpath)
+            
+    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        btx, bty, btX, btY = batch["meta"]["bounds"]
+        bt = batch["meta"]["ydx"]
+        for i, output in enumerate(outputs["output"]):
+            tx, ty, tX, tY = btx[i].item(), bty[i].item(), btX[i].item(), btY[i].item()
+            t = int(bt[i].item())
+            array = output.unsqueeze(1).cpu().numpy().astype(self.dtype)
+            
+            lat_start = np.searchsorted(-self._lat_coords, -tY).item()
+            lon_start = np.searchsorted(self._lon_coords, tx).item()
+            lat_count = array.shape[2]
+            lon_count = array.shape[3]
 
-        region = {
-            "band": slice(0, self._chunk_sizes[0]),
-            "time": slice(0, self._chunk_sizes[1]),
-            "lat": slice(lat_start, lat_start + len(lats)),
-            "lon": slice(lon_start, lon_start + len(lons)),
-        }
+            region = {
+                "band": slice(0, self.chunk_sizes[0]),
+                "time": slice(t, t + 1),
+                "lat": slice(lat_start, lat_start + lat_count),
+                "lon": slice(lon_start, lon_start + lon_count),
+            }
 
-        chunk_da.to_zarr(self._source_path, region=region)
+            if self.jrewrite:
+                existing_da = xr.open_dataarray(self.out_path)["dat"].isel(region).load()
+                count_da = xr.open_dataarray(self.cpath)["dat"].isel(region).load()
+                count_da += 1
+                delta = x - existing_da
+                existing_da.values[:] += delta / count_da
+                existing_da.to_zarr(self.out_path, region=region)
+                count_da.to_zarr(self.cpath, region=region)
+            else:
+                chunk_da = xr.DataArray(
+                    array,
+                    dims=["band", "time", "lat", "lon"],
+                    coords={
+                        "band": list(range(self.chunk_sizes[0])),
+                        "time": [t],
+                        "lat": self._lat_coords[lat_start:lat_start + lat_count],
+                        "lon": self._lon_coords[lon_start:lon_start + lon_count],
+                    },
+                    name="dat"
+                )
+                chunk_da.to_zarr(self.out_path, region=region)
         
