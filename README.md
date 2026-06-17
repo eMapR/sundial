@@ -71,7 +71,7 @@ Cleaning methods
 ### 1. Setup directories and conda environment.
 See [Google Earth Documentation](https://developers.google.com/earth-engine/guides/auth) for mode details on authentication.
 ```console
-# Clone repository cd into it. Note: Pretrained models should be cloned from their respective repos into sundial/models/backbones, however, you can just as well load in as a plain lightning module. (eg Prithvi in the the subdir 'prithvi')
+# Clone repository cd into it.
 git clone https://github.com/eMapR/sundial.git
 cd sundial
 
