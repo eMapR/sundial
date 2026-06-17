@@ -75,7 +75,7 @@ See [Google Earth Documentation](https://developers.google.com/earth-engine/guid
 git clone https://github.com/eMapR/sundial.git
 cd sundial
 
-# Create environment in one of two ways
+# Create environment
 pip install -r requirements_x86.txt
 
 # Authenticate on Google Earth Engine.
