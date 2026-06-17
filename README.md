@@ -126,7 +126,7 @@ project-root/\
 │   └── ...\
 ├── annotations/\
 │   └── ...\
-├── outputs/
+├── outputs/\
 │   └── ...\
 ├── stat_data.yaml # Various data stats including band means and std dev for normalization\
 └──...\
