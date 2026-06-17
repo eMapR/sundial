@@ -153,7 +153,7 @@ annotation: _annotation
 	$(MAKE) -s _run
 
 stats: _stats
-	echo "Creating indicies for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
+	echo "Creating stats for $(SUNDIAL_EXPERIMENT_FULL_NAME)...";
 	$(eval export SUNDIAL_PARTITION=$(SUNDIAL_CPU_PARTITION))
 	$(MAKE) -s _run
 
@@ -305,7 +305,7 @@ _run: _experiment_name_check
 		if [[ "$(SUNDIAL_METHOD)" == download || "$(SUNDIAL_METHOD)" == annotation ]]; then \
 			cpus=42; \
     else \
-			cpus=70; \
+			cpus=42; \
 		fi; \
 		echo "Running on HPC..."; \
 		sbatch \

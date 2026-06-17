@@ -74,8 +74,8 @@ class PrithviBackbone(L.LightningModule):
             location = None
 
         latent = self.model.forward_features(chip,
-                                                temporal,
-                                                location)
+                                             temporal,
+                                             location)
 
         return self.reshaper(latent)
 

@@ -10,6 +10,12 @@ class SundialPLBase(L.LightningModule):
         self.criterion = criterion
         self.activation = activation
     
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        for k in batch.keys():
+            if k != "meta":
+                batch[k] = batch[k].to(device)
+        return batch
+    
     def training_step(self, batch):
         loss = self.criterion(self(batch), batch["target"])
         return {"loss": loss}

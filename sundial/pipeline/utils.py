@@ -53,7 +53,8 @@ class ParallelGridAlign:
 
         shape = (self._num_bands, self._num_time_steps, len(self._lat_coords), len(self._lon_coords))
         dims = ["band", "time", "lat", "lon"]
-        dummy_zarr(self._dtype, self._chunk_sizes, shape, dims, self._lat_coords, self._lon_coords, self._source_path)
+        coords = [list(range(self._num_bands)), list(range(self.num_time_steps)), self._lat_coords, self._lon_coords]
+        dummy_zarr(self._dtype, self._chunk_sizes, shape, dims, coords, self._source_path)
 
     def _watcher(self) -> None:
         with mp.Manager() as manager:
@@ -166,9 +167,9 @@ class BandStats:
 
     def update(self, subset: xr.DataArray):
         """Merge a new chunk's stats into the accumulator."""
-        b_mean = subset.mean(dim=["time", "lat", "lon"], skipna=True).values
-        b_var = subset.var( dim=["time", "lat", "lon"], skipna=True).values
-        b_n = subset.count(dim=["time", "lat", "lon"]).values
+        b_mean = subset.mean(dim=["time", "lat", "lon"], skipna=True).to_numpy()
+        b_var = subset.var( dim=["time", "lat", "lon"], skipna=True).to_numpy()
+        b_n = subset.count(dim=["time", "lat", "lon"]).to_numpy()
 
         delta = b_mean - self.mean
         combined_n = self.n + b_n
@@ -220,20 +221,23 @@ def coord_bounds(total_bounds, grid_y_size, grid_x_size, scale):
     return lat_coords, lon_coords
 
 
-def dummy_zarr(dtype, chunk_sizes, shape, dims, y_coords, x_coords, out_path):
+def dummy_zarr(dtype, chunk_sizes, shape, dims, coords, out_path, fill_value=np.nan):
+    coords = {k:v for k, v in zip(dims, coords)}
+    
     dummy_da = xr.DataArray(
         da.full(
             shape,
-            np.nan,
+            fill_value,
             dtype=dtype,
             chunks=chunk_sizes,
         ),
         dims=dims,
-        coords={"band": list(range(shape[0])), "time": list(range(shape[1])), "lat": y_coords, "lon": x_coords},
+        coords=coords,
         name="dat",
     )
 
-    dummy_da.to_zarr(out_path, mode="w", compute=False)
+    dummy_da.to_zarr(out_path, mode="w", compute=False,
+                     encoding={"dat": {"dtype": dtype, "fill_value": fill_value}})
     
 
 def clip_xy_xarray(xarr: xr.DataArray, 
@@ -309,7 +313,7 @@ def get_band_stats(data: xr.DataArray, geo_proc_data: gpd.GeoDataFrame, filter_i
     else:     
         means = data.mean(dim=["time", "lat", "lon"], skipna=True)
         stds  = data.std( dim=["time", "lat", "lon"], skipna=True)
-    return {"band_means": means.values.tolist(), "band_stds": stds.values.tolist()}
+    return {"band_means": means.to_numpy().tolist(), "band_stds": stds.to_numpy().tolist()}
 
 
 def rasterizer(polygons: gpd.GeoSeries,

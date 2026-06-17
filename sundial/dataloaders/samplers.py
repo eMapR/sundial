@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import torch
+import torch.nn.functional as F
 import xarray as xr
 
 from datetime import datetime
@@ -21,7 +22,7 @@ class DataArraySampler:
                  grid_x_size: int,
                  pixel_size: int,
                  class_indices: list[int],
-                 offset: int,
+                 toffset: int,
                  window: tuple[int, int]=(2, 2),
                  jitters: int=None,
                  jitter_size: int=None):
@@ -32,7 +33,7 @@ class DataArraySampler:
         self._grid_x_size = grid_x_size
         self._pixel_size = pixel_size
         self._class_indices = class_indices
-        self._offset = offset
+        self._toffset = toffset
         self._window = window
         self._jitters = jitters
         self._jitter_size = jitter_size
@@ -43,18 +44,18 @@ class DataArraySampler:
         self._label_column = annotator_kwargs.get("label_column")
 
         if self._date_column is not None:
-            self._years = sorted(self._geo_proc_data[self._date_column].unique())
+            self._times = sorted(self._geo_proc_data[self._date_column].unique())
         else:
-            self._years = list(range(self._imagery_da.shape[1]-(sum(self._window))-1))
+            self._times = list(range(self._imagery_da['time'].shape[0]-(sum(self._window)-1)))
 
         if self._label_column is not None:    
             self._labels = sorted(self._geo_proc_data[self._label_column].unique())
             self._labels = [v for i, v in enumerate(self._labels) if i in self._class_indices]
             self._geo_proc_data = self._geo_proc_data.loc[self._geo_proc_data[self._label_column].isin(self._labels)]
             
-        maxy, miny = self._imagery_da.coords["lat"][0], self._imagery_da.coords["lat"][-1]
-        minx, maxx = self._imagery_da.coords["lon"][0], self._imagery_da.coords["lon"][-1]
-        self._chunks = chunk_bounds([minx, miny, maxx, maxy], grid_y_size, grid_x_size)
+        self.maxy, self.miny = self._imagery_da.coords["lat"][0].item(), self._imagery_da.coords["lat"][-1].item()
+        self.minx, self.maxx = self._imagery_da.coords["lon"][0].item(), self._imagery_da.coords["lon"][-1].item()
+        self._chunks = chunk_bounds([self.minx, self.miny, self.maxx, self.maxy], grid_y_size, grid_x_size)
         self._chunk_samples = []
         
         spatial_index = STRtree(self._geo_proc_data.geometry)
@@ -64,11 +65,11 @@ class DataArraySampler:
             hits = spatial_index.query(box(*bounds), predicate="intersects")
             if hits.size > 0:
                 if self._date_column is not None:
-                    for year in self._geo_proc_data.iloc[hits][self._date_column].unique():
-                        self._chunk_samples.append((bounds, year))
+                    for time in self._geo_proc_data.iloc[hits][self._date_column].unique():
+                        self._chunk_samples.append((bounds, time))
                 else:
-                    for year in self._years:
-                        self._chunk_samples.append((bounds, year))
+                    for time in self._times:
+                        self._chunk_samples.append((bounds, time))
 
     def __len__(self):
         if self._jitters is not None:
@@ -80,42 +81,66 @@ class DataArraySampler:
         out = {}
         
         if self._jitters is not None:
-            sindx = indx % self._jitters
-            jindx = indx // self._jitters
-            (tx, ty, tX, tY), year = self._chunk_samples[sindx]
-            jitter_y = np.random.randint(-self._grid_y_size, self._grid_y_size, self._jitter_size)
-            jitter_x = np.random.randint(-self._grid_x_size, self._grid_x_size, self._jitter_size)
-            ty += jitter_y
-            tY += jitter_y
-            tx += jitter_x
-            tX += jitter_x
-        else:
-            (tx, ty, tX, tY), year = self._chunk_samples[indx]            
+            sindx = indx % len(self._chunk_samples)
+            (tx, ty, tX, tY), time = self._chunk_samples[sindx]
 
-        ydx = self._years.index(year)
-        idx = ydx+self._offset
+            y_rnd = list(range(self._jitter_size-self._grid_y_size, self._grid_y_size-self._jitter_size, self._jitter_size))
+            y_jit = y_rnd[np.random.randint(len(y_rnd))]
+            x_rnd = list(range(self._jitter_size-self._grid_x_size, self._grid_x_size-self._jitter_size, self._jitter_size))
+            x_jit = x_rnd[np.random.randint(len(x_rnd))]
+            tx, ty, tX, tY = tx+x_jit, ty+y_jit, tX+x_jit, tY+y_jit
+        else:
+            (tx, ty, tX, tY), time = self._chunk_samples[indx]            
+
+        tdx = self._times.index(time)
+        idx = tdx+self._toffset
         time_indices = list(range(idx - self._window[0], idx + self._window[1]))
+        out["meta"] = {"bounds": (tx, ty, tX, tY),
+                       "idx": idx,
+                       "tdx": tdx,
+                       "ypad": (0,0,0,0),
+                       "xpad": (0,0,0,0)}
+
+        ymin, ymax = max(self.miny, ty+self._pixel_size), min(tY, self.maxy)
+        xmin, xmax = max(self.minx, tx), min(tX-self._pixel_size, self.maxx)
+        yslc = slice(ymax, ymin)
+        xslc = slice(xmin, xmax)
 
         imagery = self._imagery_da.sel(
-            lat=slice(tY, ty + self._pixel_size),
-            lon=slice(tx, tX - self._pixel_size)
+            lat=yslc,
+            lon=xslc
         ).isel(time=time_indices).to_numpy()
         imagery = torch.tensor(imagery)
         imagery = torch.where(imagery.isnan(), -1.0, imagery)
 
+        H, W = imagery.shape[-2], imagery.shape[-1]
+        ydiff = self._grid_y_size//self._pixel_size - H
+        xdiff = self._grid_x_size//self._pixel_size - W
+       
+        if ydiff > 0:
+            ypad = (0, 0, ydiff, 0) if ymax == self.maxy else (0, 0, 0, ydiff)
+            imagery = F.pad(imagery, ypad, mode='constant', value=-1)
+            out["meta"]["ypad"] = ypad
+        if xdiff > 0:
+            xpad = (xdiff, 0, 0, 0) if xmin == self.minx else (0, xdiff, 0, 0)
+            imagery = F.pad(imagery, xpad, mode='constant', value=-1)
+            out["meta"]["xpad"] = xpad
+            
         out["inpt"] = imagery
-        out["meta"] = {"bounds": (tx, ty, tX, tY),
-                       "idx": idx,
-                       "ydx": ydx}
 
         if self._annotations_da is not None:
             annotation = self._annotations_da.sel(
-                lat=slice(tY, ty + self._pixel_size),
-                lon=slice(tx, tX - self._pixel_size)
-            ).isel(band=self._class_indices, time=ydx).to_numpy()
+                lat=yslc,
+                lon=xslc
+            ).isel(band=self._class_indices, time=tdx).to_numpy()
             annotation = torch.tensor(annotation)
             annotation = torch.where(annotation.isnan(), 0, annotation)
             out["target"] = annotation
+            
+            if ydiff > 0:
+                annotation = F.pad(annotation, ypad, mode='constant', value=0)
+            if xdiff > 0:
+                annotation = F.pad(annotation, xpad, mode='constant', value=0)
             
         return out
 

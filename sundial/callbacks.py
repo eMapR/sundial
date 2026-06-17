@@ -2,6 +2,7 @@ import copy
 import importlib
 import inspect
 import lightning as L
+import math
 import numpy as np
 import os
 import pandas as pd
@@ -378,7 +379,7 @@ class SavePixelPatchCallback(L.Callback):
 
 
 class SaveLinesCallback(L.Callback):
-    def __init__(self, dtype, chunk_sizes, channels, time_steps, out_path, yrescale=1, xrescale=1, jrewrite=False, **kwargs):
+    def __init__(self, dtype, chunk_sizes, channels, time_steps, out_path, yrescale=1, xrescale=1, welford=False, **kwargs):
         super().__init__(**kwargs)
         self.dtype = dtype
         self.chunk_sizes = chunk_sizes
@@ -388,7 +389,7 @@ class SaveLinesCallback(L.Callback):
         
         self.yrescale = yrescale
         self.xrescale = xrescale
-        self.jrewrite = jrewrite
+        self.welford = welford
         
     def on_test_start(self, trainer, pl_module):
         imagery_da = trainer.test_dataloaders.dataset._sampler._imagery_da
@@ -397,23 +398,38 @@ class SaveLinesCallback(L.Callback):
         self._lon_coords = imagery_da.coords["lon"].to_numpy()[::self.xrescale]
         shape = (self.channels, self.num_time_steps, len(self._lat_coords), len(self._lon_coords))
         dims = ["band", "time", "lat", "lon"]
-        dummy_zarr(self.dtype, self.chunk_sizes, shape, dims, self._lat_coords, self._lon_coords, self.out_path)
-        if self.jrewrite:
+        coords = [list(range(self.channels)), list(range(self.num_time_steps)), self._lat_coords, self._lon_coords]
+        
+        if self.welford:
             self.cpath = os.path.join((os.path.dirname(self.out_path)), "count")
-            dummy_zarr(self.dtype, self.chunk_sizes, (1, 1, len(self._lat_coords), len(self._lon_coords)), dims, self._lat_coords, self._lon_coords, self.cpath)
+            dummy_zarr(self.dtype, self.chunk_sizes, shape, dims, coords, self.out_path, 0.0)
+            dummy_zarr(self.dtype, self.chunk_sizes[-2:], (len(self._lat_coords), len(self._lon_coords)), dims[-2:], (self._lat_coords, self._lon_coords), self.cpath, 0.0)
+        else:
+            dummy_zarr(self.dtype, self.chunk_sizes, shape, dims, coords, self.out_path)
             
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         btx, bty, btX, btY = batch["meta"]["bounds"]
-        bt = batch["meta"]["ydx"]
+        bt = batch["meta"]["tdx"]
+        _, _, btop, bbottom = batch["meta"]["ypad"]
+        bleft, bright, _, _ = batch["meta"]["xpad"]
         for i, output in enumerate(outputs["output"]):
+            array = output
+            if len(array.shape) == 3:
+                array = array.unsqueeze(1)
+            array = array.cpu().numpy().astype(self.dtype)
+            
             tx, ty, tX, tY = btx[i].item(), bty[i].item(), btX[i].item(), btY[i].item()
             t = int(bt[i].item())
-            array = output.unsqueeze(1).cpu().numpy().astype(self.dtype)
-            
+            top, bottom = math.ceil(btop[i].item() / self.yrescale), math.ceil(bbottom[i].item() / self.yrescale)
+            left, right = math.ceil(bleft[i].item() / self.xrescale), math.ceil(bright[i].item() / self.xrescale)
+
+            array = array[:,:,top: array.shape[-2]-bottom,left: array.shape[-1]-right]
+            tY = tY-(top*self._pixel_size*self.yrescale)
+            tx = tx+(left*self._pixel_size*self.xrescale)
             lat_start = np.searchsorted(-self._lat_coords, -tY).item()
             lon_start = np.searchsorted(self._lon_coords, tx).item()
-            lat_count = array.shape[2]
-            lon_count = array.shape[3]
+            lat_count = array.shape[-2]
+            lon_count = array.shape[-1]
 
             region = {
                 "band": slice(0, self.chunk_sizes[0]),
@@ -421,26 +437,40 @@ class SaveLinesCallback(L.Callback):
                 "lat": slice(lat_start, lat_start + lat_count),
                 "lon": slice(lon_start, lon_start + lon_count),
             }
+            if self.welford:
+                c_region = {k: region[k] for k in ['lat', 'lon']}
+                with xr.open_dataarray(self.out_path, engine="zarr") as da:
+                    old_embed = da.isel(region).to_numpy()
 
-            if self.jrewrite:
-                existing_da = xr.open_dataarray(self.out_path)["dat"].isel(region).load()
-                count_da = xr.open_dataarray(self.cpath)["dat"].isel(region).load()
-                count_da += 1
-                delta = x - existing_da
-                existing_da.values[:] += delta / count_da
-                existing_da.to_zarr(self.out_path, region=region)
-                count_da.to_zarr(self.cpath, region=region)
-            else:
-                chunk_da = xr.DataArray(
-                    array,
-                    dims=["band", "time", "lat", "lon"],
+                with xr.open_dataarray(self.cpath, engine="zarr") as da:
+                    old_count = da.isel(c_region).to_numpy()
+
+                new_count = old_count + 1
+                delta = array - old_embed
+                update = old_embed + delta / new_count
+
+                new_count = xr.DataArray(
+                    new_count,
+                    dims=["lat", "lon"],
                     coords={
-                        "band": list(range(self.chunk_sizes[0])),
-                        "time": [t],
                         "lat": self._lat_coords[lat_start:lat_start + lat_count],
                         "lon": self._lon_coords[lon_start:lon_start + lon_count],
                     },
                     name="dat"
                 )
-                chunk_da.to_zarr(self.out_path, region=region)
+                new_count.to_zarr(self.cpath, region=c_region)
+            else:
+                update = array
+            chunk_da = xr.DataArray(
+                update,
+                dims=["band", "time", "lat", "lon"],
+                coords={
+                    "band": list(range(self.chunk_sizes[0])),
+                    "time": [t],
+                    "lat": self._lat_coords[lat_start:lat_start + lat_count],
+                    "lon": self._lon_coords[lon_start:lon_start + lon_count],
+                },
+                name="dat"
+            )
+            chunk_da.to_zarr(self.out_path, region=region)
         
